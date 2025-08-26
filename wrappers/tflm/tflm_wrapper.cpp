@@ -1,8 +1,8 @@
-#include "third_party/tflite-micro/tensorflow/lite/micro/micro_interpreter.h"
-#include "third_party/tflite-micro/tensorflow/lite/micro/micro_mutable_op_resolver.h"
-#include "third_party/tflite-micro/tensorflow/lite/schema/schema_generated.h"
-#include "third_party/tflite-micro/tensorflow/lite/c/common.h"
-#include "third_party/tflite-micro/tensorflow/lite/micro/micro_log.h"
+#include "third-party/tflite-micro/tensorflow/lite/micro/micro_interpreter.h"
+#include "third-party/tflite-micro/tensorflow/lite/micro/micro_mutable_op_resolver.h"
+#include "third-party/tflite-micro/tensorflow/lite/schema/schema_generated.h"
+#include "third-party/tflite-micro/tensorflow/lite/c/common.h"
+#include "third-party/tflite-micro/tensorflow/lite/micro/micro_log.h"
 #include <cstring>
 
 extern "C" {
@@ -136,7 +136,7 @@ int RunBenchmark(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor
         const uint32_t opcode_index = op->opcode_index();
         if (!printed_opcodes[opcode_index]) {
             const tflite::OperatorCode* opcode = opcodes->Get(opcode_index);
-            const tflite::BuiltinOperator builtin_code = tflite::GetBuiltinCode(opcode);
+            const tflite::BuiltinOperator builtin_code = opcode->builtin_code(); // ← Mudança aqui
             MicroPrintf("  - %s", tflite::EnumNameBuiltinOperator(builtin_code));
             printed_opcodes[opcode_index] = true;
         }
@@ -149,7 +149,7 @@ int RunBenchmark(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor
     for (size_t i = 0; i < subgraph->operators()->size(); ++i) {
         const tflite::Operator* op = subgraph->operators()->Get(i);
         const tflite::OperatorCode* opcode = opcodes->Get(op->opcode_index());
-        const tflite::BuiltinOperator builtin_code = tflite::GetBuiltinCode(opcode);
+        const tflite::BuiltinOperator builtin_code = opcode->builtin_code();
         RegisterOp(&resolver, builtin_code);
     }
     
@@ -161,13 +161,13 @@ int RunBenchmark(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor
     }
 
     MicroPrintf("\nIniciando invocações de benchmark...");
-    // Aqui você adicionaria uma forma de medir o tempo, ex: usando a função millis() do Arduino
 
     for (int i = 0; i < num_invocations; ++i) {
         if (interpreter.Invoke() != kTfLiteOk) {
             MicroPrintf("Erro: Falha ao invocar o interpretador.");
             return -3;
         }
+        MicroPrintf("  - Invocação %d concluída.", i + 1);
     }
         
     MicroPrintf("Benchmark concluído com sucesso.");

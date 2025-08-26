@@ -81,3 +81,26 @@ endif()
 set_target_properties(robcmp PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     VS_DEBUGGER_COMMAND_ARGUMENTS "-a atmega328p -Oz ../platformio/samples/atmega328p-blink/src/main.rob")
+
+# tflm_wrapper.cpp
+set(TFLM_DIR ${CMAKE_SOURCE_DIR}/third-party/tflite-micro)
+set(TFLM_LIB_DIR ${TFLM_DIR}/gen/linux_x86_64_default_gcc/lib)
+
+# Biblioteca estática
+add_library(tflm_wrapper_static STATIC
+    wrappers/tflm/tflm_wrapper.cpp
+)
+
+target_include_directories(tflm_wrapper_static PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${TFLM_DIR}
+    ${TFLM_DIR}/tensorflow/lite/micro/tools/make/downloads/flatbuffers/include
+    ${TFLM_DIR}/tensorflow/lite/micro/tools/make/downloads/gemmlowp
+    ${TFLM_DIR}/tensorflow/lite/micro/tools/make/gen/linux_x86_64_default_gcc/genfiles
+)
+
+target_compile_features(tflm_wrapper_static PRIVATE cxx_std_14)
+
+target_link_libraries(tflm_wrapper_static
+    ${TFLM_LIB_DIR}/libtensorflow-microlite.a
+)
