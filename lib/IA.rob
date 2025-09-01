@@ -1,20 +1,5 @@
-#pragma once
-
-#include <stdint.h>
-#include <stddef.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// Estrutura opaca para a instância do TensorFlow Lite Micro
-typedef struct TFLM_Instance TFLM_Instance;
-
-// Estrutura para representar tensores (forward declaration)
-typedef struct TfLiteTensor TfLiteTensor;
-
 // Enumeração para tipos de kernel suportados
-typedef enum {
+enum {
     KERNEL_ABS = 0,
     KERNEL_ADD = 1,
     KERNEL_ADD_N = 2,
@@ -117,40 +102,31 @@ typedef enum {
     KERNEL_VAR_HANDLE = 97,
     KERNEL_WHILE = 98,
     KERNEL_ZEROS_LIKE = 99
-} KernelType;
+}
 
-// Inicializa um interpretador TensorFlow Lite Micro com kernels específicos
-// Retorna NULL em caso de erro
-void* InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, const KernelType* required_kernels, size_t num_kernels);
+/* Funções principais do TFLM Wrapper */
 
-// Inicializa um interpretador TensorFlow Lite Micro com detecção automática de kernels
-// Analisa o modelo e registra automaticamente apenas os kernels necessários
-// Retorna NULL em caso de erro
-void* InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size);
+// Inicialização com kernels específicos
+void* InitializeInterpreter(uint8* model_data, uint8* tensor_arena, uint32 tensor_arena_size, uint8* required_kernels, uint32 num_kernels);
 
-// Destrói e libera a memória de um interpretador
+// Inicialização com detecção automática de kernels
+void* InitializeInterpreterAuto(uint8* model_data, uint8* tensor_arena, uint32 tensor_arena_size);
+
+// Destruição e limpeza
 void DestroyInterpreter(void* instance_handle);
 
-// Obtém um tensor de entrada do interpretador
-// Retorna NULL em caso de erro
-TfLiteTensor* GetInputTensor(void* instance_handle, size_t index);
+// Acesso aos tensores
+void* GetInputTensor(void* instance_handle, uint32 index);
+void* GetOutputTensor(void* instance_handle, uint32 index);
 
-// Obtém um tensor de saída do interpretador
-// Retorna NULL em caso de erro
-const TfLiteTensor* GetOutputTensor(void* instance_handle, size_t index);
-
-// Executa uma inferência no interpretador
+// Execução de inferência
 void InvokeInterpreter(void* instance_handle);
 
-// Analisa um modelo TFLite e descobre quais kernels são necessários
-// Retorna o número de kernels únicos encontrados
-size_t AnalyzeModelKernels(const uint8_t* model_data, KernelType* required_kernels, size_t max_kernels);
+/* Funções de análise e benchmark */
 
-// Executa um benchmark otimizado do modelo TensorFlow Lite Micro
-// Usa detecção automática de kernels e executa múltiplas invocações
-// Retorna: 0 = sucesso, -1 = erro na inicialização
-int RunBenchmarkOptimized(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, int num_invocations);
+// Analisa modelo e descobre kernels necessários
+uint32 AnalyzeModelKernels(uint8* model_data, uint8* required_kernels, uint32 max_kernels);
 
-#ifdef __cplusplus
-}
-#endif
+// Executa benchmark otimizado
+uint32 RunBenchmarkOptimized(uint8* model_data, uint8* tensor_arena, uint32 tensor_arena_size, uint32 num_invocations);
+
