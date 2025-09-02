@@ -125,7 +125,8 @@ void InvokeInterpreter(void* instance_handle);
 /* Funções de análise e benchmark */
 
 // Analisa modelo e descobre kernels necessários
-uint32 AnalyzeModelKernels(uint8* model_data, uint8* required_kernels, uint32 max_kernels);
+// Função privada, não exposta na API pública
+// uint32 AnalyzeModelKernels(uint8* model_data, uint8* required_kernels, uint32 max_kernels);
 
 // Executa benchmark otimizado
 uint32 RunBenchmarkOptimized(uint8* model_data, uint8* tensor_arena, uint32 tensor_arena_size, uint32 num_invocations);

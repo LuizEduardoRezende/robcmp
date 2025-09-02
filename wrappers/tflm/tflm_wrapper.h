@@ -121,7 +121,7 @@ typedef enum {
 
 // Inicializa um interpretador TensorFlow Lite Micro com kernels específicos
 // Retorna NULL em caso de erro
-void* InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, const KernelType* required_kernels, size_t num_kernels);
+void* InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, const uint8_t* required_kernels, size_t num_kernels);  
 
 // Inicializa um interpretador TensorFlow Lite Micro com detecção automática de kernels
 // Analisa o modelo e registra automaticamente apenas os kernels necessários
@@ -144,7 +144,7 @@ void InvokeInterpreter(void* instance_handle);
 
 // Analisa um modelo TFLite e descobre quais kernels são necessários
 // Retorna o número de kernels únicos encontrados
-size_t AnalyzeModelKernels(const uint8_t* model_data, KernelType* required_kernels, size_t max_kernels);
+size_t AnalyzeModelKernels(const uint8_t* model_data, uint8_t* required_kernels, size_t max_kernels);
 
 // Executa um benchmark otimizado do modelo TensorFlow Lite Micro
 // Usa detecção automática de kernels e executa múltiplas invocações

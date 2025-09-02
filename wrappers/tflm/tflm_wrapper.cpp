@@ -122,7 +122,7 @@ struct TFLM_Instance {
     MutableResolver* resolver;
 };
 
-void* InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, const KernelType* required_kernels, size_t num_kernels) {
+void* InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, const uint8_t* required_kernels, size_t num_kernels) {    
     const tflite::Model* model = tflite::GetModel(model_data);
     if (model->version() != TFLITE_SCHEMA_VERSION) {
         MicroPrintf("Model schema version mismatch!");
@@ -132,10 +132,11 @@ void* InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, si
     TFLM_Instance* instance = new TFLM_Instance();
     instance->resolver = new MutableResolver();
 
-    // Registrar apenas os kernels necessários passados no vetor
+    // Registrar kernels convertendo uint8_t para KernelType
     MicroPrintf("Registrando %zu kernels necessários:", num_kernels);
     for (size_t i = 0; i < num_kernels; ++i) {
-        RegisterOp(instance->resolver, required_kernels[i]);
+        KernelType kernel_type = static_cast<KernelType>(required_kernels[i]);
+        RegisterOp(instance->resolver, kernel_type);
     }
     
     instance->interpreter = new tflite::MicroInterpreter(model, *(instance->resolver), tensor_arena, tensor_arena_size);
@@ -693,7 +694,7 @@ KernelType MapBuiltinOperatorToKernelType(tflite::BuiltinOperator builtin_op) {
 }
 
 // Função para analisar modelo e descobrir kernels necessários
-size_t AnalyzeModelKernels(const uint8_t* model_data, KernelType* required_kernels, size_t max_kernels) {
+size_t AnalyzeModelKernels(const uint8_t* model_data, uint8_t* required_kernels, size_t max_kernels) {
     const tflite::Model* model = tflite::GetModel(model_data);
     if (model->version() != TFLITE_SCHEMA_VERSION) {
         MicroPrintf("Erro: Schema do modelo incompatível!");
@@ -720,9 +721,9 @@ size_t AnalyzeModelKernels(const uint8_t* model_data, KernelType* required_kerne
         
         // Evita duplicatas
         if (!found_kernels[kernel_type] && kernel_count < max_kernels) {
-            required_kernels[kernel_count] = kernel_type;
-            found_kernels[kernel_type] = true;
-            kernel_count++;
+        required_kernels[kernel_count] = static_cast<uint8_t>(kernel_type); // ✅ Converte para uint8_t
+        found_kernels[kernel_type] = true;
+        kernel_count++;
             MicroPrintf("  + Kernel encontrado: %s", tflite::EnumNameBuiltinOperator(builtin_code));
         }
     }
@@ -740,7 +741,7 @@ void* InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_arena
     }
 
     // Primeiro, analisa o modelo para descobrir kernels necessários
-    KernelType required_kernels[50]; // Buffer para kernels descobertos
+    uint8_t required_kernels[50];
     size_t num_kernels = AnalyzeModelKernels(model_data, required_kernels, 50);
     
     if (num_kernels == 0) {
@@ -755,7 +756,8 @@ void* InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_arena
     // Registra apenas os kernels necessários
     MicroPrintf("Registrando %zu kernels descobertos automaticamente:", num_kernels);
     for (size_t i = 0; i < num_kernels; ++i) {
-        RegisterOp(instance->resolver, required_kernels[i]);
+        KernelType kernel_type = static_cast<KernelType>(required_kernels[i]);
+        RegisterOp(instance->resolver, kernel_type);
     }
     
     instance->interpreter = new tflite::MicroInterpreter(model, *(instance->resolver), tensor_arena, tensor_arena_size);
