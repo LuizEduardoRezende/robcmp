@@ -1,5 +1,5 @@
-// Enumeração para tipos de kernel suportados
-enum {
+/* Enumeração para tipos de kernel suportados */
+enum KERNELS{
     KERNEL_ABS = 0,
     KERNEL_ADD = 1,
     KERNEL_ADD_N = 2,
@@ -14,7 +14,6 @@ enum {
     KERNEL_CALL_ONCE = 11,
     KERNEL_CAST = 12,
     KERNEL_CEIL = 13,
-    // TODO(b/160234179): Change custom OPs to also return by value.
     KERNEL_CIRCULAR_BUFFER = 14,
     KERNEL_CONCATENATION = 15,
     KERNEL_CONV_2D = 16,
@@ -96,38 +95,37 @@ enum {
     KERNEL_TANH = 92,
     KERNEL_TRANSPOSE = 93,
     KERNEL_TRANSPOSE_CONV = 94,
-    // TODO(b/230666079): resolve conflict with xtensa implementation
     KERNEL_UNIDIRECTIONAL_SEQUENCE_LSTM = 95,
     KERNEL_UNPACK = 96,
     KERNEL_VAR_HANDLE = 97,
     KERNEL_WHILE = 98,
     KERNEL_ZEROS_LIKE = 99
 }
+// TODO(b/160234179): Change custom OPs to also return by value.
+// TODO(b/230666079): resolve conflict with xtensa implementation
 
-/* Funções principais do TFLM Wrapper */
 
 // Inicialização com kernels específicos
-void* InitializeInterpreter(uint8* model_data, uint8* tensor_arena, uint32 tensor_arena_size, uint8* required_kernels, uint32 num_kernels);
+uint32 InitializeInterpreter(uint8[] model_data, uint8[] tensor_arena, uint32 tensor_arena_size, uint8[] required_kernels);
 
 // Inicialização com detecção automática de kernels
-void* InitializeInterpreterAuto(uint8* model_data, uint8* tensor_arena, uint32 tensor_arena_size);
+uint32 InitializeInterpreterAuto(uint8[] model_data, uint8[] tensor_arena, uint32 tensor_arena_size);
 
 // Destruição e limpeza
-void DestroyInterpreter(void* instance_handle);
+void DestroyInterpreter(uint32 instance_handle);
 
 // Acesso aos tensores
-void* GetInputTensor(void* instance_handle, uint32 index);
-void* GetOutputTensor(void* instance_handle, uint32 index);
+uint32 GetInputTensor(uint32 instance_handle, uint32 index);
+uint32 GetOutputTensor(uint32 instance_handle, uint32 index);
 
 // Execução de inferência
-void InvokeInterpreter(void* instance_handle);
+void InvokeInterpreter(uint32 instance_handle);
 
 /* Funções de análise e benchmark */
 
-// Analisa modelo e descobre kernels necessários
-// Função privada, não exposta na API pública
-// uint32 AnalyzeModelKernels(uint8* model_data, uint8* required_kernels, uint32 max_kernels);
-
 // Executa benchmark otimizado
-uint32 RunBenchmarkOptimized(uint8* model_data, uint8* tensor_arena, uint32 tensor_arena_size, uint32 num_invocations);
+uint32 RunBenchmarkOptimized(uint8[] model_data, uint8[] tensor_arena, uint32 tensor_arena_size, uint32 num_invocations);
 
+int8 main(){
+    return 0;
+}

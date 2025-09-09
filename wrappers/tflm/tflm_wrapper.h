@@ -121,26 +121,26 @@ typedef enum {
 
 // Inicializa um interpretador TensorFlow Lite Micro com kernels específicos
 // Retorna NULL em caso de erro
-void* InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, const uint8_t* required_kernels, size_t num_kernels);  
+void* InitializeInterpreter(const uint8_t* model_data, int, uint8_t* tensor_arena, int, size_t tensor_arena_size, const uint8_t* required_kernels, int8_t num_kernels);
 
 // Inicializa um interpretador TensorFlow Lite Micro com detecção automática de kernels
 // Analisa o modelo e registra automaticamente apenas os kernels necessários
 // Retorna NULL em caso de erro
-void* InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size);
+void* InitializeInterpreterAuto(const uint8_t* model_data, int, uint8_t* tensor_arena, int, size_t tensor_arena_size);
 
 // Destrói e libera a memória de um interpretador
-void DestroyInterpreter(void* instance_handle);
+void DestroyInterpreter(void* instance_handle, int);
 
 // Obtém um tensor de entrada do interpretador
 // Retorna NULL em caso de erro
-TfLiteTensor* GetInputTensor(void* instance_handle, size_t index);
+TfLiteTensor* GetInputTensor(void* instance_handle, int, size_t index);
 
 // Obtém um tensor de saída do interpretador
 // Retorna NULL em caso de erro
-const TfLiteTensor* GetOutputTensor(void* instance_handle, size_t index);
+const TfLiteTensor* GetOutputTensor(void* instance_handle, int, size_t index);
 
 // Executa uma inferência no interpretador
-void InvokeInterpreter(void* instance_handle);
+void InvokeInterpreter(void* instance_handle, int);
 
 // Analisa um modelo TFLite e descobre quais kernels são necessários
 // Retorna o número de kernels únicos encontrados
@@ -149,7 +149,7 @@ size_t AnalyzeModelKernels(const uint8_t* model_data, uint8_t* required_kernels,
 // Executa um benchmark otimizado do modelo TensorFlow Lite Micro
 // Usa detecção automática de kernels e executa múltiplas invocações
 // Retorna: 0 = sucesso, -1 = erro na inicialização
-int RunBenchmarkOptimized(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, int num_invocations);
+int RunBenchmarkOptimized(const uint8_t* model_data, int, uint8_t* tensor_arena, int, size_t tensor_arena_size, int num_invocations);
 
 #ifdef __cplusplus
 }

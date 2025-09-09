@@ -4,6 +4,7 @@
 #include "third-party/tflite-micro/tensorflow/lite/c/common.h"
 #include "third-party/tflite-micro/tensorflow/lite/micro/micro_log.h"
 #include <cstring>
+#include <cstdint>
 
 extern "C" {
 
@@ -122,11 +123,11 @@ struct TFLM_Instance {
     MutableResolver* resolver;
 };
 
-void* InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, const uint8_t* required_kernels, size_t num_kernels) {    
+uintptr_t InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, const uint8_t* required_kernels, int, int, int8_t num_kernels) {
     const tflite::Model* model = tflite::GetModel(model_data);
     if (model->version() != TFLITE_SCHEMA_VERSION) {
         MicroPrintf("Model schema version mismatch!");
-        return nullptr;
+        return 0;
     }
 
     TFLM_Instance* instance = new TFLM_Instance();
@@ -146,15 +147,15 @@ void* InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, si
         delete instance->interpreter;
         delete instance->resolver;
         delete instance;
-        return nullptr;
+        return 0;
     }
 
     MicroPrintf("Interpreter initialized successfully.");
-    return reinterpret_cast<void*>(instance);
+    return reinterpret_cast<uintptr_t>(instance);
 }
 
-void DestroyInterpreter(void* instance_handle) {
-    if (instance_handle == nullptr) return;
+void DestroyInterpreter(uintptr_t instance_handle, int) {
+    if (instance_handle == 0) return;
 
     TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
     delete instance->interpreter;
@@ -163,20 +164,22 @@ void DestroyInterpreter(void* instance_handle) {
     MicroPrintf("Interpreter destroyed successfully.");
 }
 
-TfLiteTensor* GetInputTensor(void* instance_handle, size_t index) {
-    if (instance_handle == nullptr) return nullptr;
+uintptr_t GetInputTensor(uintptr_t instance_handle, size_t index, int) {
+    if (instance_handle == 0) return 0;
     TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
-    return instance->interpreter->input(index);
+    TfLiteTensor* tensor = instance->interpreter->input(index);
+    return reinterpret_cast<uintptr_t>(tensor);
 }
 
-const TfLiteTensor* GetOutputTensor(void* instance_handle, size_t index) {
-    if (instance_handle == nullptr) return nullptr;
+uintptr_t GetOutputTensor(uintptr_t instance_handle, size_t index, int) {
+    if (instance_handle == 0) return 0;
     TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
-    return instance->interpreter->output(index);
+    const TfLiteTensor* tensor = instance->interpreter->output(index);
+    return reinterpret_cast<uintptr_t>(tensor);
 }
 
-void InvokeInterpreter(void* instance_handle) {
-    if (instance_handle == nullptr) {
+void InvokeInterpreter(uintptr_t instance_handle, int) {
+    if (instance_handle == 0) {
         MicroPrintf("Interpreter pointer is null.");
         return;
     }
@@ -721,7 +724,7 @@ size_t AnalyzeModelKernels(const uint8_t* model_data, uint8_t* required_kernels,
         
         // Evita duplicatas
         if (!found_kernels[kernel_type] && kernel_count < max_kernels) {
-        required_kernels[kernel_count] = static_cast<uint8_t>(kernel_type); // ✅ Converte para uint8_t
+        required_kernels[kernel_count] = static_cast<uint8_t>(kernel_type); // Converte para uint8_t
         found_kernels[kernel_type] = true;
         kernel_count++;
             MicroPrintf("  + Kernel encontrado: %s", tflite::EnumNameBuiltinOperator(builtin_code));
@@ -733,11 +736,11 @@ size_t AnalyzeModelKernels(const uint8_t* model_data, uint8_t* required_kernels,
 }
 
 // Função melhorada de inicialização automática
-void* InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size) {
+uintptr_t InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, int, int) {
     const tflite::Model* model = tflite::GetModel(model_data);
     if (model->version() != TFLITE_SCHEMA_VERSION) {
         MicroPrintf("Model schema version mismatch!");
-        return nullptr;
+        return 0;
     }
 
     // Primeiro, analisa o modelo para descobrir kernels necessários
@@ -746,7 +749,7 @@ void* InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_arena
     
     if (num_kernels == 0) {
         MicroPrintf("Erro: Nenhum kernel válido encontrado no modelo!");
-        return nullptr;
+        return 0;
     }
 
     // Agora inicializa com os kernels descobertos
@@ -767,38 +770,38 @@ void* InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_arena
         delete instance->interpreter;
         delete instance->resolver;
         delete instance;
-        return nullptr;
+        return 0;
     }
 
     MicroPrintf("Interpreter initialized automatically with %zu kernels.", num_kernels);
-    return reinterpret_cast<void*>(instance);
+    return reinterpret_cast<uintptr_t>(instance);
 }
 
 // Função de benchmark otimizada
-int RunBenchmarkOptimized(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, int num_invocations) {
+uintptr_t RunBenchmarkOptimized(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, int num_invocations, int, int) {
     MicroPrintf("--- Iniciando Benchmark Otimizado ---");
 
     // Usar inicialização automática
-    void* interpreter_handle = InitializeInterpreterAuto(model_data, tensor_arena, tensor_arena_size);
-    if (!interpreter_handle) {
+    uintptr_t interpreter_handle = InitializeInterpreterAuto(model_data, tensor_arena, tensor_arena_size, 0, 0);
+    if (interpreter_handle == 0) {
         MicroPrintf("Erro: Falha na inicialização automática do interpretador.");
-        return -1;
+        return 0;
     }
 
     MicroPrintf("Executando %d invocações de benchmark...", num_invocations);
 
     // Executa benchmark
     for (int i = 0; i < num_invocations; ++i) {
-        InvokeInterpreter(interpreter_handle);
+        InvokeInterpreter(interpreter_handle, 0);
         if (i % 10 == 0) { // Log a cada 10 invocações
             MicroPrintf("  - Progresso: %d/%d", i + 1, num_invocations);
         }
     }
 
     // Cleanup
-    DestroyInterpreter(interpreter_handle);
+    DestroyInterpreter(interpreter_handle, 0);
     MicroPrintf("Benchmark otimizado concluído com sucesso!");
-    return 0;
+    return 1; // Retorna 1 para sucesso
 }
 
-} // extern "C"
+} // extern "C"// Teste de detecção de mudança
