@@ -165,16 +165,91 @@ void DestroyInterpreter(uintptr_t instance_handle, int) {
 }
 
 uintptr_t GetInputTensor(uintptr_t instance_handle, size_t index, int) {
-    if (instance_handle == 0) return 0;
+    MicroPrintf("=== Iniciando GetInputTensor ===");
+    MicroPrintf("Handle recebido: %p", (void*)instance_handle);
+    MicroPrintf("Índice solicitado: %zu", index);
+    
+    if (instance_handle == 0) {
+        MicroPrintf("Erro: instance_handle é nulo");
+        return 0;
+    }
+    
+    MicroPrintf("Fazendo cast do handle...");
     TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
+    if (instance == nullptr) {
+        MicroPrintf("Erro: instance é nulo após cast");
+        return 0;
+    }
+    
+    MicroPrintf("Instance válida: %p", (void*)instance);
+    MicroPrintf("Verificando interpreter...");
+    
+    if (instance->interpreter == nullptr) {
+        MicroPrintf("Erro: interpreter é nulo");
+        return 0;
+    }
+    
+    MicroPrintf("Interpreter válido: %p", (void*)instance->interpreter);
+    MicroPrintf("Verificando inputs_size...");
+    
+    size_t inputs_size = instance->interpreter->inputs_size();
+    MicroPrintf("Número de inputs: %zu", inputs_size);
+    
+    // Verificar se o índice é válido
+    if (index >= inputs_size) {
+        MicroPrintf("Erro: índice de entrada %zu fora dos limites (máximo: %zu)", 
+                   index, inputs_size);
+        return 0;
+    }
+    
+    MicroPrintf("Tentando obter tensor de entrada no índice %zu", index);
     TfLiteTensor* tensor = instance->interpreter->input(index);
-    return reinterpret_cast<uintptr_t>(tensor);
+    MicroPrintf("Chamada input() retornou: %p", (void*)tensor);
+    
+    if (tensor == nullptr) {
+        MicroPrintf("Erro: tensor de entrada é nulo");
+        return 0;
+    }
+    
+    MicroPrintf("Tensor de entrada obtido com sucesso");
+    uintptr_t result = reinterpret_cast<uintptr_t>(tensor);
+    MicroPrintf("Retornando handle do tensor: %p", (void*)result);
+    return result;
 }
 
 uintptr_t GetOutputTensor(uintptr_t instance_handle, size_t index, int) {
-    if (instance_handle == 0) return 0;
+    if (instance_handle == 0) {
+        MicroPrintf("Erro: instance_handle é nulo");
+        return 0;
+    }
+    
     TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
+    if (instance == nullptr) {
+        MicroPrintf("Erro: instance é nulo após cast");
+        return 0;
+    }
+    
+    if (instance->interpreter == nullptr) {
+        MicroPrintf("Erro: interpreter é nulo");
+        return 0;
+    }
+    
+    // Verificar se o índice é válido
+    if (index >= instance->interpreter->outputs_size()) {
+        MicroPrintf("Erro: índice de saída %zu fora dos limites (máximo: %zu)", 
+                   index, instance->interpreter->outputs_size());
+        return 0;
+    }
+    
+    MicroPrintf("Tentando obter tensor de saída no índice %zu", index);
     const TfLiteTensor* tensor = instance->interpreter->output(index);
+    
+    if (tensor == nullptr) {
+        MicroPrintf("Erro: tensor de saída é nulo");
+        return 0;
+    }
+    
+    MicroPrintf("Tensor de saída obtido com sucesso");
     return reinterpret_cast<uintptr_t>(tensor);
 }
 
@@ -737,6 +812,19 @@ size_t AnalyzeModelKernels(const uint8_t* model_data, uint8_t* required_kernels,
 
 // Função melhorada de inicialização automática
 uintptr_t InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, int, int) {
+    MicroPrintf("=== Iniciando InitializeInterpreterAuto ===");
+    
+    if (model_data == nullptr) {
+        MicroPrintf("Erro: model_data é nulo");
+        return 0;
+    }
+    
+    if (tensor_arena == nullptr) {
+        MicroPrintf("Erro: tensor_arena é nulo");
+        return 0;
+    }
+    
+    MicroPrintf("Verificando modelo...");
     const tflite::Model* model = tflite::GetModel(model_data);
     if (model->version() != TFLITE_SCHEMA_VERSION) {
         MicroPrintf("Model schema version mismatch!");
@@ -744,6 +832,7 @@ uintptr_t InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_a
     }
 
     // Primeiro, analisa o modelo para descobrir kernels necessários
+    MicroPrintf("Analisando kernels do modelo...");
     uint8_t required_kernels[50];
     size_t num_kernels = AnalyzeModelKernels(model_data, required_kernels, 50);
     
@@ -753,8 +842,20 @@ uintptr_t InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_a
     }
 
     // Agora inicializa com os kernels descobertos
+    MicroPrintf("Criando instance...");
     TFLM_Instance* instance = new TFLM_Instance();
+    if (instance == nullptr) {
+        MicroPrintf("Erro: Falha ao alocar memória para instance");
+        return 0;
+    }
+    
+    MicroPrintf("Criando resolver...");
     instance->resolver = new MutableResolver();
+    if (instance->resolver == nullptr) {
+        MicroPrintf("Erro: Falha ao alocar memória para resolver");
+        delete instance;
+        return 0;
+    }
 
     // Registra apenas os kernels necessários
     MicroPrintf("Registrando %zu kernels descobertos automaticamente:", num_kernels);
@@ -763,8 +864,16 @@ uintptr_t InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_a
         RegisterOp(instance->resolver, kernel_type);
     }
     
+    MicroPrintf("Criando MicroInterpreter...");
     instance->interpreter = new tflite::MicroInterpreter(model, *(instance->resolver), tensor_arena, tensor_arena_size);
+    if (instance->interpreter == nullptr) {
+        MicroPrintf("Erro: Falha ao alocar memória para interpreter");
+        delete instance->resolver;
+        delete instance;
+        return 0;
+    }
 
+    MicroPrintf("Alocando tensors...");
     if (instance->interpreter->AllocateTensors() != kTfLiteOk) {
         MicroPrintf("Failed to allocate tensors!");
         delete instance->interpreter;
@@ -773,8 +882,13 @@ uintptr_t InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_a
         return 0;
     }
 
-    MicroPrintf("Interpreter initialized automatically with %zu kernels.", num_kernels);
-    return reinterpret_cast<uintptr_t>(instance);
+    MicroPrintf("Verificando número de inputs/outputs...");
+    MicroPrintf("Número de inputs: %zu", instance->interpreter->inputs_size());
+    MicroPrintf("Número de outputs: %zu", instance->interpreter->outputs_size());
+    
+    uintptr_t handle = reinterpret_cast<uintptr_t>(instance);
+    MicroPrintf("Interpreter initialized automatically with %zu kernels. Handle: %p", num_kernels, (void*)handle);
+    return handle;
 }
 
 // Função de benchmark otimizada
