@@ -4,7 +4,13 @@ cmake_policy(SET CMP0054 NEW)
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -O0 -fno-exceptions")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -fno-exceptions")
-add_compile_definitions()
+add_compile_definitions(
+    TF_LITE_STATIC_MEMORY=1
+    TF_LITE_MCU_DEBUG_LOG=1
+    TFLITE_EMULATE_FLOAT=0
+    TF_LITE_USE_GLOBAL_POOL=0
+    TF_LITE_USE_CPPSTD_STRING_VIEW=0
+)
 
 project(robcmp)
 
@@ -97,9 +103,22 @@ target_include_directories(tflm_wrapper_static PRIVATE
     ${TFLM_DIR}/tensorflow/lite/micro/tools/make/downloads/flatbuffers/include
     ${TFLM_DIR}/tensorflow/lite/micro/tools/make/downloads/gemmlowp
     ${TFLM_DIR}/tensorflow/lite/micro/tools/make/gen/linux_x86_64_default_gcc/genfiles
+    ${TFLM_DIR}/tensorflow/lite/micro/tools/make/downloads/ruy
 )
 
 target_compile_features(tflm_wrapper_static PRIVATE cxx_std_14)
+
+# Adicionar flags específicas do TFLM
+target_compile_options(tflm_wrapper_static PRIVATE
+    -fno-rtti
+    -fno-exceptions
+    -fno-threadsafe-statics
+    -Wno-unused-parameter
+    -Wno-unused-variable
+    -DTF_LITE_STATIC_MEMORY
+    -DTF_LITE_MCU_DEBUG_LOG
+    -DTFLITE_EMULATE_FLOAT=0
+)
 
 target_link_libraries(tflm_wrapper_static
     ${TFLM_LIB_DIR}/libtensorflow-microlite.a

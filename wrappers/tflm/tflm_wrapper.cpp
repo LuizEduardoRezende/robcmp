@@ -1,10 +1,13 @@
 #include "third-party/tflite-micro/tensorflow/lite/micro/micro_interpreter.h"
+#include "third-party/tflite-micro/tensorflow/lite/micro/recording_micro_interpreter.h"
+#include "third-party/tflite-micro/tensorflow/lite/micro/recording_micro_allocator.h"
 #include "third-party/tflite-micro/tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "third-party/tflite-micro/tensorflow/lite/schema/schema_generated.h"
 #include "third-party/tflite-micro/tensorflow/lite/c/common.h"
 #include "third-party/tflite-micro/tensorflow/lite/micro/micro_log.h"
 #include <cstring>
 #include <cstdint>
+
 
 extern "C" {
 
@@ -119,558 +122,315 @@ typedef enum {
 void RegisterOp(tflite::MicroMutableOpResolver<100>* resolver, KernelType kernel_type);
 
 struct TFLM_Instance {
-    tflite::MicroInterpreter* interpreter;
+    tflite::RecordingMicroInterpreter* interpreter;
+    tflite::RecordingMicroAllocator* allocator;
     MutableResolver* resolver;
 };
-
-uintptr_t InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, const uint8_t* required_kernels, int, int, int8_t num_kernels) {
-    const tflite::Model* model = tflite::GetModel(model_data);
-    if (model->version() != TFLITE_SCHEMA_VERSION) {
-        MicroPrintf("Model schema version mismatch!");
-        return 0;
-    }
-
-    TFLM_Instance* instance = new TFLM_Instance();
-    instance->resolver = new MutableResolver();
-
-    // Registrar kernels convertendo uint8_t para KernelType
-    MicroPrintf("Registrando %zu kernels necessários:", num_kernels);
-    for (size_t i = 0; i < num_kernels; ++i) {
-        KernelType kernel_type = static_cast<KernelType>(required_kernels[i]);
-        RegisterOp(instance->resolver, kernel_type);
-    }
-    
-    instance->interpreter = new tflite::MicroInterpreter(model, *(instance->resolver), tensor_arena, tensor_arena_size);
-
-    if (instance->interpreter->AllocateTensors() != kTfLiteOk) {
-        MicroPrintf("Failed to allocate tensors! Verifique se todas as ops foram registradas.");
-        delete instance->interpreter;
-        delete instance->resolver;
-        delete instance;
-        return 0;
-    }
-
-    MicroPrintf("Interpreter initialized successfully.");
-    return reinterpret_cast<uintptr_t>(instance);
-}
-
-void DestroyInterpreter(uintptr_t instance_handle, int) {
-    if (instance_handle == 0) return;
-
-    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
-    delete instance->interpreter;
-    delete instance->resolver; 
-    delete instance;
-    MicroPrintf("Interpreter destroyed successfully.");
-}
-
-uintptr_t GetInputTensor(uintptr_t instance_handle, size_t index, int) {
-    MicroPrintf("=== Iniciando GetInputTensor ===");
-    MicroPrintf("Handle recebido: %p", (void*)instance_handle);
-    MicroPrintf("Índice solicitado: %zu", index);
-    
-    if (instance_handle == 0) {
-        MicroPrintf("Erro: instance_handle é nulo");
-        return 0;
-    }
-    
-    MicroPrintf("Fazendo cast do handle...");
-    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
-    if (instance == nullptr) {
-        MicroPrintf("Erro: instance é nulo após cast");
-        return 0;
-    }
-    
-    MicroPrintf("Instance válida: %p", (void*)instance);
-    MicroPrintf("Verificando interpreter...");
-    
-    if (instance->interpreter == nullptr) {
-        MicroPrintf("Erro: interpreter é nulo");
-        return 0;
-    }
-    
-    MicroPrintf("Interpreter válido: %p", (void*)instance->interpreter);
-    MicroPrintf("Verificando inputs_size...");
-    
-    size_t inputs_size = instance->interpreter->inputs_size();
-    MicroPrintf("Número de inputs: %zu", inputs_size);
-    
-    // Verificar se o índice é válido
-    if (index >= inputs_size) {
-        MicroPrintf("Erro: índice de entrada %zu fora dos limites (máximo: %zu)", 
-                   index, inputs_size);
-        return 0;
-    }
-    
-    MicroPrintf("Tentando obter tensor de entrada no índice %zu", index);
-    TfLiteTensor* tensor = instance->interpreter->input(index);
-    MicroPrintf("Chamada input() retornou: %p", (void*)tensor);
-    
-    if (tensor == nullptr) {
-        MicroPrintf("Erro: tensor de entrada é nulo");
-        return 0;
-    }
-    
-    MicroPrintf("Tensor de entrada obtido com sucesso");
-    uintptr_t result = reinterpret_cast<uintptr_t>(tensor);
-    MicroPrintf("Retornando handle do tensor: %p", (void*)result);
-    return result;
-}
-
-uintptr_t GetOutputTensor(uintptr_t instance_handle, size_t index, int) {
-    if (instance_handle == 0) {
-        MicroPrintf("Erro: instance_handle é nulo");
-        return 0;
-    }
-    
-    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
-    if (instance == nullptr) {
-        MicroPrintf("Erro: instance é nulo após cast");
-        return 0;
-    }
-    
-    if (instance->interpreter == nullptr) {
-        MicroPrintf("Erro: interpreter é nulo");
-        return 0;
-    }
-    
-    // Verificar se o índice é válido
-    if (index >= instance->interpreter->outputs_size()) {
-        MicroPrintf("Erro: índice de saída %zu fora dos limites (máximo: %zu)", 
-                   index, instance->interpreter->outputs_size());
-        return 0;
-    }
-    
-    MicroPrintf("Tentando obter tensor de saída no índice %zu", index);
-    const TfLiteTensor* tensor = instance->interpreter->output(index);
-    
-    if (tensor == nullptr) {
-        MicroPrintf("Erro: tensor de saída é nulo");
-        return 0;
-    }
-    
-    MicroPrintf("Tensor de saída obtido com sucesso");
-    return reinterpret_cast<uintptr_t>(tensor);
-}
-
-void InvokeInterpreter(uintptr_t instance_handle, int) {
-    if (instance_handle == 0) {
-        MicroPrintf("Interpreter pointer is null.");
-        return;
-    }
-
-    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
-    if (instance->interpreter->Invoke() != kTfLiteOk) {
-        MicroPrintf("Failed to invoke interpreter.");
-    } else {
-        MicroPrintf("Interpreter invoked successfully.");
-    }
-}
 
 void RegisterOp(tflite::MicroMutableOpResolver<100>* resolver, KernelType kernel_type) {
     switch (kernel_type) {
         case KERNEL_ABS:
             resolver->AddAbs();
-            MicroPrintf("Registrado kernel: ABS");
             break;
         case KERNEL_ADD:
             resolver->AddAdd();
-            MicroPrintf("Registrado kernel: ADD");
             break;
         case KERNEL_ADD_N:
             resolver->AddAddN();
-            MicroPrintf("Registrado kernel: ADD_N");
             break;
         case KERNEL_ARG_MAX:
             resolver->AddArgMax();
-            MicroPrintf("Registrado kernel: ARG_MAX");
             break;
         case KERNEL_ARG_MIN:
             resolver->AddArgMin();
-            MicroPrintf("Registrado kernel: ARG_MIN");
             break;
         case KERNEL_ASSIGN_VARIABLE:
             resolver->AddAssignVariable();
-            MicroPrintf("Registrado kernel: ASSIGN_VARIABLE");
             break;
         case KERNEL_AVERAGE_POOL_2D:
             resolver->AddAveragePool2D();
-            MicroPrintf("Registrado kernel: AVERAGE_POOL_2D");
             break;
         case KERNEL_BATCH_MATMUL:
             resolver->AddBatchMatMul();
-            MicroPrintf("Registrado kernel: BATCH_MATMUL");
             break;
         case KERNEL_BATCH_TO_SPACE_ND:
             resolver->AddBatchToSpaceNd();
-            MicroPrintf("Registrado kernel: BATCH_TO_SPACE_ND");
             break;
         case KERNEL_BROADCAST_ARGS:
             resolver->AddBroadcastArgs();
-            MicroPrintf("Registrado kernel: BROADCAST_ARGS");
             break;
         case KERNEL_BROADCAST_TO:
             resolver->AddBroadcastTo();
-            MicroPrintf("Registrado kernel: BROADCAST_TO");
             break;
         case KERNEL_CALL_ONCE:
             resolver->AddCallOnce();
-            MicroPrintf("Registrado kernel: CALL_ONCE");
             break;
         case KERNEL_CAST:
             resolver->AddCast();
-            MicroPrintf("Registrado kernel: CAST");
             break;
         case KERNEL_CEIL:
             resolver->AddCeil();
-            MicroPrintf("Registrado kernel: CEIL");
             break;
         case KERNEL_CIRCULAR_BUFFER:
             resolver->AddCircularBuffer();
-            MicroPrintf("Registrado kernel: CIRCULAR_BUFFER");
             break;
         case KERNEL_CONCATENATION:
             resolver->AddConcatenation();
-            MicroPrintf("Registrado kernel: CONCATENATION");
             break;
         case KERNEL_CONV_2D:
             resolver->AddConv2D();
-            MicroPrintf("Registrado kernel: CONV_2D");
             break;
         case KERNEL_COS:
             resolver->AddCos();
-            MicroPrintf("Registrado kernel: COS");
             break;
         case KERNEL_CUMSUM:
             resolver->AddCumSum();
-            MicroPrintf("Registrado kernel: CUMSUM");
             break;
         case KERNEL_DEPTH_TO_SPACE:
             resolver->AddDepthToSpace();
-            MicroPrintf("Registrado kernel: DEPTH_TO_SPACE");
             break;
         case KERNEL_DEPTHWISE_CONV_2D:
             resolver->AddDepthwiseConv2D();
-            MicroPrintf("Registrado kernel: DEPTHWISE_CONV_2D");
             break;
         case KERNEL_DEQUANTIZE:
             resolver->AddDequantize();
-            MicroPrintf("Registrado kernel: DEQUANTIZE");
             break;
         case KERNEL_DIV:
             resolver->AddDiv();
-            MicroPrintf("Registrado kernel: DIV");
             break;
         case KERNEL_ELU:
             resolver->AddElu();
-            MicroPrintf("Registrado kernel: ELU");
             break;
         case KERNEL_EMBEDDING_LOOKUP:
             resolver->AddEmbeddingLookup();
-            MicroPrintf("Registrado kernel: EMBEDDING_LOOKUP");
             break;
         case KERNEL_EQUAL:
             resolver->AddEqual();
-            MicroPrintf("Registrado kernel: EQUAL");
             break;
         case KERNEL_ETHOSU:
             resolver->AddEthosU();
-            MicroPrintf("Registrado kernel: ETHOSU");
             break;
         case KERNEL_EXP:
             resolver->AddExp();
-            MicroPrintf("Registrado kernel: EXP");
             break;
         case KERNEL_EXPAND_DIMS:
             resolver->AddExpandDims();
-            MicroPrintf("Registrado kernel: EXPAND_DIMS");
             break;
         case KERNEL_FILL:
             resolver->AddFill();
-            MicroPrintf("Registrado kernel: FILL");
             break;
         case KERNEL_FLOOR:
             resolver->AddFloor();
-            MicroPrintf("Registrado kernel: FLOOR");
             break;
         case KERNEL_FLOOR_DIV:
             resolver->AddFloorDiv();
-            MicroPrintf("Registrado kernel: FLOOR_DIV");
             break;
         case KERNEL_FLOOR_MOD:
             resolver->AddFloorMod();
-            MicroPrintf("Registrado kernel: FLOOR_MOD");
             break;
         case KERNEL_FULLY_CONNECTED:
             resolver->AddFullyConnected();
-            MicroPrintf("Registrado kernel: FULLY_CONNECTED");
             break;
         case KERNEL_GATHER:
             resolver->AddGather();
-            MicroPrintf("Registrado kernel: GATHER");
             break;
         case KERNEL_GATHER_ND:
             resolver->AddGatherNd();
-            MicroPrintf("Registrado kernel: GATHER_ND");
             break;
         case KERNEL_GREATER:
             resolver->AddGreater();
-            MicroPrintf("Registrado kernel: GREATER");
             break;
         case KERNEL_GREATER_EQUAL:
             resolver->AddGreaterEqual();
-            MicroPrintf("Registrado kernel: GREATER_EQUAL");
             break;
         case KERNEL_HARD_SWISH:
             resolver->AddHardSwish();
-            MicroPrintf("Registrado kernel: HARD_SWISH");
             break;
         case KERNEL_IF:
             resolver->AddIf();
-            MicroPrintf("Registrado kernel: IF");
             break;
         case KERNEL_L2_NORMALIZATION:
             resolver->AddL2Normalization();
-            MicroPrintf("Registrado kernel: L2_NORMALIZATION");
             break;
         case KERNEL_L2_POOL_2D:
             resolver->AddL2Pool2D();
-            MicroPrintf("Registrado kernel: L2_POOL_2D");
             break;
         case KERNEL_LEAKY_RELU:
             resolver->AddLeakyRelu();
-            MicroPrintf("Registrado kernel: LEAKY_RELU");
             break;
         case KERNEL_LESS:
             resolver->AddLess();
-            MicroPrintf("Registrado kernel: LESS");
             break;
         case KERNEL_LESS_EQUAL:
             resolver->AddLessEqual();
-            MicroPrintf("Registrado kernel: LESS_EQUAL");
             break;
         case KERNEL_LOG:
             resolver->AddLog();
-            MicroPrintf("Registrado kernel: LOG");
             break;
         case KERNEL_LOG_SOFTMAX:
             resolver->AddLogSoftmax();
-            MicroPrintf("Registrado kernel: LOG_SOFTMAX");
             break;
         case KERNEL_LOGICAL_AND:
             resolver->AddLogicalAnd();
-            MicroPrintf("Registrado kernel: LOGICAL_AND");
             break;
         case KERNEL_LOGICAL_NOT:
             resolver->AddLogicalNot();
-            MicroPrintf("Registrado kernel: LOGICAL_NOT");
             break;
         case KERNEL_LOGICAL_OR:
             resolver->AddLogicalOr();
-            MicroPrintf("Registrado kernel: LOGICAL_OR");
             break;
         case KERNEL_LOGISTIC:
             resolver->AddLogistic();
-            MicroPrintf("Registrado kernel: LOGISTIC");
             break;
         case KERNEL_MAX_POOL_2D:
             resolver->AddMaxPool2D();
-            MicroPrintf("Registrado kernel: MAX_POOL_2D");
             break;
         case KERNEL_MAXIMUM:
             resolver->AddMaximum();
-            MicroPrintf("Registrado kernel: MAXIMUM");
             break;
         case KERNEL_MEAN:
             resolver->AddMean();
-            MicroPrintf("Registrado kernel: MEAN");
             break;
         case KERNEL_MINIMUM:
             resolver->AddMinimum();
-            MicroPrintf("Registrado kernel: MINIMUM");
             break;
         case KERNEL_MIRROR_PAD:
             resolver->AddMirrorPad();
-            MicroPrintf("Registrado kernel: MIRROR_PAD");
             break;
         case KERNEL_MUL:
             resolver->AddMul();
-            MicroPrintf("Registrado kernel: MUL");
             break;
         case KERNEL_NEG:
             resolver->AddNeg();
-            MicroPrintf("Registrado kernel: NEG");
             break;
         case KERNEL_NOT_EQUAL:
             resolver->AddNotEqual();
-            MicroPrintf("Registrado kernel: NOT_EQUAL");
             break;
         case KERNEL_PACK:
             resolver->AddPack();
-            MicroPrintf("Registrado kernel: PACK");
             break;
         case KERNEL_PAD:
             resolver->AddPad();
-            MicroPrintf("Registrado kernel: PAD");
             break;
         case KERNEL_PADV2:
             resolver->AddPadV2();
-            MicroPrintf("Registrado kernel: PADV2");
             break;
         case KERNEL_PRELU:
             resolver->AddPrelu();
-            MicroPrintf("Registrado kernel: PRELU");
             break;
         case KERNEL_QUANTIZE:
             resolver->AddQuantize();
-            MicroPrintf("Registrado kernel: QUANTIZE");
             break;
         case KERNEL_READ_VARIABLE:
             resolver->AddReadVariable();
-            MicroPrintf("Registrado kernel: READ_VARIABLE");
             break;
         case KERNEL_REDUCE_MAX:
             resolver->AddReduceMax();
-            MicroPrintf("Registrado kernel: REDUCE_MAX");
             break;
         case KERNEL_REDUCE_MIN:
             resolver->AddReduceMin();
-            MicroPrintf("Registrado kernel: REDUCE_MIN");
             break;
         case KERNEL_RELU:
             resolver->AddRelu();
-            MicroPrintf("Registrado kernel: RELU");
             break;
         case KERNEL_RELU6:
             resolver->AddRelu6();
-            MicroPrintf("Registrado kernel: RELU6");
             break;
         case KERNEL_RESHAPE:
             resolver->AddReshape();
-            MicroPrintf("Registrado kernel: RESHAPE");
             break;
         case KERNEL_RESIZE_BILINEAR:
             resolver->AddResizeBilinear();
-            MicroPrintf("Registrado kernel: RESIZE_BILINEAR");
             break;
         case KERNEL_RESIZE_NEAREST_NEIGHBOR:
             resolver->AddResizeNearestNeighbor();
-            MicroPrintf("Registrado kernel: RESIZE_NEAREST_NEIGHBOR");
             break;
         case KERNEL_REVERSE_V2:
             resolver->AddReverseV2();
-            MicroPrintf("Registrado kernel: REVERSE_V2");
             break;
         case KERNEL_ROUND:
             resolver->AddRound();
-            MicroPrintf("Registrado kernel: ROUND");
             break;
         case KERNEL_RSQRT:
             resolver->AddRsqrt();
-            MicroPrintf("Registrado kernel: RSQRT");
             break;
         case KERNEL_SELECT_V2:
             resolver->AddSelectV2();
-            MicroPrintf("Registrado kernel: SELECT_V2");
             break;
         case KERNEL_SHAPE:
             resolver->AddShape();
-            MicroPrintf("Registrado kernel: SHAPE");
             break;
         case KERNEL_SIN:
             resolver->AddSin();
-            MicroPrintf("Registrado kernel: SIN");
             break;
         case KERNEL_SLICE:
             resolver->AddSlice();
-            MicroPrintf("Registrado kernel: SLICE");
             break;
         case KERNEL_SOFTMAX:
             resolver->AddSoftmax();
-            MicroPrintf("Registrado kernel: SOFTMAX");
             break;
         case KERNEL_SPACE_TO_BATCH_ND:
             resolver->AddSpaceToBatchNd();
-            MicroPrintf("Registrado kernel: SPACE_TO_BATCH_ND");
             break;
         case KERNEL_SPACE_TO_DEPTH:
             resolver->AddSpaceToDepth();
-            MicroPrintf("Registrado kernel: SPACE_TO_DEPTH");
             break;
         case KERNEL_SPLIT:
             resolver->AddSplit();
-            MicroPrintf("Registrado kernel: SPLIT");
             break;
         case KERNEL_SPLIT_V:
             resolver->AddSplitV();
-            MicroPrintf("Registrado kernel: SPLIT_V");
             break;
         case KERNEL_SQRT:
             resolver->AddSqrt();
-            MicroPrintf("Registrado kernel: SQRT");
             break;
         case KERNEL_SQUARE:
             resolver->AddSquare();
-            MicroPrintf("Registrado kernel: SQUARE");
             break;
         case KERNEL_SQUARED_DIFFERENCE:
             resolver->AddSquaredDifference();
-            MicroPrintf("Registrado kernel: SQUARED_DIFFERENCE");
             break;
         case KERNEL_SQUEEZE:
             resolver->AddSqueeze();
-            MicroPrintf("Registrado kernel: SQUEEZE");
             break;
         case KERNEL_STRIDED_SLICE:
             resolver->AddStridedSlice();
-            MicroPrintf("Registrado kernel: STRIDED_SLICE");
             break;
         case KERNEL_SUB:
             resolver->AddSub();
-            MicroPrintf("Registrado kernel: SUB");
             break;
         case KERNEL_SUM:
             resolver->AddSum();
-            MicroPrintf("Registrado kernel: SUM");
             break;
         case KERNEL_SVDF:
             resolver->AddSvdf();
-            MicroPrintf("Registrado kernel: SVDF");
             break;
         case KERNEL_TANH:
             resolver->AddTanh();
-            MicroPrintf("Registrado kernel: TANH");
             break;
         case KERNEL_TRANSPOSE:
             resolver->AddTranspose();
-            MicroPrintf("Registrado kernel: TRANSPOSE");
             break;
         case KERNEL_TRANSPOSE_CONV:
             resolver->AddTransposeConv();
-            MicroPrintf("Registrado kernel: TRANSPOSE_CONV");
             break;
         case KERNEL_UNIDIRECTIONAL_SEQUENCE_LSTM:
             resolver->AddUnidirectionalSequenceLSTM();
-            MicroPrintf("Registrado kernel: UNIDIRECTIONAL_SEQUENCE_LSTM");
             break;
         case KERNEL_UNPACK:
             resolver->AddUnpack();
-            MicroPrintf("Registrado kernel: UNPACK");
             break;
         case KERNEL_VAR_HANDLE:
             resolver->AddVarHandle();
-            MicroPrintf("Registrado kernel: VAR_HANDLE");
             break;
         case KERNEL_WHILE:
             resolver->AddWhile();
-            MicroPrintf("Registrado kernel: WHILE");
             break;
         case KERNEL_ZEROS_LIKE:
             resolver->AddZerosLike();
-            MicroPrintf("Registrado kernel: ZEROS_LIKE");
             break;
         default:
-            MicroPrintf("Kernel type não suportado: %d", kernel_type);
+            MicroPrintf("AVISO: Tipo de kernel não mapeado: %d", kernel_type);
             break;
     }
 }
@@ -766,156 +526,697 @@ KernelType MapBuiltinOperatorToKernelType(tflite::BuiltinOperator builtin_op) {
         case tflite::BuiltinOperator_ZEROS_LIKE: return KERNEL_ZEROS_LIKE;
         
         default:
-            MicroPrintf("Operação não mapeada: %d", builtin_op);
+            MicroPrintf("OPERAÇÃO NÃO MAPEADA: %d (%s)", builtin_op, tflite::EnumNameBuiltinOperator(builtin_op));
             return KERNEL_CONV_2D; // Fallback
     }
 }
 
-// Função para analisar modelo e descobrir kernels necessários
-size_t AnalyzeModelKernels(const uint8_t* model_data, uint8_t* required_kernels, size_t max_kernels) {
+uintptr_t InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, const uint8_t* required_kernels, int, int tensor_arena_size, int8_t num_kernels) {
+    MicroPrintf("=== InitializeInterpreter ===");
+    
     const tflite::Model* model = tflite::GetModel(model_data);
     if (model->version() != TFLITE_SCHEMA_VERSION) {
-        MicroPrintf("Erro: Schema do modelo incompatível!");
+        MicroPrintf("ERRO: Schema incompatível! Versão: %d, Esperada: %d", 
+                   model->version(), TFLITE_SCHEMA_VERSION);
         return 0;
     }
 
-    const tflite::SubGraph* subgraph = model->subgraphs()->Get(0);
-    const auto* opcodes = model->operator_codes();
-    
-    // Array para evitar duplicatas
-    bool found_kernels[100] = {false}; // Assumindo max 100 tipos de kernel
-    size_t kernel_count = 0;
-
-    MicroPrintf("Analisando kernels necessários no modelo...");
-
-    // Percorre todas as operações no modelo
-    for (size_t i = 0; i < subgraph->operators()->size(); ++i) {
-        const tflite::Operator* op = subgraph->operators()->Get(i);
-        const uint32_t opcode_index = op->opcode_index();
-        const tflite::OperatorCode* opcode = opcodes->Get(opcode_index);
-        const tflite::BuiltinOperator builtin_code = opcode->builtin_code();
-        
-        KernelType kernel_type = MapBuiltinOperatorToKernelType(builtin_code);
-        
-        // Evita duplicatas
-        if (!found_kernels[kernel_type] && kernel_count < max_kernels) {
-        required_kernels[kernel_count] = static_cast<uint8_t>(kernel_type); // Converte para uint8_t
-        found_kernels[kernel_type] = true;
-        kernel_count++;
-            MicroPrintf("  + Kernel encontrado: %s", tflite::EnumNameBuiltinOperator(builtin_code));
-        }
-    }
-
-    MicroPrintf("Total de kernels únicos necessários: %zu", kernel_count);
-    return kernel_count;
-}
-
-// Função melhorada de inicialização automática
-uintptr_t InitializeInterpreterAuto(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, int, int) {
-    MicroPrintf("=== Iniciando InitializeInterpreterAuto ===");
-    
-    if (model_data == nullptr) {
-        MicroPrintf("Erro: model_data é nulo");
-        return 0;
-    }
-    
-    if (tensor_arena == nullptr) {
-        MicroPrintf("Erro: tensor_arena é nulo");
-        return 0;
-    }
-    
-    MicroPrintf("Verificando modelo...");
-    const tflite::Model* model = tflite::GetModel(model_data);
-    if (model->version() != TFLITE_SCHEMA_VERSION) {
-        MicroPrintf("Model schema version mismatch!");
-        return 0;
-    }
-
-    // Primeiro, analisa o modelo para descobrir kernels necessários
-    MicroPrintf("Analisando kernels do modelo...");
-    uint8_t required_kernels[50];
-    size_t num_kernels = AnalyzeModelKernels(model_data, required_kernels, 50);
-    
-    if (num_kernels == 0) {
-        MicroPrintf("Erro: Nenhum kernel válido encontrado no modelo!");
-        return 0;
-    }
-
-    // Agora inicializa com os kernels descobertos
-    MicroPrintf("Criando instance...");
     TFLM_Instance* instance = new TFLM_Instance();
-    if (instance == nullptr) {
-        MicroPrintf("Erro: Falha ao alocar memória para instance");
-        return 0;
-    }
-    
-    MicroPrintf("Criando resolver...");
     instance->resolver = new MutableResolver();
-    if (instance->resolver == nullptr) {
-        MicroPrintf("Erro: Falha ao alocar memória para resolver");
-        delete instance;
-        return 0;
-    }
 
-    // Registra apenas os kernels necessários
-    MicroPrintf("Registrando %zu kernels descobertos automaticamente:", num_kernels);
-    for (size_t i = 0; i < num_kernels; ++i) {
+    // Registrar kernels convertendo uint8_t para KernelType
+    MicroPrintf("Registrando %d kernels necessários.", num_kernels);
+    for (int i = 0; i < num_kernels; ++i) {
         KernelType kernel_type = static_cast<KernelType>(required_kernels[i]);
+        MicroPrintf("  Kernel[%d]: %d -> %s", i, required_kernels[i], 
+                   (kernel_type == KERNEL_FULLY_CONNECTED) ? "FULLY_CONNECTED" : "OUTRO");
         RegisterOp(instance->resolver, kernel_type);
     }
     
-    MicroPrintf("Criando MicroInterpreter...");
-    instance->interpreter = new tflite::MicroInterpreter(model, *(instance->resolver), tensor_arena, tensor_arena_size);
-    if (instance->interpreter == nullptr) {
-        MicroPrintf("Erro: Falha ao alocar memória para interpreter");
+    // Usar RecordingMicroInterpreter para melhor compatibilidade
+    instance->allocator = tflite::RecordingMicroAllocator::Create(tensor_arena, tensor_arena_size);
+    if (!instance->allocator) {
+        MicroPrintf("ERRO: Falha ao criar RecordingMicroAllocator");
         delete instance->resolver;
         delete instance;
         return 0;
     }
+    
+    instance->interpreter = new tflite::RecordingMicroInterpreter(
+        model, *(instance->resolver), instance->allocator, nullptr);
 
-    MicroPrintf("Alocando tensors...");
-    if (instance->interpreter->AllocateTensors() != kTfLiteOk) {
-        MicroPrintf("Failed to allocate tensors!");
+    MicroPrintf("=== VERIFICAÇÃO PRE-ALOCAÇÃO ===");
+    MicroPrintf("Arena utilizada antes: %zu bytes", instance->interpreter->arena_used_bytes());
+    
+    TfLiteStatus allocate_status = instance->interpreter->AllocateTensors();
+    MicroPrintf("AllocateTensors status: %d (kTfLiteOk=0)", allocate_status);
+    MicroPrintf("Arena utilizada após: %zu bytes", instance->interpreter->arena_used_bytes());
+    
+    if (allocate_status != kTfLiteOk) {
+        MicroPrintf("ERRO: AllocateTensors falhou! Status: %d", allocate_status);
+        MicroPrintf("Arena: %d bytes, usada: %zu bytes", tensor_arena_size, instance->interpreter->arena_used_bytes());
         delete instance->interpreter;
         delete instance->resolver;
         delete instance;
         return 0;
     }
 
-    MicroPrintf("Verificando número de inputs/outputs...");
-    MicroPrintf("Número de inputs: %zu", instance->interpreter->inputs_size());
-    MicroPrintf("Número de outputs: %zu", instance->interpreter->outputs_size());
+    // Debug: Print tensor information (como no exemplo oficial)
+    MicroPrintf("=== TENSOR DEBUG ===");
+    for (size_t i = 0; i < instance->interpreter->inputs_size(); ++i) {
+        TfLiteTensor* input_tensor = instance->interpreter->input(i);
+        MicroPrintf("Input tensor[%zu]: type=%d, bytes=%zu, data=%p, allocation_type=%d", 
+                   i, input_tensor->type, input_tensor->bytes, input_tensor->data.data, input_tensor->allocation_type);
+    }
+    for (size_t i = 0; i < instance->interpreter->outputs_size(); ++i) {
+        TfLiteTensor* output_tensor = instance->interpreter->output(i);
+        MicroPrintf("Output tensor[%zu]: type=%d, bytes=%zu, data=%p, allocation_type=%d", 
+                   i, output_tensor->type, output_tensor->bytes, output_tensor->data.data, output_tensor->allocation_type);
+    }
+    MicroPrintf("Arena used: %zu bytes", instance->interpreter->arena_used_bytes());
+
+    // Verificar se os tensores foram alocados corretamente
+    bool all_tensors_valid = true;
     
-    uintptr_t handle = reinterpret_cast<uintptr_t>(instance);
-    MicroPrintf("Interpreter initialized automatically with %zu kernels. Handle: %p", num_kernels, (void*)handle);
-    return handle;
-}
-
-// Função de benchmark otimizada
-uintptr_t RunBenchmarkOptimized(const uint8_t* model_data, uint8_t* tensor_arena, size_t tensor_arena_size, int num_invocations, int, int) {
-    MicroPrintf("--- Iniciando Benchmark Otimizado ---");
-
-    // Usar inicialização automática
-    uintptr_t interpreter_handle = InitializeInterpreterAuto(model_data, tensor_arena, tensor_arena_size, 0, 0);
-    if (interpreter_handle == 0) {
-        MicroPrintf("Erro: Falha na inicialização automática do interpretador.");
+    for (size_t i = 0; i < instance->interpreter->inputs_size(); ++i) {
+        TfLiteTensor* tensor = instance->interpreter->input(i);
+        if (!tensor || (tensor->bytes > 0 && !tensor->data.data) || tensor->type == kTfLiteNoType) {
+            MicroPrintf("ERRO: Input tensor[%zu] inválido - type=%d, bytes=%zu, data=%p", 
+                       i, tensor ? tensor->type : -1, tensor ? tensor->bytes : 0, tensor ? tensor->data.data : nullptr);
+            all_tensors_valid = false;
+        }
+    }
+    
+    for (size_t i = 0; i < instance->interpreter->outputs_size(); ++i) {
+        TfLiteTensor* tensor = const_cast<TfLiteTensor*>(instance->interpreter->output(i));
+        if (!tensor || (tensor->bytes > 0 && !tensor->data.data) || tensor->type == kTfLiteNoType) {
+            MicroPrintf("ERRO: Output tensor[%zu] inválido - type=%d, bytes=%zu, data=%p", 
+                       i, tensor ? tensor->type : -1, tensor ? tensor->bytes : 0, tensor ? tensor->data.data : nullptr);
+            all_tensors_valid = false;
+        }
+    }
+    
+    if (!all_tensors_valid) {
+        MicroPrintf("ERRO CRÍTICO: Um ou mais tensores não foram alocados corretamente!");
+        MicroPrintf("Isso pode indicar:");
+        MicroPrintf("  1. Arena muito pequena (atual: %d bytes, usada: %zu bytes)", tensor_arena_size, instance->interpreter->arena_used_bytes());
+        MicroPrintf("  2. Modelo incompatível com esta versão do TensorFlow Lite Micro");
+        MicroPrintf("  3. Kernels necessários não registrados");
+        MicroPrintf("Sugere-se aumentar o tamanho da arena ou verificar compatibilidade do modelo.");
+        delete instance->interpreter;
+        delete instance->resolver;
+        delete instance;
         return 0;
     }
 
-    MicroPrintf("Executando %d invocações de benchmark...", num_invocations);
-
-    // Executa benchmark
-    for (int i = 0; i < num_invocations; ++i) {
-        InvokeInterpreter(interpreter_handle, 0);
-        if (i % 10 == 0) { // Log a cada 10 invocações
-            MicroPrintf("  - Progresso: %d/%d", i + 1, num_invocations);
-        }
-    }
-
-    // Cleanup
-    DestroyInterpreter(interpreter_handle, 0);
-    MicroPrintf("Benchmark otimizado concluído com sucesso!");
-    return 1; // Retorna 1 para sucesso
+    MicroPrintf("Interpreter initialized successfully.");
+    return reinterpret_cast<uintptr_t>(instance);
 }
 
-} // extern "C"// Teste de detecção de mudança
+void DestroyInterpreter(uintptr_t instance_handle, int) {
+    if (instance_handle == 0) return;
+
+    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
+    delete instance->interpreter;
+    delete instance->resolver; 
+    delete instance;
+    MicroPrintf("Interpreter destroyed successfully.");
+}
+
+uintptr_t GetInputTensor(uintptr_t instance_handle, size_t index, int) {
+    if (instance_handle == 0) {
+        MicroPrintf("ERRO: instance_handle nulo");
+        return 0;
+    }
+    
+    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
+    if (instance == nullptr || instance->interpreter == nullptr) {
+        MicroPrintf("ERRO: instance ou interpreter nulo");
+        return 0;
+    }
+    
+    if (index >= instance->interpreter->inputs_size()) {
+        MicroPrintf("ERRO: índice %zu >= %zu", index, instance->interpreter->inputs_size());
+        return 0;
+    }
+    
+    TfLiteTensor* tensor = instance->interpreter->input(index);
+    if (tensor == nullptr) {
+        MicroPrintf("ERRO: tensor nulo");
+        return 0;
+    }
+    
+    if (tensor->bytes == 0) {
+        MicroPrintf("ERRO: tensor sem dados alocados");
+        return 0;
+    }
+    
+    return reinterpret_cast<uintptr_t>(tensor);
+}
+
+uintptr_t GetOutputTensor(uintptr_t instance_handle, size_t index, int) {
+    if (instance_handle == 0) {
+        MicroPrintf("ERRO: instance_handle nulo");
+        return 0;
+    }
+    
+    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
+    if (instance == nullptr || instance->interpreter == nullptr) {
+        MicroPrintf("ERRO: instance ou interpreter nulo");
+        return 0;
+    }
+    
+    if (index >= instance->interpreter->outputs_size()) {
+        MicroPrintf("ERRO: índice %zu fora dos limites", index);
+        return 0;
+    }
+    
+    TfLiteTensor* tensor = const_cast<TfLiteTensor*>(instance->interpreter->output(index));
+    if (tensor == nullptr) {
+        MicroPrintf("ERRO: tensor de saída nulo");
+        return 0;
+    }
+    
+    return reinterpret_cast<uintptr_t>(tensor);
+}
+
+void SetTensorValue(uintptr_t tensor_handle, size_t index, float value, int) {
+    if (tensor_handle == 0) {
+        MicroPrintf("ERRO: tensor_handle nulo");
+        return;
+    }
+    
+    TfLiteTensor* tensor = reinterpret_cast<TfLiteTensor*>(tensor_handle);
+    if (tensor == nullptr) {
+        MicroPrintf("ERRO: tensor nulo após cast");
+        return;
+    }
+    
+    // Verificar se o tensor está inicializado
+    if (tensor->bytes == 0) {
+        MicroPrintf("ERRO: tensor não inicializado");
+        return;
+    }
+    
+    if (tensor->type == kTfLiteNoType) {
+        MicroPrintf("AVISO: Tensor com tipo indefinido - isso pode indicar um problema no modelo");
+        MicroPrintf("ERRO: Impossível definir valor em tensor sem tipo definido");
+        return;
+    }
+
+    // Verificar limites do índice baseado no tipo
+    size_t element_count = 0;
+    size_t element_size = 0;
+    
+    switch(tensor->type) {
+        case 1: // kTfLiteFloat32
+            element_size = sizeof(float);
+            break;
+        case 9: // kTfLiteInt8  
+            element_size = sizeof(int8_t);
+            break;
+        case 8: // kTfLiteUInt8
+            element_size = sizeof(uint8_t);
+            break;
+        case 2: // kTfLiteInt32
+            element_size = sizeof(int32_t);
+            break;
+        case 7: // kTfLiteInt16
+            element_size = sizeof(int16_t);
+            break;
+        case 3: // kTfLiteInt64
+            element_size = sizeof(int64_t);
+            break;
+        default:
+            MicroPrintf("ERRO: Tipo de tensor não suportado: %d", tensor->type);
+            return;
+    }
+    
+    element_count = tensor->bytes / element_size;
+    
+    if (index >= element_count) {
+        MicroPrintf("ERRO: índice %zu >= %zu elementos", index, element_count);
+        return;
+    }
+    
+    // Processar baseado no tipo
+    switch(tensor->type) {
+        case 1: { // kTfLiteFloat32
+            if (tensor->data.f == nullptr) {
+                MicroPrintf("ERRO: tensor->data.f é NULL");
+                return;
+            }
+            tensor->data.f[index] = value;
+            MicroPrintf("Input[%zu] = %.6f", index, value);
+            break;
+        }
+        
+        case 2: { // kTfLiteInt32
+            if (tensor->data.i32 == nullptr) {
+                MicroPrintf("ERRO: tensor->data.i32 é NULL");
+                return;
+            }
+            int32_t int_value = (int32_t)value;
+            tensor->data.i32[index] = int_value;
+            MicroPrintf("Input[%zu] = %d", index, int_value);
+            break;
+        }
+        
+        case 9: { // kTfLiteInt8
+            if (tensor->data.int8 == nullptr) {
+                MicroPrintf("ERRO: tensor->data.int8 é NULL");
+                return;
+            }
+            
+            // Para tensores quantizados, usar os parâmetros de quantização do tensor
+            if (tensor->quantization.type == kTfLiteAffineQuantization) {
+                const TfLiteAffineQuantization* quant = 
+                    reinterpret_cast<const TfLiteAffineQuantization*>(tensor->quantization.params);
+                
+                if (quant && quant->scale && quant->zero_point && 
+                    quant->scale->size > 0 && quant->zero_point->size > 0) {
+                    
+                    // Usar os parâmetros reais do tensor
+                    float scale = quant->scale->data[0];
+                    int32_t zero_point = quant->zero_point->data[0];
+                    
+                    // Quantização: q = round(value/scale) + zero_point
+                    int32_t quantized = (int32_t)(value / scale + 0.5f) + zero_point;
+                    
+                    // Clamping para int8
+                    if (quantized > 127) quantized = 127;
+                    if (quantized < -128) quantized = -128;
+                    
+                    tensor->data.int8[index] = (int8_t)quantized;
+                    MicroPrintf("Input[%zu] = %.6f (quantized to %d)", index, value, (int8_t)quantized);
+                } else {
+                    int8_t int_value = (int8_t)value;
+                    if (int_value > 127) int_value = 127;
+                    if (int_value < -128) int_value = -128;
+                    tensor->data.int8[index] = int_value;
+                    MicroPrintf("Input[%zu] = %d", index, int_value);
+                }
+            } else {
+                int8_t int_value = (int8_t)value;
+                if (int_value > 127) int_value = 127;
+                if (int_value < -128) int_value = -128;
+                tensor->data.int8[index] = int_value;
+                MicroPrintf("Input[%zu] = %d", index, int_value);
+            }
+            break;
+        }
+        
+        case 8: { // kTfLiteUInt8
+            if (tensor->data.uint8 == nullptr) {
+                MicroPrintf("ERRO: tensor->data.uint8 é NULL");
+                return;
+            }
+            
+            // Similar ao int8, mas para uint8
+            if (tensor->quantization.type == kTfLiteAffineQuantization) {
+                const TfLiteAffineQuantization* quant = 
+                    reinterpret_cast<const TfLiteAffineQuantization*>(tensor->quantization.params);
+                
+                if (quant && quant->scale && quant->zero_point && 
+                    quant->scale->size > 0 && quant->zero_point->size > 0) {
+                    
+                    float scale = quant->scale->data[0];
+                    int32_t zero_point = quant->zero_point->data[0];
+                    
+                    int32_t quantized = (int32_t)(value / scale + 0.5f) + zero_point;
+                    
+                    // Clamping para uint8
+                    if (quantized > 255) quantized = 255;
+                    if (quantized < 0) quantized = 0;
+                    
+                    tensor->data.uint8[index] = (uint8_t)quantized;
+                    MicroPrintf("Input[%zu] = %.6f (quantized to %u)", index, value, (uint8_t)quantized);
+                } else {
+                    uint8_t uint_value = (uint8_t)value;
+                    if (value > 255.0f) uint_value = 255;
+                    if (value < 0.0f) uint_value = 0;
+                    tensor->data.uint8[index] = uint_value;
+                    MicroPrintf("Input[%zu] = %u", index, uint_value);
+                }
+            } else {
+                uint8_t uint_value = (uint8_t)value;
+                if (value > 255.0f) uint_value = 255;
+                if (value < 0.0f) uint_value = 0;
+                tensor->data.uint8[index] = uint_value;
+                MicroPrintf("Input[%zu] = %u", index, uint_value);
+            }
+            break;
+        }
+        
+        case 7: { // kTfLiteInt16
+            if (tensor->data.i16 == nullptr) {
+                MicroPrintf("ERRO: tensor->data.i16 é NULL");
+                return;
+            }
+            
+            // Similar para int16
+            if (tensor->quantization.type == kTfLiteAffineQuantization) {
+                const TfLiteAffineQuantization* quant = 
+                    reinterpret_cast<const TfLiteAffineQuantization*>(tensor->quantization.params);
+                
+                if (quant && quant->scale && quant->zero_point && 
+                    quant->scale->size > 0 && quant->zero_point->size > 0) {
+                    
+                    float scale = quant->scale->data[0];
+                    int32_t zero_point = quant->zero_point->data[0];
+                    
+                    int32_t quantized = (int32_t)(value / scale + 0.5f) + zero_point;
+                    
+                    // Clamping para int16
+                    if (quantized > 32767) quantized = 32767;
+                    if (quantized < -32768) quantized = -32768;
+                    
+                    tensor->data.i16[index] = (int16_t)quantized;
+                    MicroPrintf("Input[%zu] = %.6f (quantized to %d)", index, value, (int16_t)quantized);
+                } else {
+                    int16_t int_value = (int16_t)value;
+                    tensor->data.i16[index] = int_value;
+                    MicroPrintf("Input[%zu] = %d", index, int_value);
+                }
+            } else {
+                int16_t int_value = (int16_t)value;
+                tensor->data.i16[index] = int_value;
+                MicroPrintf("Input[%zu] = %d", index, int_value);
+            }
+            break;
+        }
+        
+        case 3: { // kTfLiteInt64
+            if (tensor->data.i64 == nullptr) {
+                MicroPrintf("ERRO: tensor->data.i64 é NULL");
+                return;
+            }
+            int64_t int_value = (int64_t)value;
+            tensor->data.i64[index] = int_value;
+            MicroPrintf("Input[%zu] = %lld", index, (long long)int_value);
+            break;
+        }
+        
+        default: {
+            MicroPrintf("ERRO: Tipo de tensor não implementado: %d", tensor->type);
+            break;
+        }
+    }
+}
+
+float GetTensorAsFloat(uintptr_t tensor_handle, size_t index, int) {
+    if (tensor_handle == 0) {
+        MicroPrintf("ERRO: tensor_handle nulo");
+        return 0.0f;
+    }
+    
+    const TfLiteTensor* tensor = reinterpret_cast<const TfLiteTensor*>(tensor_handle);
+    if (tensor == nullptr) {
+        MicroPrintf("ERRO: tensor nulo após cast");
+        return 0.0f;
+    }
+    
+    float result = 0.0f;
+    
+    // Processar baseado no tipo
+    switch(tensor->type) {
+        case 1: { // kTfLiteFloat32
+            if (tensor->data.f == nullptr) {
+                MicroPrintf("ERRO: tensor->data.f é NULL");
+                return 0.0f;
+            }
+            size_t tensor_size = tensor->bytes / sizeof(float);
+            if (index >= tensor_size) {
+                MicroPrintf("ERRO: índice %zu >= %zu", index, tensor_size);
+                return 0.0f;
+            }
+            result = tensor->data.f[index];
+            MicroPrintf("Output[%zu] = %.6f", index, result);
+            return result;
+        }
+        
+        case 2: { // kTfLiteInt32
+            if (tensor->data.i32 == nullptr) {
+                MicroPrintf("ERRO: tensor->data.i32 é NULL");
+                return 0.0f;
+            }
+            size_t tensor_size = tensor->bytes / sizeof(int32_t);
+            if (index >= tensor_size) {
+                MicroPrintf("ERRO: índice %zu >= %zu", index, tensor_size);
+                return 0.0f;
+            }
+            result = (float)tensor->data.i32[index];
+            MicroPrintf("Output[%zu] = %.6f (from int32: %d)", index, result, tensor->data.i32[index]);
+            return result;
+        }
+        
+        case 9: { // kTfLiteInt8
+            if (tensor->data.int8 == nullptr) {
+                MicroPrintf("ERRO: tensor->data.int8 é NULL");
+                return 0.0f;
+            }
+            
+            size_t element_size = sizeof(int8_t);
+            size_t tensor_size = tensor->bytes / element_size;
+            if (index >= tensor_size) {
+                MicroPrintf("ERRO: índice %zu >= %zu", index, tensor_size);
+                return 0.0f;
+            }
+            
+            int8_t quantized_value = tensor->data.int8[index];
+            
+            // Para tensores quantizados, aplicar dequantização
+            if (tensor->quantization.type == kTfLiteAffineQuantization) {
+                const TfLiteAffineQuantization* quant = 
+                    reinterpret_cast<const TfLiteAffineQuantization*>(tensor->quantization.params);
+                
+                if (quant && quant->scale && quant->zero_point && 
+                    quant->scale->size > 0 && quant->zero_point->size > 0) {
+                    
+                    float scale = quant->scale->data[0];
+                    int32_t zero_point = quant->zero_point->data[0];
+                    
+                    float dequantized = scale * (quantized_value - zero_point);
+                    MicroPrintf("Output[%zu] = %.6f (dequantized from %d)", index, dequantized, quantized_value);
+                    return dequantized;
+                } else {
+                    MicroPrintf("AVISO: Tensor int8 sem parâmetros de quantização válidos");
+                }
+            }
+            
+            result = (float)quantized_value;
+            MicroPrintf("Output[%zu] = %.6f (from int8: %d)", index, result, quantized_value);
+            return result;
+        }
+        
+        case 8: { // kTfLiteUInt8
+            if (tensor->data.uint8 == nullptr) {
+                MicroPrintf("ERRO: tensor->data.uint8 é NULL");
+                return 0.0f;
+            }
+            
+            size_t tensor_size = tensor->bytes / sizeof(uint8_t);
+            if (index >= tensor_size) {
+                MicroPrintf("ERRO: índice %zu >= %zu", index, tensor_size);
+                return 0.0f;
+            }
+            
+            uint8_t quantized_value = tensor->data.uint8[index];
+            
+            // Para tensores quantizados, aplicar dequantização
+            if (tensor->quantization.type == kTfLiteAffineQuantization) {
+                const TfLiteAffineQuantization* quant = 
+                    reinterpret_cast<const TfLiteAffineQuantization*>(tensor->quantization.params);
+                
+                if (quant && quant->scale && quant->zero_point && 
+                    quant->scale->size > 0 && quant->zero_point->size > 0) {
+                    
+                    float scale = quant->scale->data[0];
+                    int32_t zero_point = quant->zero_point->data[0];
+                    
+                    result = scale * (quantized_value - zero_point);
+                    MicroPrintf("Output[%zu] = %.6f (dequantized from %u)", index, result, quantized_value);
+                    return result;
+                }
+            }
+            
+            result = (float)quantized_value;
+            MicroPrintf("Output[%zu] = %.6f (from uint8: %u)", index, result, quantized_value);
+            return result;
+        }
+        
+        default: {
+            MicroPrintf("ERRO: Tipo não suportado: %d", tensor->type);
+            return 0.0f;
+        }
+    }
+}
+
+size_t GetTensorSize(uintptr_t tensor_handle, int) {
+    if (tensor_handle == 0) {
+        MicroPrintf("ERRO: tensor_handle nulo");
+        return 0;
+    }
+    
+    const TfLiteTensor* tensor = reinterpret_cast<const TfLiteTensor*>(tensor_handle);
+    if (tensor == nullptr) {
+        MicroPrintf("ERRO: tensor nulo após cast");
+        return 0;
+    }
+    
+    size_t element_size;
+
+    // Para tipo 0, assumir int32 como padrão
+    if (tensor->type == kTfLiteNoType) {
+        element_size = sizeof(int32_t);
+    } else {
+        // Calcula o número de elementos baseado no tipo
+        switch(tensor->type) {
+            case 1: // kTfLiteFloat32
+                element_size = sizeof(float);
+                break;
+            case 9: // kTfLiteInt8
+                element_size = sizeof(int8_t);
+                break;
+            case 8: // kTfLiteUInt8
+                element_size = sizeof(uint8_t);
+                break;
+            case 2: // kTfLiteInt32
+                element_size = sizeof(int32_t);
+                break;
+            case 7: // kTfLiteInt16
+                element_size = sizeof(int16_t);
+                break;
+            case 3: // kTfLiteInt64
+                element_size = sizeof(int64_t);
+                break;
+            default:
+                MicroPrintf("ERRO: Tipo de tensor não suportado: %d", tensor->type);
+                return 0;
+        }
+    }
+    
+    return tensor->bytes / element_size;
+}
+
+void InvokeInterpreter(uintptr_t instance_handle, int) {
+    if (instance_handle == 0) {
+        MicroPrintf("ERRO: instance_handle nulo");
+        return;
+    }
+    
+    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
+    if (instance == nullptr || instance->interpreter == nullptr) {
+        MicroPrintf("ERRO: instance ou interpreter nulo");
+        return;
+    }
+    
+    MicroPrintf("=== INICIANDO INFERÊNCIA ===");
+    TfLiteStatus status = instance->interpreter->Invoke();
+    
+    if (status != kTfLiteOk) {
+        MicroPrintf("ERRO na execução do interpreter: %d", status);
+    } else {
+        MicroPrintf("✓ Inferência executada com sucesso!");
+    }
+}
+
+// Função de diagnóstico detalhado
+void DiagnoseModel(const uint8_t* model_data, int) {
+    MicroPrintf("=== DIAGNÓSTICO COMPLETO DO MODELO ===");
+    
+    const tflite::Model* model = tflite::GetModel(model_data);
+    MicroPrintf("1. Model pointer: %p", model);
+    MicroPrintf("2. Model version: %d (esperado: %d)", model->version(), TFLITE_SCHEMA_VERSION);
+    
+    if (!model->subgraphs()) {
+        MicroPrintf("3. ERRO: Modelo sem subgrafos!");
+        return;
+    }
+    MicroPrintf("3. Subgrafos: %zu", model->subgraphs()->size());
+    
+    const tflite::SubGraph* subgraph = model->subgraphs()->Get(0);
+    if (!subgraph) {
+        MicroPrintf("4. ERRO: Subgrafo 0 é NULL!");
+        return;
+    }
+    
+    MicroPrintf("4. Subgrafo 0 válido");
+    MicroPrintf("5. Operadores: %zu", subgraph->operators() ? subgraph->operators()->size() : 0);
+    MicroPrintf("6. Tensores: %zu", subgraph->tensors() ? subgraph->tensors()->size() : 0);
+    MicroPrintf("7. Inputs: %zu", subgraph->inputs() ? subgraph->inputs()->size() : 0);
+    MicroPrintf("8. Outputs: %zu", subgraph->outputs() ? subgraph->outputs()->size() : 0);
+    
+    // Analisar operadores
+    if (subgraph->operators()) {
+        for (size_t i = 0; i < subgraph->operators()->size(); ++i) {
+            const tflite::Operator* op = subgraph->operators()->Get(i);
+            if (!op) continue;
+            
+            uint32_t opcode_index = op->opcode_index();
+            MicroPrintf("   Op[%zu]: opcode_index=%u", i, opcode_index);
+        }
+    }
+    
+    // Analisar opcodes
+    const auto* opcodes = model->operator_codes();
+    if (!opcodes) {
+        MicroPrintf("9. ERRO: Modelo sem opcodes!");
+        return;
+    }
+    MicroPrintf("9. Opcodes: %zu", opcodes->size());
+    
+    for (size_t i = 0; i < opcodes->size(); ++i) {
+        const tflite::OperatorCode* opcode = opcodes->Get(i);
+        if (!opcode) continue;
+        
+        tflite::BuiltinOperator builtin_code = opcode->builtin_code();
+        int32_t deprecated_code = opcode->deprecated_builtin_code();
+        
+        MicroPrintf("   Opcode[%zu]: builtin=%d, deprecated=%d, name=%s", 
+                   i, builtin_code, deprecated_code, 
+                   tflite::EnumNameBuiltinOperator(builtin_code));
+    }
+    
+    // Analisar tensores de input/output
+    if (subgraph->tensors()) {
+        for (size_t i = 0; i < subgraph->tensors()->size(); ++i) {
+            const tflite::Tensor* tensor = subgraph->tensors()->Get(i);
+            if (!tensor) continue;
+            
+            MicroPrintf("   Tensor[%zu]: type=%d", i, tensor->type());
+        }
+    }
+}
+
+// Função para verificar integridade do modelo
+void VerifyModelData(const uint8_t* model_data, int) {
+    MicroPrintf("=== VERIFICAÇÃO DE INTEGRIDADE DO MODELO ===");
+    
+    // Verificar magic number do TensorFlow Lite
+    if (model_data[0] == 0x1c && model_data[1] == 0x0 && 
+        model_data[2] == 0x0 && model_data[3] == 0x0 &&
+        model_data[4] == 0x54 && model_data[5] == 0x46 &&
+        model_data[6] == 0x4c && model_data[7] == 0x33) {
+        MicroPrintf("✓ Magic number correto: TFL3");
+    } else {
+        MicroPrintf("✗ Magic number incorreto!");
+        MicroPrintf("  Primeiros 8 bytes: %02x %02x %02x %02x %02x %02x %02x %02x",
+                   model_data[0], model_data[1], model_data[2], model_data[3],
+                   model_data[4], model_data[5], model_data[6], model_data[7]);
+    }
+    
+    // Verificar ponteiro
+    MicroPrintf("Ponteiro do modelo: %p", model_data);
+    
+    // Verificar se tflite::GetModel consegue parsear
+    const tflite::Model* model = tflite::GetModel(model_data);
+    if (model) {
+        MicroPrintf("✓ tflite::GetModel() funcionou");
+        MicroPrintf("✓ Versão do modelo: %d", model->version());
+    } else {
+        MicroPrintf("✗ tflite::GetModel() retornou NULL!");
+    }
+}
+
+} // extern "C"

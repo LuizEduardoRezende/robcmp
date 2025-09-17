@@ -1,6 +1,4 @@
-use ai.tflm;
-
-hello_world_model_data = {
+unsigned char hello_world_int8_tflite[] = {
   0x28, 0x00, 0x00, 0x00, 0x54, 0x46, 0x4c, 0x33, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x00, 0x20, 0x00,
   0x04, 0x00, 0x08, 0x00, 0x0c, 0x00, 0x10, 0x00, 0x14, 0x00, 0x00, 0x00,
@@ -228,90 +226,4 @@ hello_world_model_data = {
   0x0c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0x04, 0x00, 0x00, 0x00,
   0x09, 0x00, 0x00, 0x00
 };
-
-// Arena de memória para tensores (16KB para garantir espaço suficiente)
-tensor_arena = {0u:16384};
-
-// Kernels necessários para o modelo Hello World (FULLY_CONNECTED)
-required_kernels = {33}; // KERNEL_FULLY_CONNECTED
-
-int8 test_hello_world_basic(){
-    // Teste com modelo Hello World usando auto-detecção de kernels
-    interpreter_handle = InitializeInterpreterAuto(hello_world_model_data, tensor_arena, 16384);
-    
-    if(interpreter_handle == 0) {
-        return -1; // Falha na inicialização
-    }
-    
-    // Obter tensor de entrada
-    input_tensor = GetInputTensor(interpreter_handle, 0);
-    if(input_tensor == 0) {
-        DestroyInterpreter(interpreter_handle);
-        return -2; // Falha ao obter tensor de entrada
-    }
-    
-    // Obter tensor de saída  
-    output_tensor = GetOutputTensor(interpreter_handle, 0);
-    if(output_tensor == 0) {
-        DestroyInterpreter(interpreter_handle);
-        return -3; // Falha ao obter tensor de saída
-    }
-    
-    // Executar inferência
-    InvokeInterpreter(interpreter_handle);
-    
-    // Limpeza
-    DestroyInterpreter(interpreter_handle);
-    
-    return 1; // Sucesso
-}
-
-int8 test_hello_world_with_kernels(){
-    // Teste com modelo Hello World especificando kernels manualmente
-    interpreter_handle = InitializeInterpreter(hello_world_model_data, tensor_arena, 16384, required_kernels);
-    
-    if(interpreter_handle == 0) {
-        return -1; // Falha na inicialização
-    }
-    
-    // Executar inferência simples
-    InvokeInterpreter(interpreter_handle);
-    
-    // Limpeza
-    DestroyInterpreter(interpreter_handle);
-    
-    return 1; // Sucesso
-}
-
-int8 test_hello_world_benchmark(){
-    // Teste de benchmark com modelo Hello World
-    benchmark_result = RunBenchmarkOptimized(hello_world_model_data, tensor_arena, 16384, 5);
-    
-    if(benchmark_result == 0) {
-        return -1; // Falha no benchmark
-    }
-    
-    return 1; // Sucesso
-}
-
-int8 main(){
-    // Teste 1: Inicialização automática com Hello World
-    result = test_hello_world_basic();
-    if(result != 1) {
-        return result; // Código de erro: -1, -2, -3
-    }
-    
-    // Teste 2: Inicialização manual com kernels específicos
-    result = test_hello_world_with_kernels();
-    if(result != 1) {
-        return result + 10; // Código de erro: 9, 8, 7
-    }
-    
-    // Teste 3: Benchmark
-    result = test_hello_world_benchmark();
-    if(result != 1) {
-        return result + 20; // Código de erro: 19
-    }
-    
-    return 0; // Todos os testes passaram com sucesso!
-}
+unsigned int hello_world_int8_tflite_len = 2704;

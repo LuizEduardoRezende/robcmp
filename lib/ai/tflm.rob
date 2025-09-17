@@ -106,25 +106,32 @@ enum KERNELS{
 
 
 // Inicialização com kernels específicos
-uint64 InitializeInterpreter(uint8[] model_data, uint8[] tensor_arena, uint32 tensor_arena_size, uint8[] required_kernels);
+uint64 InitializeInterpreter(uint8[] model_data, uint8[] tensor_arena, uint8[] required_kernels);
 
 // Inicialização com detecção automática de kernels
-uint64 InitializeInterpreterAuto(uint8[] model_data, uint8[] tensor_arena, uint32 tensor_arena_size);
+uint64 InitializeInterpreterAuto(uint8[] model_data, uint8[] tensor_arena);
 
 // Destruição e limpeza
 void DestroyInterpreter(uint64 instance_handle);
 
 // Acesso aos tensores
-uint64 GetInputTensor(uint64 instance_handle, uint32 index);
-uint64 GetOutputTensor(uint64 instance_handle, uint32 index);
+uint64 GetInputTensor(uint64 instance_handle, uint64 index);
+uint64 GetOutputTensor(uint64 instance_handle, uint64 index);
+
+// Manipulação de dados dos tensores
+void SetTensorValue(uint64 tensor_handle, uint64 index, float value);
+float GetTensorAsFloat(uint64 tensor_handle, uint64 index);
+uint64 GetTensorSize(uint64 tensor_handle);
 
 // Execução de inferência
 void InvokeInterpreter(uint64 instance_handle);
 
-/* Funções de análise e benchmark */
+// Funções de Análise de modelo
+void DiagnoseModel(uint8[] model_data);
+void VerifyModelData(uint8[] model_data);
 
 // Executa benchmark otimizado
-uint64 RunBenchmarkOptimized(uint8[] model_data, uint8[] tensor_arena, uint32 tensor_arena_size, uint32 num_invocations);
+uint64 RunBenchmarkOptimized(uint8[] model_data, uint8[] tensor_arena, uint32 num_invocations);
 
 int8 main(){
     return 0;
