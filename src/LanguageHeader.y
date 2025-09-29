@@ -37,6 +37,8 @@
 
 %token TOK_INLINE TOK_NOINLINE TOK_WEAK TOK_SECTION TOK_NAKED TOK_SIGNAL TOK_DEBUGONLY TOK_NOOPT
 
+%token TOK_MODEL
+
 %union {
 	char *ident;
 	char *str;

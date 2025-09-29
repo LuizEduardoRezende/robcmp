@@ -20,6 +20,8 @@
 %type <node> bind asminline
 %type <strings> type_impls
 
+%type <node> model_stmt 
+
 %type <ae> element
 %type <aes> elements relements array
 %type <me> melement
@@ -346,6 +348,7 @@ stmt : ident_or_xident '+' '+' ';'					{ $$ = new Scalar($1, new BinaryOp(new Lo
 	 | condblock
 	 | whileblock
 	 | interface_impl
+	 | model_stmt
 
 complexvar_set : TOK_XIDENTIFIER[id] '=' logicexpr	{ $$ = new Scalar($id, $logicexpr);	$$->setLocation(@id); }
 complexvar_set : TOK_XIDENTIFIER[id] '=' array		{ $$ = new Array($id, $array, @id); }
@@ -493,5 +496,9 @@ paramscall : logicexpr {
 }
 
 paramscall : %empty { $$ = new ParamsCall(); }
+
+model_stmt : TOK_MODEL TOK_IDENTIFIER '(' paramscall ')' ';' {
+    $$ = NULL;
+}
 
 %%
