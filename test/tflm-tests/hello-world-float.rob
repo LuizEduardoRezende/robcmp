@@ -5,7 +5,7 @@ hello_model_float_data = {0x1c,0x0,0x0,0x0,0x54,0x46,0x4c,0x33,0x14,0x0,0x20,0x0
 // Arena de memória para tensores
 tensor_arena = {0u:65536};
 
-required_kernels = {33};
+required_kernels = {9};
 
 int8 test_hello_world_with_kernels(){
     // Teste com modelo Hello World especificando kernels manualmente

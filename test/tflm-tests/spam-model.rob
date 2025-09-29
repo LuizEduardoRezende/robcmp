@@ -7,8 +7,8 @@ spam_model_data_size = 83304;
 // Arena de memória para tensores (16KB para garantir espaço suficiente)
 tensor_arena = {0u:4096};
 
-// Kernels necessários para o modelo Spam 
-required_kernels = {34, 53, 33, 67, 79};
+// Kernels necessários para o modelo Spam, Gather, Mean, FullyConnected e Softmax
+required_kernels = {36, 40, 9, 25};
 
 
 int8 test_spam_with_kernels(){
@@ -32,8 +32,6 @@ int8 test_spam_with_kernels(){
         DestroyInterpreter(interpreter_handle);
         return -3; // Falha ao obter tensor de saída
     }
-
-    dados = {2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
     // --- DADOS DE TESTE ---
     // "This is a great article thank you for the information"

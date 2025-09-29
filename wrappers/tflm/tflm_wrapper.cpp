@@ -13,110 +13,218 @@ extern "C" {
 
 using MutableResolver = tflite::MicroMutableOpResolver<100>;
 
-// Enumeração para tipos de kernel suportados
+// Enumeração para tipos de kernel possíveis de um modelo
 typedef enum {
-    KERNEL_ABS = 0,
-    KERNEL_ADD = 1,
-    KERNEL_ADD_N = 2,
-    KERNEL_ARG_MAX = 3,
-    KERNEL_ARG_MIN = 4,
-    KERNEL_ASSIGN_VARIABLE = 5,
-    KERNEL_AVERAGE_POOL_2D = 6,
-    KERNEL_BATCH_MATMUL = 7,
-    KERNEL_BATCH_TO_SPACE_ND = 8,
-    KERNEL_BROADCAST_ARGS = 9,
-    KERNEL_BROADCAST_TO = 10,
-    KERNEL_CALL_ONCE = 11,
-    KERNEL_CAST = 12,
-    KERNEL_CEIL = 13,
-    // TODO(b/160234179): Change custom OPs to also return by value.
-    KERNEL_CIRCULAR_BUFFER = 14,
-    KERNEL_CONCATENATION = 15,
-    KERNEL_CONV_2D = 16,
-    KERNEL_COS = 17,
-    KERNEL_CUMSUM = 18,
-    KERNEL_DEPTH_TO_SPACE = 19,
-    KERNEL_DEPTHWISE_CONV_2D = 20,
-    KERNEL_DEQUANTIZE = 21,
-    KERNEL_DIV = 22,
-    KERNEL_ELU = 23,
-    KERNEL_EMBEDDING_LOOKUP = 24,
-    KERNEL_EQUAL = 25,
-    KERNEL_ETHOSU = 26,
-    KERNEL_EXP = 27,
-    KERNEL_EXPAND_DIMS = 28,
-    KERNEL_FILL = 29,
-    KERNEL_FLOOR = 30,
-    KERNEL_FLOOR_DIV = 31,
-    KERNEL_FLOOR_MOD = 32,
-    KERNEL_FULLY_CONNECTED = 33,
-    KERNEL_GATHER = 34,
-    KERNEL_GATHER_ND = 35,
-    KERNEL_GREATER = 36,
-    KERNEL_GREATER_EQUAL = 37,
-    KERNEL_HARD_SWISH = 38,
-    KERNEL_IF = 39,
-    KERNEL_L2_NORMALIZATION = 40,
-    KERNEL_L2_POOL_2D = 41,
-    KERNEL_LEAKY_RELU = 42,
-    KERNEL_LESS = 43,
-    KERNEL_LESS_EQUAL = 44,
-    KERNEL_LOG = 45,
-    KERNEL_LOG_SOFTMAX = 46,
-    KERNEL_LOGICAL_AND = 47,
-    KERNEL_LOGICAL_NOT = 48,
-    KERNEL_LOGICAL_OR = 49,
-    KERNEL_LOGISTIC = 50,
-    KERNEL_MAX_POOL_2D = 51,
-    KERNEL_MAXIMUM = 52,
-    KERNEL_MEAN = 53,
-    KERNEL_MINIMUM = 54,
-    KERNEL_MIRROR_PAD = 55,
-    KERNEL_MUL = 56,
-    KERNEL_NEG = 57,
-    KERNEL_NOT_EQUAL = 58,
-    KERNEL_PACK = 59,
-    KERNEL_PAD = 60,
-    KERNEL_PADV2 = 61,
-    KERNEL_PRELU = 62,
-    KERNEL_QUANTIZE = 63,
-    KERNEL_READ_VARIABLE = 64,
-    KERNEL_REDUCE_MAX = 65,
-    KERNEL_REDUCE_MIN = 66,
-    KERNEL_RELU = 67,
-    KERNEL_RELU6 = 68,
-    KERNEL_RESHAPE = 69,
-    KERNEL_RESIZE_BILINEAR = 70,
-    KERNEL_RESIZE_NEAREST_NEIGHBOR = 71,
-    KERNEL_REVERSE_V2 = 72,
-    KERNEL_ROUND = 73,
-    KERNEL_RSQRT = 74,
-    KERNEL_SELECT_V2 = 75,
-    KERNEL_SHAPE = 76,
-    KERNEL_SIN = 77,
-    KERNEL_SLICE = 78,
-    KERNEL_SOFTMAX = 79,
-    KERNEL_SPACE_TO_BATCH_ND = 80,
-    KERNEL_SPACE_TO_DEPTH = 81,
-    KERNEL_SPLIT = 82,
-    KERNEL_SPLIT_V = 83,
-    KERNEL_SQRT = 84,
-    KERNEL_SQUARE = 85,
-    KERNEL_SQUARED_DIFFERENCE = 86,
-    KERNEL_SQUEEZE = 87,
-    KERNEL_STRIDED_SLICE = 88,
-    KERNEL_SUB = 89,
-    KERNEL_SUM = 90,
-    KERNEL_SVDF = 91,
-    KERNEL_TANH = 92,
-    KERNEL_TRANSPOSE = 93,
-    KERNEL_TRANSPOSE_CONV = 94,
-    // TODO(b/230666079): resolve conflict with xtensa implementation
-    KERNEL_UNIDIRECTIONAL_SEQUENCE_LSTM = 95,
-    KERNEL_UNPACK = 96,
-    KERNEL_VAR_HANDLE = 97,
-    KERNEL_WHILE = 98,
-    KERNEL_ZEROS_LIKE = 99
+  ADD = 0,
+  AVERAGE_POOL_2D = 1,
+  CONCATENATION = 2,
+  CONV_2D = 3,
+  DEPTHWISE_CONV_2D = 4,
+  DEPTH_TO_SPACE = 5,
+  DEQUANTIZE = 6,
+  EMBEDDING_LOOKUP = 7,
+  FLOOR = 8,
+  FULLY_CONNECTED = 9,
+  HASHTABLE_LOOKUP = 10,
+  L2_NORMALIZATION = 11,
+  L2_POOL_2D = 12,
+  LOCAL_RESPONSE_NORMALIZATION = 13,
+  LOGISTIC = 14,
+  LSH_PROJECTION = 15,
+  LSTM = 16,
+  MAX_POOL_2D = 17,
+  MUL = 18,
+  RELU = 19,
+  RELU_N1_TO_1 = 20,
+  RELU6 = 21,
+  RESHAPE = 22,
+  RESIZE_BILINEAR = 23,
+  RNN = 24,
+  SOFTMAX = 25,
+  SPACE_TO_DEPTH = 26,
+  SVDF = 27,
+  TANH = 28,
+  CONCAT_EMBEDDINGS = 29,
+  SKIP_GRAM = 30,
+  CALL = 31,
+  CUSTOM = 32,
+  EMBEDDING_LOOKUP_SPARSE = 33,
+  PAD = 34,
+  UNIDIRECTIONAL_SEQUENCE_RNN = 35,
+  GATHER = 36,
+  BATCH_TO_SPACE_ND = 37,
+  SPACE_TO_BATCH_ND = 38,
+  TRANSPOSE = 39,
+  MEAN = 40,
+  SUB = 41,
+  DIV = 42,
+  SQUEEZE = 43,
+  UNIDIRECTIONAL_SEQUENCE_LSTM = 44,
+  STRIDED_SLICE = 45,
+  BIDIRECTIONAL_SEQUENCE_RNN = 46,
+  EXP = 47,
+  TOPK_V2 = 48,
+  SPLIT = 49,
+  LOG_SOFTMAX = 50,
+  DELEGATE = 51,
+  BIDIRECTIONAL_SEQUENCE_LSTM = 52,
+  CAST = 53,
+  PRELU = 54,
+  MAXIMUM = 55,
+  ARG_MAX = 56,
+  MINIMUM = 57,
+  LESS = 58,
+  NEG = 59,
+  PADV2 = 60,
+  GREATER = 61,
+  GREATER_EQUAL = 62,
+  LESS_EQUAL = 63,
+  SELECT = 64,
+  SLICE = 65,
+  SIN = 66,
+  TRANSPOSE_CONV = 67,
+  SPARSE_TO_DENSE = 68,
+  TILE = 69,
+  EXPAND_DIMS = 70,
+  EQUAL = 71,
+  NOT_EQUAL = 72,
+  LOG = 73,
+  SUM = 74,
+  SQRT = 75,
+  RSQRT = 76,
+  SHAPE = 77,
+  POW = 78,
+  ARG_MIN = 79,
+  FAKE_QUANT = 80,
+  REDUCE_PROD = 81,
+  REDUCE_MAX = 82,
+  PACK = 83,
+  LOGICAL_OR = 84,
+  ONE_HOT = 85,
+  LOGICAL_AND = 86,
+  LOGICAL_NOT = 87,
+  UNPACK = 88,
+  REDUCE_MIN = 89,
+  FLOOR_DIV = 90,
+  REDUCE_ANY = 91,
+  SQUARE = 92,
+  ZEROS_LIKE = 93,
+  FILL = 94,
+  FLOOR_MOD = 95,
+  RANGE = 96,
+  RESIZE_NEAREST_NEIGHBOR = 97,
+  LEAKY_RELU = 98,
+  SQUARED_DIFFERENCE = 99,
+  MIRROR_PAD = 100,
+  ABS = 101,
+  SPLIT_V = 102,
+  UNIQUE = 103,
+  CEIL = 104,
+  REVERSE_V2 = 105,
+  ADD_N = 106,
+  GATHER_ND = 107,
+  COS = 108,
+  WHERE = 109,
+  RANK = 110,
+  ELU = 111,
+  REVERSE_SEQUENCE = 112,
+  MATRIX_DIAG = 113,
+  QUANTIZE = 114,
+  MATRIX_SET_DIAG = 115,
+  ROUND = 116,
+  HARD_SWISH = 117,
+  IF = 118,
+  WHILE = 119,
+  NON_MAX_SUPPRESSION_V4 = 120,
+  NON_MAX_SUPPRESSION_V5 = 121,
+  SCATTER_ND = 122,
+  SELECT_V2 = 123,
+  DENSIFY = 124,
+  SEGMENT_SUM = 125,
+  BATCH_MATMUL = 126,
+  PLACEHOLDER_FOR_GREATER_OP_CODES = 127,
+  CUMSUM = 128,
+  CALL_ONCE = 129,
+  BROADCAST_TO = 130,
+  RFFT2D = 131,
+  CONV_3D = 132,
+  IMAG = 133,
+  REAL = 134,
+  COMPLEX_ABS = 135,
+  HASHTABLE = 136,
+  HASHTABLE_FIND = 137,
+  HASHTABLE_IMPORT = 138,
+  HASHTABLE_SIZE = 139,
+  REDUCE_ALL = 140,
+  CONV_3D_TRANSPOSE = 141,
+  VAR_HANDLE = 142,
+  READ_VARIABLE = 143,
+  ASSIGN_VARIABLE = 144,
+  BROADCAST_ARGS = 145,
+  RANDOM_STANDARD_NORMAL = 146,
+  BUCKETIZE = 147,
+  RANDOM_UNIFORM = 148,
+  MULTINOMIAL = 149,
+  GELU = 150,
+  DYNAMIC_UPDATE_SLICE = 151,
+  RELU_0_TO_1 = 152,
+  UNSORTED_SEGMENT_PROD = 153,
+  UNSORTED_SEGMENT_MAX = 154,
+  UNSORTED_SEGMENT_SUM = 155,
+  ATAN2 = 156,
+  UNSORTED_SEGMENT_MIN = 157,
+  SIGN = 158,
+  BITCAST = 159,
+  BITWISE_XOR = 160,
+  RIGHT_SHIFT = 161,
+  STABLEHLO_LOGISTIC = 162,
+  STABLEHLO_ADD = 163,
+  STABLEHLO_DIVIDE = 164,
+  STABLEHLO_MULTIPLY = 165,
+  STABLEHLO_MAXIMUM = 166,
+  STABLEHLO_RESHAPE = 167,
+  STABLEHLO_CLAMP = 168,
+  STABLEHLO_CONCATENATE = 169,
+  STABLEHLO_BROADCAST_IN_DIM = 170,
+  STABLEHLO_CONVOLUTION = 171,
+  STABLEHLO_SLICE = 172,
+  STABLEHLO_CUSTOM_CALL = 173,
+  STABLEHLO_REDUCE = 174,
+  STABLEHLO_ABS = 175,
+  STABLEHLO_AND = 176,
+  STABLEHLO_COSINE = 177,
+  STABLEHLO_EXPONENTIAL = 178,
+  STABLEHLO_FLOOR = 179,
+  STABLEHLO_LOG = 180,
+  STABLEHLO_MINIMUM = 181,
+  STABLEHLO_NEGATE = 182,
+  STABLEHLO_OR = 183,
+  STABLEHLO_POWER = 184,
+  STABLEHLO_REMAINDER = 185,
+  STABLEHLO_RSQRT = 186,
+  STABLEHLO_SELECT = 187,
+  STABLEHLO_SUBTRACT = 188,
+  STABLEHLO_TANH = 189,
+  STABLEHLO_SCATTER = 190,
+  STABLEHLO_COMPARE = 191,
+  STABLEHLO_CONVERT = 192,
+  STABLEHLO_DYNAMIC_SLICE = 193,
+  STABLEHLO_DYNAMIC_UPDATE_SLICE = 194,
+  STABLEHLO_PAD = 195,
+  STABLEHLO_IOTA = 196,
+  STABLEHLO_DOT_GENERAL = 197,
+  STABLEHLO_REDUCE_WINDOW = 198,
+  STABLEHLO_SORT = 199,
+  STABLEHLO_WHILE = 200,
+  STABLEHLO_GATHER = 201,
+  STABLEHLO_TRANSPOSE = 202,
+  DILATE = 203,
+  STABLEHLO_RNG_BIT_GENERATOR = 204,
+  REDUCE_WINDOW = 205,
+  STABLEHLO_COMPOSITE = 206,
+  STABLEHLO_SHIFT_LEFT = 207,
+  STABLEHLO_CBRT = 208,
+  STABLEHLO_CASE = 209
 } KernelType;
 
 void RegisterOp(tflite::MicroMutableOpResolver<100>* resolver, KernelType kernel_type);
@@ -129,306 +237,216 @@ struct TFLM_Instance {
 
 void RegisterOp(tflite::MicroMutableOpResolver<100>* resolver, KernelType kernel_type) {
     switch (kernel_type) {
-        case KERNEL_ABS:
-            resolver->AddAbs();
-            break;
-        case KERNEL_ADD:
-            resolver->AddAdd();
-            break;
-        case KERNEL_ADD_N:
-            resolver->AddAddN();
-            break;
-        case KERNEL_ARG_MAX:
-            resolver->AddArgMax();
-            break;
-        case KERNEL_ARG_MIN:
-            resolver->AddArgMin();
-            break;
-        case KERNEL_ASSIGN_VARIABLE:
-            resolver->AddAssignVariable();
-            break;
-        case KERNEL_AVERAGE_POOL_2D:
-            resolver->AddAveragePool2D();
-            break;
-        case KERNEL_BATCH_MATMUL:
-            resolver->AddBatchMatMul();
-            break;
-        case KERNEL_BATCH_TO_SPACE_ND:
-            resolver->AddBatchToSpaceNd();
-            break;
-        case KERNEL_BROADCAST_ARGS:
-            resolver->AddBroadcastArgs();
-            break;
-        case KERNEL_BROADCAST_TO:
-            resolver->AddBroadcastTo();
-            break;
-        case KERNEL_CALL_ONCE:
-            resolver->AddCallOnce();
-            break;
-        case KERNEL_CAST:
-            resolver->AddCast();
-            break;
-        case KERNEL_CEIL:
-            resolver->AddCeil();
-            break;
-        case KERNEL_CIRCULAR_BUFFER:
-            resolver->AddCircularBuffer();
-            break;
-        case KERNEL_CONCATENATION:
-            resolver->AddConcatenation();
-            break;
-        case KERNEL_CONV_2D:
-            resolver->AddConv2D();
-            break;
-        case KERNEL_COS:
-            resolver->AddCos();
-            break;
-        case KERNEL_CUMSUM:
-            resolver->AddCumSum();
-            break;
-        case KERNEL_DEPTH_TO_SPACE:
-            resolver->AddDepthToSpace();
-            break;
-        case KERNEL_DEPTHWISE_CONV_2D:
-            resolver->AddDepthwiseConv2D();
-            break;
-        case KERNEL_DEQUANTIZE:
-            resolver->AddDequantize();
-            break;
-        case KERNEL_DIV:
-            resolver->AddDiv();
-            break;
-        case KERNEL_ELU:
-            resolver->AddElu();
-            break;
-        case KERNEL_EMBEDDING_LOOKUP:
-            resolver->AddEmbeddingLookup();
-            break;
-        case KERNEL_EQUAL:
-            resolver->AddEqual();
-            break;
-        case KERNEL_ETHOSU:
-            resolver->AddEthosU();
-            break;
-        case KERNEL_EXP:
-            resolver->AddExp();
-            break;
-        case KERNEL_EXPAND_DIMS:
-            resolver->AddExpandDims();
-            break;
-        case KERNEL_FILL:
-            resolver->AddFill();
-            break;
-        case KERNEL_FLOOR:
-            resolver->AddFloor();
-            break;
-        case KERNEL_FLOOR_DIV:
-            resolver->AddFloorDiv();
-            break;
-        case KERNEL_FLOOR_MOD:
-            resolver->AddFloorMod();
-            break;
-        case KERNEL_FULLY_CONNECTED:
-            resolver->AddFullyConnected();
-            break;
-        case KERNEL_GATHER:
-            resolver->AddGather();
-            break;
-        case KERNEL_GATHER_ND:
-            resolver->AddGatherNd();
-            break;
-        case KERNEL_GREATER:
-            resolver->AddGreater();
-            break;
-        case KERNEL_GREATER_EQUAL:
-            resolver->AddGreaterEqual();
-            break;
-        case KERNEL_HARD_SWISH:
-            resolver->AddHardSwish();
-            break;
-        case KERNEL_IF:
-            resolver->AddIf();
-            break;
-        case KERNEL_L2_NORMALIZATION:
-            resolver->AddL2Normalization();
-            break;
-        case KERNEL_L2_POOL_2D:
-            resolver->AddL2Pool2D();
-            break;
-        case KERNEL_LEAKY_RELU:
-            resolver->AddLeakyRelu();
-            break;
-        case KERNEL_LESS:
-            resolver->AddLess();
-            break;
-        case KERNEL_LESS_EQUAL:
-            resolver->AddLessEqual();
-            break;
-        case KERNEL_LOG:
-            resolver->AddLog();
-            break;
-        case KERNEL_LOG_SOFTMAX:
-            resolver->AddLogSoftmax();
-            break;
-        case KERNEL_LOGICAL_AND:
-            resolver->AddLogicalAnd();
-            break;
-        case KERNEL_LOGICAL_NOT:
-            resolver->AddLogicalNot();
-            break;
-        case KERNEL_LOGICAL_OR:
-            resolver->AddLogicalOr();
-            break;
-        case KERNEL_LOGISTIC:
-            resolver->AddLogistic();
-            break;
-        case KERNEL_MAX_POOL_2D:
-            resolver->AddMaxPool2D();
-            break;
-        case KERNEL_MAXIMUM:
-            resolver->AddMaximum();
-            break;
-        case KERNEL_MEAN:
-            resolver->AddMean();
-            break;
-        case KERNEL_MINIMUM:
-            resolver->AddMinimum();
-            break;
-        case KERNEL_MIRROR_PAD:
-            resolver->AddMirrorPad();
-            break;
-        case KERNEL_MUL:
-            resolver->AddMul();
-            break;
-        case KERNEL_NEG:
-            resolver->AddNeg();
-            break;
-        case KERNEL_NOT_EQUAL:
-            resolver->AddNotEqual();
-            break;
-        case KERNEL_PACK:
-            resolver->AddPack();
-            break;
-        case KERNEL_PAD:
-            resolver->AddPad();
-            break;
-        case KERNEL_PADV2:
-            resolver->AddPadV2();
-            break;
-        case KERNEL_PRELU:
-            resolver->AddPrelu();
-            break;
-        case KERNEL_QUANTIZE:
-            resolver->AddQuantize();
-            break;
-        case KERNEL_READ_VARIABLE:
-            resolver->AddReadVariable();
-            break;
-        case KERNEL_REDUCE_MAX:
-            resolver->AddReduceMax();
-            break;
-        case KERNEL_REDUCE_MIN:
-            resolver->AddReduceMin();
-            break;
-        case KERNEL_RELU:
-            resolver->AddRelu();
-            break;
-        case KERNEL_RELU6:
-            resolver->AddRelu6();
-            break;
-        case KERNEL_RESHAPE:
-            resolver->AddReshape();
-            break;
-        case KERNEL_RESIZE_BILINEAR:
-            resolver->AddResizeBilinear();
-            break;
-        case KERNEL_RESIZE_NEAREST_NEIGHBOR:
-            resolver->AddResizeNearestNeighbor();
-            break;
-        case KERNEL_REVERSE_V2:
-            resolver->AddReverseV2();
-            break;
-        case KERNEL_ROUND:
-            resolver->AddRound();
-            break;
-        case KERNEL_RSQRT:
-            resolver->AddRsqrt();
-            break;
-        case KERNEL_SELECT_V2:
-            resolver->AddSelectV2();
-            break;
-        case KERNEL_SHAPE:
-            resolver->AddShape();
-            break;
-        case KERNEL_SIN:
-            resolver->AddSin();
-            break;
-        case KERNEL_SLICE:
-            resolver->AddSlice();
-            break;
-        case KERNEL_SOFTMAX:
-            resolver->AddSoftmax();
-            break;
-        case KERNEL_SPACE_TO_BATCH_ND:
-            resolver->AddSpaceToBatchNd();
-            break;
-        case KERNEL_SPACE_TO_DEPTH:
-            resolver->AddSpaceToDepth();
-            break;
-        case KERNEL_SPLIT:
-            resolver->AddSplit();
-            break;
-        case KERNEL_SPLIT_V:
-            resolver->AddSplitV();
-            break;
-        case KERNEL_SQRT:
-            resolver->AddSqrt();
-            break;
-        case KERNEL_SQUARE:
-            resolver->AddSquare();
-            break;
-        case KERNEL_SQUARED_DIFFERENCE:
-            resolver->AddSquaredDifference();
-            break;
-        case KERNEL_SQUEEZE:
-            resolver->AddSqueeze();
-            break;
-        case KERNEL_STRIDED_SLICE:
-            resolver->AddStridedSlice();
-            break;
-        case KERNEL_SUB:
-            resolver->AddSub();
-            break;
-        case KERNEL_SUM:
-            resolver->AddSum();
-            break;
-        case KERNEL_SVDF:
-            resolver->AddSvdf();
-            break;
-        case KERNEL_TANH:
-            resolver->AddTanh();
-            break;
-        case KERNEL_TRANSPOSE:
-            resolver->AddTranspose();
-            break;
-        case KERNEL_TRANSPOSE_CONV:
-            resolver->AddTransposeConv();
-            break;
-        case KERNEL_UNIDIRECTIONAL_SEQUENCE_LSTM:
-            resolver->AddUnidirectionalSequenceLSTM();
-            break;
-        case KERNEL_UNPACK:
-            resolver->AddUnpack();
-            break;
-        case KERNEL_VAR_HANDLE:
-            resolver->AddVarHandle();
-            break;
-        case KERNEL_WHILE:
-            resolver->AddWhile();
-            break;
-        case KERNEL_ZEROS_LIKE:
-            resolver->AddZerosLike();
-            break;
+        case ADD: resolver->AddAdd(); break;
+        case AVERAGE_POOL_2D: resolver->AddAveragePool2D(); break;
+        case CONCATENATION: resolver->AddConcatenation(); break;
+        case CONV_2D: resolver->AddConv2D(); break;
+        case DEPTHWISE_CONV_2D: resolver->AddDepthwiseConv2D(); break;
+        case DEPTH_TO_SPACE: resolver->AddDepthToSpace(); break;
+        case DEQUANTIZE: resolver->AddDequantize(); break;
+        case EMBEDDING_LOOKUP: resolver->AddEmbeddingLookup(); break;
+        case FLOOR: resolver->AddFloor(); break;
+        case FULLY_CONNECTED: resolver->AddFullyConnected(); break;
+        case HASHTABLE_LOOKUP: MicroPrintf("AVISO: HASHTABLE_LOOKUP não suportado diretamente"); break;
+        case L2_NORMALIZATION: resolver->AddL2Normalization(); break;
+        case L2_POOL_2D: resolver->AddL2Pool2D(); break;
+        case LOCAL_RESPONSE_NORMALIZATION: MicroPrintf("AVISO: LOCAL_RESPONSE_NORMALIZATION não suportado diretamente"); break;
+        case LOGISTIC: resolver->AddLogistic(); break;
+        case LSH_PROJECTION: MicroPrintf("AVISO: LSH_PROJECTION não suportado diretamente"); break;
+        case LSTM: MicroPrintf("AVISO: LSTM não suportado diretamente"); break;
+        case MAX_POOL_2D: resolver->AddMaxPool2D(); break;
+        case MUL: resolver->AddMul(); break;
+        case RELU: resolver->AddRelu(); break;
+        case RELU_N1_TO_1: MicroPrintf("AVISO: RELU_N1_TO_1 não suportado diretamente"); break;
+        case RELU6: resolver->AddRelu6(); break;
+        case RESHAPE: resolver->AddReshape(); break;
+        case RESIZE_BILINEAR: resolver->AddResizeBilinear(); break;
+        case RNN: MicroPrintf("AVISO: RNN não suportado diretamente"); break;
+        case SOFTMAX: resolver->AddSoftmax(); break;
+        case SPACE_TO_DEPTH: resolver->AddSpaceToDepth(); break;
+        case SVDF: resolver->AddSvdf(); break;
+        case TANH: resolver->AddTanh(); break;
+        case CONCAT_EMBEDDINGS: MicroPrintf("AVISO: CONCAT_EMBEDDINGS não suportado diretamente"); break;
+        case SKIP_GRAM: MicroPrintf("AVISO: SKIP_GRAM não suportado diretamente"); break;
+        case CALL: MicroPrintf("AVISO: CALL não suportado diretamente"); break;
+        case CUSTOM: MicroPrintf("AVISO: CUSTOM não suportado diretamente"); break;
+        case EMBEDDING_LOOKUP_SPARSE: MicroPrintf("AVISO: EMBEDDING_LOOKUP_SPARSE não suportado diretamente"); break;
+        case PAD: resolver->AddPad(); break;
+        case UNIDIRECTIONAL_SEQUENCE_RNN: MicroPrintf("AVISO: UNIDIRECTIONAL_SEQUENCE_RNN não suportado diretamente"); break;
+        case GATHER: resolver->AddGather(); break;
+        case BATCH_TO_SPACE_ND: resolver->AddBatchToSpaceNd(); break;
+        case SPACE_TO_BATCH_ND: resolver->AddSpaceToBatchNd(); break;
+        case TRANSPOSE: resolver->AddTranspose(); break;
+        case MEAN: resolver->AddMean(); break;
+        case SUB: resolver->AddSub(); break;
+        case DIV: resolver->AddDiv(); break;
+        case SQUEEZE: resolver->AddSqueeze(); break;
+        case UNIDIRECTIONAL_SEQUENCE_LSTM: resolver->AddUnidirectionalSequenceLSTM(); break;
+        case STRIDED_SLICE: resolver->AddStridedSlice(); break;
+        case BIDIRECTIONAL_SEQUENCE_RNN: MicroPrintf("AVISO: BIDIRECTIONAL_SEQUENCE_RNN não suportado diretamente"); break;
+        case EXP: resolver->AddExp(); break;
+        case TOPK_V2: MicroPrintf("AVISO: TOPK_V2 não suportado diretamente"); break;
+        case SPLIT: resolver->AddSplit(); break;
+        case LOG_SOFTMAX: resolver->AddLogSoftmax(); break;
+        case DELEGATE: MicroPrintf("AVISO: DELEGATE não suportado diretamente"); break;
+        case BIDIRECTIONAL_SEQUENCE_LSTM: MicroPrintf("AVISO: BIDIRECTIONAL_SEQUENCE_LSTM não suportado diretamente"); break;
+        case CAST: resolver->AddCast(); break;
+        case PRELU: resolver->AddPrelu(); break;
+        case MAXIMUM: resolver->AddMaximum(); break;
+        case ARG_MAX: resolver->AddArgMax(); break;
+        case MINIMUM: resolver->AddMinimum(); break;
+        case LESS: resolver->AddLess(); break;
+        case NEG: resolver->AddNeg(); break;
+        case PADV2: resolver->AddPadV2(); break;
+        case GREATER: resolver->AddGreater(); break;
+        case GREATER_EQUAL: resolver->AddGreaterEqual(); break;
+        case LESS_EQUAL: resolver->AddLessEqual(); break;
+        case SELECT: MicroPrintf("AVISO: SELECT não suportado diretamente"); break;
+        case SLICE: resolver->AddSlice(); break;
+        case SIN: resolver->AddSin(); break;
+        case TRANSPOSE_CONV: resolver->AddTransposeConv(); break;
+        case SPARSE_TO_DENSE: MicroPrintf("AVISO: SPARSE_TO_DENSE não suportado diretamente"); break;
+        case TILE: MicroPrintf("AVISO: TILE não suportado diretamente"); break;
+        case EXPAND_DIMS: resolver->AddExpandDims(); break;
+        case EQUAL: resolver->AddEqual(); break;
+        case NOT_EQUAL: resolver->AddNotEqual(); break;
+        case LOG: resolver->AddLog(); break;
+        case SUM: resolver->AddSum(); break;
+        case SQRT: resolver->AddSqrt(); break;
+        case RSQRT: resolver->AddRsqrt(); break;
+        case SHAPE: resolver->AddShape(); break;
+        case POW: MicroPrintf("AVISO: POW não suportado diretamente"); break;
+        case ARG_MIN: resolver->AddArgMin(); break;
+        case FAKE_QUANT: MicroPrintf("AVISO: FAKE_QUANT não suportado diretamente"); break;
+        case REDUCE_PROD: MicroPrintf("AVISO: REDUCE_PROD não suportado diretamente"); break;
+        case REDUCE_MAX: resolver->AddReduceMax(); break;
+        case PACK: resolver->AddPack(); break;
+        case LOGICAL_OR: resolver->AddLogicalOr(); break;
+        case ONE_HOT: MicroPrintf("AVISO: ONE_HOT não suportado diretamente"); break;
+        case LOGICAL_AND: resolver->AddLogicalAnd(); break;
+        case LOGICAL_NOT: resolver->AddLogicalNot(); break;
+        case UNPACK: resolver->AddUnpack(); break;
+        case REDUCE_MIN: resolver->AddReduceMin(); break;
+        case FLOOR_DIV: resolver->AddFloorDiv(); break;
+        case REDUCE_ANY: MicroPrintf("AVISO: REDUCE_ANY não suportado diretamente"); break;
+        case SQUARE: resolver->AddSquare(); break;
+        case ZEROS_LIKE: resolver->AddZerosLike(); break;
+        case FILL: resolver->AddFill(); break;
+        case FLOOR_MOD: resolver->AddFloorMod(); break;
+        case RANGE: MicroPrintf("AVISO: RANGE não suportado diretamente"); break;
+        case RESIZE_NEAREST_NEIGHBOR: resolver->AddResizeNearestNeighbor(); break;
+        case LEAKY_RELU: resolver->AddLeakyRelu(); break;
+        case SQUARED_DIFFERENCE: resolver->AddSquaredDifference(); break;
+        case MIRROR_PAD: resolver->AddMirrorPad(); break;
+        case ABS: resolver->AddAbs(); break;
+        case SPLIT_V: resolver->AddSplitV(); break;
+        case UNIQUE: MicroPrintf("AVISO: UNIQUE não suportado diretamente"); break;
+        case CEIL: resolver->AddCeil(); break;
+        case REVERSE_V2: resolver->AddReverseV2(); break;
+        case ADD_N: resolver->AddAddN(); break;
+        case GATHER_ND: resolver->AddGatherNd(); break;
+        case COS: resolver->AddCos(); break;
+        case WHERE: MicroPrintf("AVISO: WHERE não suportado diretamente"); break;
+        case RANK: MicroPrintf("AVISO: RANK não suportado diretamente"); break;
+        case ELU: resolver->AddElu(); break;
+        case REVERSE_SEQUENCE: MicroPrintf("AVISO: REVERSE_SEQUENCE não suportado diretamente"); break;
+        case MATRIX_DIAG: MicroPrintf("AVISO: MATRIX_DIAG não suportado diretamente"); break;
+        case QUANTIZE: resolver->AddQuantize(); break;
+        case MATRIX_SET_DIAG: MicroPrintf("AVISO: MATRIX_SET_DIAG não suportado diretamente"); break;
+        case ROUND: resolver->AddRound(); break;
+        case HARD_SWISH: resolver->AddHardSwish(); break;
+        case IF: resolver->AddIf(); break;
+        case WHILE: resolver->AddWhile(); break;
+        case NON_MAX_SUPPRESSION_V4: MicroPrintf("AVISO: NON_MAX_SUPPRESSION_V4 não suportado diretamente"); break;
+        case NON_MAX_SUPPRESSION_V5: MicroPrintf("AVISO: NON_MAX_SUPPRESSION_V5 não suportado diretamente"); break;
+        case SCATTER_ND: MicroPrintf("AVISO: SCATTER_ND não suportado diretamente"); break;
+        case SELECT_V2: resolver->AddSelectV2(); break;
+        case DENSIFY: MicroPrintf("AVISO: DENSIFY não suportado diretamente"); break;
+        case SEGMENT_SUM: MicroPrintf("AVISO: SEGMENT_SUM não suportado diretamente"); break;
+        case BATCH_MATMUL: resolver->AddBatchMatMul(); break;
+        case PLACEHOLDER_FOR_GREATER_OP_CODES: MicroPrintf("AVISO: PLACEHOLDER_FOR_GREATER_OP_CODES não suportado diretamente"); break;
+        case CUMSUM: resolver->AddCumSum(); break;
+        case CALL_ONCE: resolver->AddCallOnce(); break;
+        case BROADCAST_TO: resolver->AddBroadcastTo(); break;
+        case RFFT2D: MicroPrintf("AVISO: RFFT2D não suportado diretamente"); break;
+        case CONV_3D: MicroPrintf("AVISO: CONV_3D não suportado diretamente"); break;
+        case IMAG: MicroPrintf("AVISO: IMAG não suportado diretamente"); break;
+        case REAL: MicroPrintf("AVISO: REAL não suportado diretamente"); break;
+        case COMPLEX_ABS: MicroPrintf("AVISO: COMPLEX_ABS não suportado diretamente"); break;
+        case HASHTABLE: MicroPrintf("AVISO: HASHTABLE não suportado diretamente"); break;
+        case HASHTABLE_FIND: MicroPrintf("AVISO: HASHTABLE_FIND não suportado diretamente"); break;
+        case HASHTABLE_IMPORT: MicroPrintf("AVISO: HASHTABLE_IMPORT não suportado diretamente"); break;
+        case HASHTABLE_SIZE: MicroPrintf("AVISO: HASHTABLE_SIZE não suportado diretamente"); break;
+        case REDUCE_ALL: MicroPrintf("AVISO: REDUCE_ALL não suportado diretamente"); break;
+        case CONV_3D_TRANSPOSE: MicroPrintf("AVISO: CONV_3D_TRANSPOSE não suportado diretamente"); break;
+        case VAR_HANDLE: resolver->AddVarHandle(); break;
+        case READ_VARIABLE: resolver->AddReadVariable(); break;
+        case ASSIGN_VARIABLE: resolver->AddAssignVariable(); break;
+        case BROADCAST_ARGS: resolver->AddBroadcastArgs(); break;
+        case RANDOM_STANDARD_NORMAL: MicroPrintf("AVISO: RANDOM_STANDARD_NORMAL não suportado diretamente"); break;
+        case BUCKETIZE: MicroPrintf("AVISO: BUCKETIZE não suportado diretamente"); break;
+        case RANDOM_UNIFORM: MicroPrintf("AVISO: RANDOM_UNIFORM não suportado diretamente"); break;
+        case MULTINOMIAL: MicroPrintf("AVISO: MULTINOMIAL não suportado diretamente"); break;
+        case GELU: MicroPrintf("AVISO: GELU não suportado diretamente"); break;
+        case DYNAMIC_UPDATE_SLICE: MicroPrintf("AVISO: DYNAMIC_UPDATE_SLICE não suportado diretamente"); break;
+        case RELU_0_TO_1: MicroPrintf("AVISO: RELU_0_TO_1 não suportado diretamente"); break;
+        case UNSORTED_SEGMENT_PROD: MicroPrintf("AVISO: UNSORTED_SEGMENT_PROD não suportado diretamente"); break;
+        case UNSORTED_SEGMENT_MAX: MicroPrintf("AVISO: UNSORTED_SEGMENT_MAX não suportado diretamente"); break;
+        case UNSORTED_SEGMENT_SUM: MicroPrintf("AVISO: UNSORTED_SEGMENT_SUM não suportado diretamente"); break;
+        case ATAN2: MicroPrintf("AVISO: ATAN2 não suportado diretamente"); break;
+        case UNSORTED_SEGMENT_MIN: MicroPrintf("AVISO: UNSORTED_SEGMENT_MIN não suportado diretamente"); break;
+        case SIGN: MicroPrintf("AVISO: SIGN não suportado diretamente"); break;
+        case BITCAST: MicroPrintf("AVISO: BITCAST não suportado diretamente"); break;
+        case BITWISE_XOR: MicroPrintf("AVISO: BITWISE_XOR não suportado diretamente"); break;
+        case RIGHT_SHIFT: MicroPrintf("AVISO: RIGHT_SHIFT não suportado diretamente"); break;
+        case STABLEHLO_LOGISTIC: MicroPrintf("AVISO: STABLEHLO_LOGISTIC não suportado diretamente"); break;
+        case STABLEHLO_ADD: MicroPrintf("AVISO: STABLEHLO_ADD não suportado diretamente"); break;
+        case STABLEHLO_DIVIDE: MicroPrintf("AVISO: STABLEHLO_DIVIDE não suportado diretamente"); break;
+        case STABLEHLO_MULTIPLY: MicroPrintf("AVISO: STABLEHLO_MULTIPLY não suportado diretamente"); break;
+        case STABLEHLO_MAXIMUM: MicroPrintf("AVISO: STABLEHLO_MAXIMUM não suportado diretamente"); break;
+        case STABLEHLO_RESHAPE: MicroPrintf("AVISO: STABLEHLO_RESHAPE não suportado diretamente"); break;
+        case STABLEHLO_CLAMP: MicroPrintf("AVISO: STABLEHLO_CLAMP não suportado diretamente"); break;
+        case STABLEHLO_CONCATENATE: MicroPrintf("AVISO: STABLEHLO_CONCATENATE não suportado diretamente"); break;
+        case STABLEHLO_BROADCAST_IN_DIM: MicroPrintf("AVISO: STABLEHLO_BROADCAST_IN_DIM não suportado diretamente"); break;
+        case STABLEHLO_CONVOLUTION: MicroPrintf("AVISO: STABLEHLO_CONVOLUTION não suportado diretamente"); break;
+        case STABLEHLO_SLICE: MicroPrintf("AVISO: STABLEHLO_SLICE não suportado diretamente"); break;
+        case STABLEHLO_CUSTOM_CALL: MicroPrintf("AVISO: STABLEHLO_CUSTOM_CALL não suportado diretamente"); break;
+        case STABLEHLO_REDUCE: MicroPrintf("AVISO: STABLEHLO_REDUCE não suportado diretamente"); break;
+        case STABLEHLO_ABS: MicroPrintf("AVISO: STABLEHLO_ABS não suportado diretamente"); break;
+        case STABLEHLO_AND: MicroPrintf("AVISO: STABLEHLO_AND não suportado diretamente"); break;
+        case STABLEHLO_COSINE: MicroPrintf("AVISO: STABLEHLO_COSINE não suportado diretamente"); break;
+        case STABLEHLO_EXPONENTIAL: MicroPrintf("AVISO: STABLEHLO_EXPONENTIAL não suportado diretamente"); break;
+        case STABLEHLO_FLOOR: MicroPrintf("AVISO: STABLEHLO_FLOOR não suportado diretamente"); break;
+        case STABLEHLO_LOG: MicroPrintf("AVISO: STABLEHLO_LOG não suportado diretamente"); break;
+        case STABLEHLO_MINIMUM: MicroPrintf("AVISO: STABLEHLO_MINIMUM não suportado diretamente"); break;
+        case STABLEHLO_NEGATE: MicroPrintf("AVISO: STABLEHLO_NEGATE não suportado diretamente"); break;
+        case STABLEHLO_OR: MicroPrintf("AVISO: STABLEHLO_OR não suportado diretamente"); break;
+        case STABLEHLO_POWER: MicroPrintf("AVISO: STABLEHLO_POWER não suportado diretamente"); break;
+        case STABLEHLO_REMAINDER: MicroPrintf("AVISO: STABLEHLO_REMAINDER não suportado diretamente"); break;
+        case STABLEHLO_RSQRT: MicroPrintf("AVISO: STABLEHLO_RSQRT não suportado diretamente"); break;
+        case STABLEHLO_SELECT: MicroPrintf("AVISO: STABLEHLO_SELECT não suportado diretamente"); break;
+        case STABLEHLO_SUBTRACT: MicroPrintf("AVISO: STABLEHLO_SUBTRACT não suportado diretamente"); break;
+        case STABLEHLO_TANH: MicroPrintf("AVISO: STABLEHLO_TANH não suportado diretamente"); break;
+        case STABLEHLO_SCATTER: MicroPrintf("AVISO: STABLEHLO_SCATTER não suportado diretamente"); break;
+        case STABLEHLO_COMPARE: MicroPrintf("AVISO: STABLEHLO_COMPARE não suportado diretamente"); break;
+        case STABLEHLO_CONVERT: MicroPrintf("AVISO: STABLEHLO_CONVERT não suportado diretamente"); break;
+        case STABLEHLO_DYNAMIC_SLICE: MicroPrintf("AVISO: STABLEHLO_DYNAMIC_SLICE não suportado diretamente"); break;
+        case STABLEHLO_DYNAMIC_UPDATE_SLICE: MicroPrintf("AVISO: STABLEHLO_DYNAMIC_UPDATE_SLICE não suportado diretamente"); break;
+        case STABLEHLO_PAD: MicroPrintf("AVISO: STABLEHLO_PAD não suportado diretamente"); break;
+        case STABLEHLO_IOTA: MicroPrintf("AVISO: STABLEHLO_IOTA não suportado diretamente"); break;
+        case STABLEHLO_DOT_GENERAL: MicroPrintf("AVISO: STABLEHLO_DOT_GENERAL não suportado diretamente"); break;
+        case STABLEHLO_REDUCE_WINDOW: MicroPrintf("AVISO: STABLEHLO_REDUCE_WINDOW não suportado diretamente"); break;
+        case STABLEHLO_SORT: MicroPrintf("AVISO: STABLEHLO_SORT não suportado diretamente"); break;
+        case STABLEHLO_WHILE: MicroPrintf("AVISO: STABLEHLO_WHILE não suportado diretamente"); break;
+        case STABLEHLO_GATHER: MicroPrintf("AVISO: STABLEHLO_GATHER não suportado diretamente"); break;
+        case STABLEHLO_TRANSPOSE: MicroPrintf("AVISO: STABLEHLO_TRANSPOSE não suportado diretamente"); break;
+        case DILATE: MicroPrintf("AVISO: DILATE não suportado diretamente"); break;
+        case STABLEHLO_RNG_BIT_GENERATOR: MicroPrintf("AVISO: STABLEHLO_RNG_BIT_GENERATOR não suportado diretamente"); break;
+        case REDUCE_WINDOW: MicroPrintf("AVISO: REDUCE_WINDOW não suportado diretamente"); break;
+        case STABLEHLO_COMPOSITE: MicroPrintf("AVISO: STABLEHLO_COMPOSITE não suportado diretamente"); break;
+        case STABLEHLO_SHIFT_LEFT: MicroPrintf("AVISO: STABLEHLO_SHIFT_LEFT não suportado diretamente"); break;
+        case STABLEHLO_CBRT: MicroPrintf("AVISO: STABLEHLO_CBRT não suportado diretamente"); break;
+        case STABLEHLO_CASE: MicroPrintf("AVISO: STABLEHLO_CASE não suportado diretamente"); break;
         default:
             MicroPrintf("AVISO: Tipo de kernel não mapeado: %d", kernel_type);
             break;
@@ -436,103 +454,11 @@ void RegisterOp(tflite::MicroMutableOpResolver<100>* resolver, KernelType kernel
 }
 
 KernelType MapBuiltinOperatorToKernelType(tflite::BuiltinOperator builtin_op) {
-    switch (builtin_op) {
-        case tflite::BuiltinOperator_ABS: return KERNEL_ABS;
-        case tflite::BuiltinOperator_ADD: return KERNEL_ADD;
-        case tflite::BuiltinOperator_ADD_N: return KERNEL_ADD_N;
-        case tflite::BuiltinOperator_ARG_MAX: return KERNEL_ARG_MAX;
-        case tflite::BuiltinOperator_ARG_MIN: return KERNEL_ARG_MIN;
-        case tflite::BuiltinOperator_AVERAGE_POOL_2D: return KERNEL_AVERAGE_POOL_2D;
-        case tflite::BuiltinOperator_BATCH_MATMUL: return KERNEL_BATCH_MATMUL;
-        case tflite::BuiltinOperator_BATCH_TO_SPACE_ND: return KERNEL_BATCH_TO_SPACE_ND;
-        case tflite::BuiltinOperator_CAST: return KERNEL_CAST;
-        case tflite::BuiltinOperator_CEIL: return KERNEL_CEIL;
-        case tflite::BuiltinOperator_CONCATENATION: return KERNEL_CONCATENATION;
-        case tflite::BuiltinOperator_CONV_2D: return KERNEL_CONV_2D;
-        case tflite::BuiltinOperator_COS: return KERNEL_COS;
-        case tflite::BuiltinOperator_DEPTHWISE_CONV_2D: return KERNEL_DEPTHWISE_CONV_2D;
-        case tflite::BuiltinOperator_DEQUANTIZE: return KERNEL_DEQUANTIZE;
-        case tflite::BuiltinOperator_DIV: return KERNEL_DIV;
-        case tflite::BuiltinOperator_ELU: return KERNEL_ELU;
-        case tflite::BuiltinOperator_EQUAL: return KERNEL_EQUAL;
-        case tflite::BuiltinOperator_EXP: return KERNEL_EXP;
-        case tflite::BuiltinOperator_EXPAND_DIMS: return KERNEL_EXPAND_DIMS;
-        case tflite::BuiltinOperator_FILL: return KERNEL_FILL;
-        case tflite::BuiltinOperator_FLOOR: return KERNEL_FLOOR;
-        case tflite::BuiltinOperator_FLOOR_DIV: return KERNEL_FLOOR_DIV;
-        case tflite::BuiltinOperator_FLOOR_MOD: return KERNEL_FLOOR_MOD;
-        case tflite::BuiltinOperator_FULLY_CONNECTED: return KERNEL_FULLY_CONNECTED;
-        case tflite::BuiltinOperator_GATHER: return KERNEL_GATHER;
-        case tflite::BuiltinOperator_GATHER_ND: return KERNEL_GATHER_ND;
-        case tflite::BuiltinOperator_GREATER: return KERNEL_GREATER;
-        case tflite::BuiltinOperator_GREATER_EQUAL: return KERNEL_GREATER_EQUAL;
-        case tflite::BuiltinOperator_HARD_SWISH: return KERNEL_HARD_SWISH;
-        case tflite::BuiltinOperator_L2_NORMALIZATION: return KERNEL_L2_NORMALIZATION;
-        case tflite::BuiltinOperator_L2_POOL_2D: return KERNEL_L2_POOL_2D;
-        case tflite::BuiltinOperator_LEAKY_RELU: return KERNEL_LEAKY_RELU;
-        case tflite::BuiltinOperator_LESS: return KERNEL_LESS;
-        case tflite::BuiltinOperator_LESS_EQUAL: return KERNEL_LESS_EQUAL;
-        case tflite::BuiltinOperator_LOG: return KERNEL_LOG;
-        case tflite::BuiltinOperator_LOG_SOFTMAX: return KERNEL_LOG_SOFTMAX;
-        case tflite::BuiltinOperator_LOGICAL_AND: return KERNEL_LOGICAL_AND;
-        case tflite::BuiltinOperator_LOGICAL_NOT: return KERNEL_LOGICAL_NOT;
-        case tflite::BuiltinOperator_LOGICAL_OR: return KERNEL_LOGICAL_OR;
-        case tflite::BuiltinOperator_LOGISTIC: return KERNEL_LOGISTIC;
-        case tflite::BuiltinOperator_MAX_POOL_2D: return KERNEL_MAX_POOL_2D;
-        case tflite::BuiltinOperator_MAXIMUM: return KERNEL_MAXIMUM;
-        case tflite::BuiltinOperator_MEAN: return KERNEL_MEAN;
-        case tflite::BuiltinOperator_MINIMUM: return KERNEL_MINIMUM;
-        case tflite::BuiltinOperator_MIRROR_PAD: return KERNEL_MIRROR_PAD;
-        case tflite::BuiltinOperator_MUL: return KERNEL_MUL;
-        case tflite::BuiltinOperator_NEG: return KERNEL_NEG;
-        case tflite::BuiltinOperator_NOT_EQUAL: return KERNEL_NOT_EQUAL;
-        case tflite::BuiltinOperator_PACK: return KERNEL_PACK;
-        case tflite::BuiltinOperator_PAD: return KERNEL_PAD;
-        case tflite::BuiltinOperator_PADV2: return KERNEL_PADV2;
-        case tflite::BuiltinOperator_PRELU: return KERNEL_PRELU;
-        case tflite::BuiltinOperator_QUANTIZE: return KERNEL_QUANTIZE;
-        case tflite::BuiltinOperator_REDUCE_MAX: return KERNEL_REDUCE_MAX;
-        case tflite::BuiltinOperator_REDUCE_MIN: return KERNEL_REDUCE_MIN;
-        case tflite::BuiltinOperator_RELU: return KERNEL_RELU;
-        case tflite::BuiltinOperator_RELU6: return KERNEL_RELU6;
-        case tflite::BuiltinOperator_RESHAPE: return KERNEL_RESHAPE;
-        case tflite::BuiltinOperator_RESIZE_BILINEAR: return KERNEL_RESIZE_BILINEAR;
-        case tflite::BuiltinOperator_RESIZE_NEAREST_NEIGHBOR: return KERNEL_RESIZE_NEAREST_NEIGHBOR;
-        case tflite::BuiltinOperator_REVERSE_V2: return KERNEL_REVERSE_V2;
-        case tflite::BuiltinOperator_ROUND: return KERNEL_ROUND;
-        case tflite::BuiltinOperator_RSQRT: return KERNEL_RSQRT;
-        case tflite::BuiltinOperator_SELECT_V2: return KERNEL_SELECT_V2;
-        case tflite::BuiltinOperator_SHAPE: return KERNEL_SHAPE;
-        case tflite::BuiltinOperator_SIN: return KERNEL_SIN;
-        case tflite::BuiltinOperator_SLICE: return KERNEL_SLICE;
-        case tflite::BuiltinOperator_SOFTMAX: return KERNEL_SOFTMAX;
-        case tflite::BuiltinOperator_SPACE_TO_BATCH_ND: return KERNEL_SPACE_TO_BATCH_ND;
-        case tflite::BuiltinOperator_SPACE_TO_DEPTH: return KERNEL_SPACE_TO_DEPTH;
-        case tflite::BuiltinOperator_SPLIT: return KERNEL_SPLIT;
-        case tflite::BuiltinOperator_SPLIT_V: return KERNEL_SPLIT_V;
-        case tflite::BuiltinOperator_SQRT: return KERNEL_SQRT;
-        case tflite::BuiltinOperator_SQUARE: return KERNEL_SQUARE;
-        case tflite::BuiltinOperator_SQUARED_DIFFERENCE: return KERNEL_SQUARED_DIFFERENCE;
-        case tflite::BuiltinOperator_SQUEEZE: return KERNEL_SQUEEZE;
-        case tflite::BuiltinOperator_STRIDED_SLICE: return KERNEL_STRIDED_SLICE;
-        case tflite::BuiltinOperator_SUB: return KERNEL_SUB;
-        case tflite::BuiltinOperator_SUM: return KERNEL_SUM;
-        case tflite::BuiltinOperator_SVDF: return KERNEL_SVDF;
-        case tflite::BuiltinOperator_TANH: return KERNEL_TANH;
-        case tflite::BuiltinOperator_TRANSPOSE: return KERNEL_TRANSPOSE;
-        case tflite::BuiltinOperator_TRANSPOSE_CONV: return KERNEL_TRANSPOSE_CONV;
-        case tflite::BuiltinOperator_UNIDIRECTIONAL_SEQUENCE_LSTM: return KERNEL_UNIDIRECTIONAL_SEQUENCE_LSTM;
-        case tflite::BuiltinOperator_UNPACK: return KERNEL_UNPACK;
-        case tflite::BuiltinOperator_ZEROS_LIKE: return KERNEL_ZEROS_LIKE;
-        
-        default:
-            MicroPrintf("OPERAÇÃO NÃO MAPEADA: %d (%s)", builtin_op, tflite::EnumNameBuiltinOperator(builtin_op));
-            return KERNEL_CONV_2D; // Fallback
-    }
+    return (KernelType)builtin_op;
 }
 
 uintptr_t InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, const uint8_t* required_kernels, int, int tensor_arena_size, int8_t num_kernels) {
-    MicroPrintf("=== InitializeInterpreter ===");
+    MicroPrintf("\n=== InitializeInterpreter ===");
     
     const tflite::Model* model = tflite::GetModel(model_data);
     if (model->version() != TFLITE_SCHEMA_VERSION) {
@@ -545,14 +471,13 @@ uintptr_t InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena
     instance->resolver = new MutableResolver();
 
     // Registrar kernels convertendo uint8_t para KernelType
-    MicroPrintf("Registrando %d kernels necessários.", num_kernels);
+      MicroPrintf("Registrando %d kernels necessários.", num_kernels);
     for (int i = 0; i < num_kernels; ++i) {
         KernelType kernel_type = static_cast<KernelType>(required_kernels[i]);
-        MicroPrintf("  Kernel[%d]: %d -> %s", i, required_kernels[i], 
-                   (kernel_type == KERNEL_FULLY_CONNECTED) ? "FULLY_CONNECTED" : "OUTRO");
+        tflite::BuiltinOperator builtin_op = static_cast<tflite::BuiltinOperator>(kernel_type);
+        MicroPrintf("  Kernel[%d]: %d -> %s", i, builtin_op, tflite::EnumNameBuiltinOperator(builtin_op));
         RegisterOp(instance->resolver, kernel_type);
-    }
-    
+    }  
     // Usar RecordingMicroInterpreter para melhor compatibilidade
     instance->allocator = tflite::RecordingMicroAllocator::Create(tensor_arena, tensor_arena_size);
     if (!instance->allocator) {
@@ -565,7 +490,7 @@ uintptr_t InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena
     instance->interpreter = new tflite::RecordingMicroInterpreter(
         model, *(instance->resolver), instance->allocator, nullptr);
 
-    MicroPrintf("=== VERIFICAÇÃO PRE-ALOCAÇÃO ===");
+    MicroPrintf("\n=== VERIFICAÇÃO PRE-ALOCAÇÃO ===");
     MicroPrintf("Arena utilizada antes: %zu bytes", instance->interpreter->arena_used_bytes());
     
     TfLiteStatus allocate_status = instance->interpreter->AllocateTensors();
@@ -582,7 +507,7 @@ uintptr_t InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena
     }
 
     // Debug: Print tensor information (como no exemplo oficial)
-    MicroPrintf("=== TENSOR DEBUG ===");
+    MicroPrintf("\n=== TENSOR DEBUG ===");
     for (size_t i = 0; i < instance->interpreter->inputs_size(); ++i) {
         TfLiteTensor* input_tensor = instance->interpreter->input(i);
         MicroPrintf("Input tensor[%zu]: type=%d, bytes=%zu, data=%p, allocation_type=%d", 
@@ -1111,7 +1036,7 @@ void InvokeInterpreter(uintptr_t instance_handle, int) {
         return;
     }
     
-    MicroPrintf("=== INICIANDO INFERÊNCIA ===");
+    MicroPrintf("\n=== INICIANDO INFERÊNCIA ===");
     TfLiteStatus status = instance->interpreter->Invoke();
     
     if (status != kTfLiteOk) {
@@ -1123,7 +1048,7 @@ void InvokeInterpreter(uintptr_t instance_handle, int) {
 
 // Função de diagnóstico detalhado
 void DiagnoseModel(const uint8_t* model_data, int) {
-    MicroPrintf("=== DIAGNÓSTICO COMPLETO DO MODELO ===");
+    MicroPrintf("\n=== DIAGNÓSTICO COMPLETO DO MODELO ===");
     
     const tflite::Model* model = tflite::GetModel(model_data);
     MicroPrintf("1. Model pointer: %p", model);
@@ -1191,7 +1116,7 @@ void DiagnoseModel(const uint8_t* model_data, int) {
 
 // Função para verificar integridade do modelo
 void VerifyModelData(const uint8_t* model_data, int) {
-    MicroPrintf("=== VERIFICAÇÃO DE INTEGRIDADE DO MODELO ===");
+    MicroPrintf("\n=== VERIFICAÇÃO DE INTEGRIDADE DO MODELO ===");
     
     // Verificar magic number do TensorFlow Lite
     if (model_data[0] == 0x1c && model_data[1] == 0x0 && 
