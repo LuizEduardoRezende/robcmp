@@ -4,13 +4,14 @@ cmake_policy(SET CMP0054 NEW)
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -O0 -fno-exceptions")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -fno-exceptions")
-add_compile_definitions(
-    TF_LITE_STATIC_MEMORY=1
-    TF_LITE_MCU_DEBUG_LOG=1
-    TFLITE_EMULATE_FLOAT=0
-    TF_LITE_USE_GLOBAL_POOL=0
-    TF_LITE_USE_CPPSTD_STRING_VIEW=0
-)
+
+#add_compile_definitions()
+    
+#TF_LITE_STATIC_MEMORY=1 (desnecessária para o funcionamento)
+#TF_LITE_MCU_DEBUG_LOG=1 (desnecessária para o funcionamento)
+#TFLITE_EMULATE_FLOAT=0 (desnecessária para o funcionamento)
+#TF_LITE_USE_GLOBAL_POOL=0 (desnecessária para o funcionamento)
+#TF_LITE_USE_CPPSTD_STRING_VIEW=0 (desnecessária para o funcionamento)
 
 project(robcmp)
 
@@ -110,15 +111,16 @@ target_compile_features(tflm_wrapper_static PRIVATE cxx_std_14)
 
 # Adicionar flags específicas do TFLM
 target_compile_options(tflm_wrapper_static PRIVATE
+    -DTF_LITE_STATIC_MEMORY=1
     -fno-rtti
     -fno-exceptions
-    -fno-threadsafe-statics
-    -Wno-unused-parameter
-    -Wno-unused-variable
-    -DTF_LITE_STATIC_MEMORY
-    -DTF_LITE_MCU_DEBUG_LOG
-    -DTFLITE_EMULATE_FLOAT=0
-)
+    )
+
+#-DTF_LITE_MCU_DEBUG_LOG (desnecessária para o funcionamento)
+#-fno-threadsafe-statics (desnecessária para o funcionamento)
+#-DTFLITE_EMULATE_FLOAT=0 (desnecessária para o funcionamento)
+#-Wno-unused-parameter (desnecessária para o funcionamento)
+#-Wno-unused-variable (desnecessária para o funcionamento)
 
 target_link_libraries(tflm_wrapper_static
     ${TFLM_LIB_DIR}/libtensorflow-microlite.a
