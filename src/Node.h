@@ -1,14 +1,15 @@
-
 #pragma once
 
 #include "SourceLocation.h"
 #include "BuildTypes.h"
+#include "ParamsCall.h"
 
 class Visitor;
 class NamedNode;
 class UserType;
 class FunctionImpl;
 class Variable;
+class ParamsCall;
 
 class Node : public SourceLocation {
 protected:

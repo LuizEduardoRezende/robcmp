@@ -1,22 +1,15 @@
-arena_size = 256 * 1024;
-kernels = {34, 53, 33, 79}; // Gather, Mean, FullyConnected, Softmax
-model meu_modelo("spam_detector.tflite", arena_size, kernels);
+
 
 int8 main() {
-
-    a = 5;
-    b = 10;
-    c = a + b;
-
-
+  arena_size = 256 * 1024;
+  kernels = {34, 53, 33, 79};
+  dados = {1, 2, 3, 4, 5, 6};
+  
+  model meu_modelo("spam_detector.tflite", arena_size, kernels);
+  /*
+  meu_modelo.input = dados;
+  invoke meu_modelo();
+  output = meu_modelo.output;
+  */
   return 0;
 }
-
-/*
-
-model meu_modelo("spam_detector.tflite", arena_size, kernels);
-meu_modelo.input = { /* dados de entrada * / };
-meu_modelo.invoke();
-output = meu_modelo.output;
-
-*/

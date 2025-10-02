@@ -43,7 +43,10 @@ EXP ([Ee][-+]?[0-9]+)?
 "interface"				{ return TOK_INTF; }
 "implements"			{ return TOK_IMPL; }
 "use"					{ return TOK_USE; }
-"model" 				{ return TOK_MODEL; }
+"model" 				{ return TOK_MODEL; }  // TFLM
+"invoke"				{ return TOK_INVOKE; } // TFLM
+"input"					{ return TOK_INPUT; }  // TFLM
+"output"				{ return TOK_OUTPUT; } // TFLM
 
 "inline"				{ return TOK_INLINE; }
 "noinline"				{ return TOK_NOINLINE; }

@@ -76,6 +76,7 @@ global : use
 	   | simplevar_decl ';'
 	   | qualifier simplevar_decl ';'	{ $$ = $2; $$->setQualifier((DataQualifier)$1); }
 	   | bind
+	   | model_stmt ';'  // TFLM
 
 use : TOK_USE TOK_IDENTIFIER ';' {
 	parseUseFile($2, @TOK_USE);
@@ -348,7 +349,10 @@ stmt : ident_or_xident '+' '+' ';'					{ $$ = new Scalar($1, new BinaryOp(new Lo
 	 | condblock
 	 | whileblock
 	 | interface_impl
-	 | model_stmt
+	 | TOK_IDENTIFIER '.' TOK_INPUT '=' expr ';'      			{ $$ = new ModelNode($1, nullptr, @1);}
+	 | TOK_IDENTIFIER '.' TOK_INVOKE '(' ')' ';'      			{ $$ = new ModelNode($1, nullptr, @1); }
+	 | TOK_IDENTIFIER '=' TOK_IDENTIFIER '.' TOK_OUTPUT ';' 	{ $$ = new ModelNode($3, nullptr, @3); }
+	 | model_stmt ';' 											{ $$ = $1; } // TFLM
 
 complexvar_set : TOK_XIDENTIFIER[id] '=' logicexpr	{ $$ = new Scalar($id, $logicexpr);	$$->setLocation(@id); }
 complexvar_set : TOK_XIDENTIFIER[id] '=' array		{ $$ = new Array($id, $array, @id); }
@@ -497,8 +501,8 @@ paramscall : logicexpr {
 
 paramscall : %empty { $$ = new ParamsCall(); }
 
-model_stmt : TOK_MODEL TOK_IDENTIFIER '(' paramscall ')' ';' {
-    $$ = NULL;
+model_stmt : TOK_MODEL TOK_IDENTIFIER '(' paramscall ')' {
+    $$ = new ModelNode($2, $4, @2);
 }
 
 %%
