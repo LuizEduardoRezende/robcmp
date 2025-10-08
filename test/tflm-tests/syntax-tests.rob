@@ -1,11 +1,11 @@
 
 
 int8 main() {
-  arena_size = 256 * 1024;
-  kernels = {34, 53, 33, 79};
+  const arena_size = 262144;
+  const kernels = {34, 53, 33, 79};
   dados = {1, 2, 3, 4, 5, 6};
   
-  model meu_modelo("spam_detector.tflite", arena_size, kernels);
+  model meu_modelo("hello_world_float.tflite", arena_size, kernels);
   /*
   meu_modelo.input = dados;
   invoke meu_modelo();

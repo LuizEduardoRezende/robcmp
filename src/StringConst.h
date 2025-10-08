@@ -39,4 +39,9 @@ public:
     void setLeftValue(Variable *symbol) override {
         leftValue = symbol;
     }
+    
+    // Getter para acessar o valor da string
+    const string& getStringValue() const { 
+        return str; 
+    }
 };

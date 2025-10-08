@@ -1,4 +1,3 @@
-
 %name-prefix="MAIN"
 //%define api.prefix {MAIN} // not working in Bison 3.8.2
 %define parse.error verbose
@@ -349,9 +348,9 @@ stmt : ident_or_xident '+' '+' ';'					{ $$ = new Scalar($1, new BinaryOp(new Lo
 	 | condblock
 	 | whileblock
 	 | interface_impl
-	 | TOK_IDENTIFIER '.' TOK_INPUT '=' expr ';'      			{ $$ = new ModelNode($1, nullptr, @1);}
-	 | TOK_IDENTIFIER '.' TOK_INVOKE '(' ')' ';'      			{ $$ = new ModelNode($1, nullptr, @1); }
-	 | TOK_IDENTIFIER '=' TOK_IDENTIFIER '.' TOK_OUTPUT ';' 	{ $$ = new ModelNode($3, nullptr, @3); }
+	 | TOK_IDENTIFIER '.' TOK_INPUT '=' expr ';'      			{ $$ = new ModelNode($1, "input", $5, @1);}
+	 | TOK_IDENTIFIER '.' TOK_INVOKE '(' ')' ';'      			{ $$ = new ModelNode($1, "invoke", @1); }
+	 | TOK_IDENTIFIER '=' TOK_IDENTIFIER '.' TOK_OUTPUT ';' 	{ $$ = new ModelNode($3, "output", @3); }
 	 | model_stmt ';' 											{ $$ = $1; } // TFLM
 
 complexvar_set : TOK_XIDENTIFIER[id] '=' logicexpr	{ $$ = new Scalar($id, $logicexpr);	$$->setLocation(@id); }
