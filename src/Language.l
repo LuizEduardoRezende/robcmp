@@ -43,10 +43,8 @@ EXP ([Ee][-+]?[0-9]+)?
 "interface"				{ return TOK_INTF; }
 "implements"			{ return TOK_IMPL; }
 "use"					{ return TOK_USE; }
-"model" 				{ return TOK_MODEL; }  // TFLM
+"model"					{ return TOK_MODEL; }  // TFLM
 "invoke"				{ return TOK_INVOKE; } // TFLM
-"input"					{ return TOK_INPUT; }  // TFLM
-"output"				{ return TOK_OUTPUT; } // TFLM
 
 "inline"				{ return TOK_INLINE; }
 "noinline"				{ return TOK_NOINLINE; }
@@ -111,6 +109,14 @@ EXP ([Ee][-+]?[0-9]+)?
 
 {ID}					{ yylval->ident = strndup(yytext, yyleng); 
 						  return TOK_IDENTIFIER; }
+
+{ID}\.input			{ yylval->ident = strndup(yytext, yyleng);
+						  return TOK_MODEL_INPUT;
+						}
+
+{ID}\.output			{ yylval->ident = strndup(yytext, yyleng);
+						  return TOK_MODEL_OUTPUT;
+						}
 
 {ID}(\.{ID})+			{ yylval->ident = strndup(yytext, yyleng);
 						  return TOK_XIDENTIFIER;

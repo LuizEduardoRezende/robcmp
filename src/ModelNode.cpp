@@ -3,82 +3,76 @@
 #include "StringConst.h"
 #include "BackLLVM.h"
 #include "FunctionImpl.h"
+#include "Array.h"
+#include "ArrayElements.h"
+#include "Load.h"
 #include "../wrappers/tflm/tflm_wrapper.h"
 #include <iostream>
 #include <fstream>
 #include <vector>
 
-// Constructor para declaração de modelo: model nome_modelo("arquivo.tflite", arena_size, kernels)
+
 ModelNode::ModelNode(const char *name, ParamsCall *p, location_t l) 
 : Node(l), modelName(name), params(p), arenaSize(nullptr), kernels(nullptr), assignedValue(nullptr), fileParamNode(nullptr) {
     
     if (params && params->getNumParams() >= 3) {
-
         Node *fileParam = params->getParamElement(0);
         fileParamNode = fileParam;
         
         StringConst *strConst = dynamic_cast<StringConst*>(fileParam);
         if (strConst) {
-            // Usar método getter público (precisa ser adicionado em StringConst.h)
             tfliteFile = strConst->getStringValue();
         }
         
-        // Segundo parâmetro: arena size
         arenaSize = params->getParamElement(1);
-        
-        // Terceiro parâmetro: kernels
         kernels = params->getParamElement(2);
     }
 }
 
-// Constructor para acesso a membros
 ModelNode::ModelNode(const char *name, const char *member, location_t l)
     : Node(l), modelName(name), memberName(member), fileParamNode(nullptr), params(nullptr), arenaSize(nullptr), kernels(nullptr), assignedValue(nullptr) {
 }
 
-// Constructor para atribuições
 ModelNode::ModelNode(const char *name, const char *member, Node *value, location_t l)
     : Node(l), modelName(name), memberName(member), fileParamNode(nullptr), assignedValue(value), params(nullptr), arenaSize(nullptr), kernels(nullptr) {
 }
 
 Value* ModelNode::generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) {
+    if (!getScope()) {
+        setScope(func);
+    }
+    
     if (params) {
-        // Declaração do modelo - gerar dados estáticos e inicialização
         return generateDeclaration(func, block, allocblock);
     } else if (!memberName.empty()) {
-        // Acesso a membros (modelo.input, modelo.output, etc.)
         return generateMemberAccess(func, block, allocblock);
     }
     return nullptr;
 }
 
 Value* ModelNode::generateDeclaration(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) {
-    // Inicializar escopo se necessário
     if (!getScope()) {
         setScope(func);
     }
     
-    // Definir escopo nos parâmetros também
-    if (arenaSize && !arenaSize->getScope()) {
-        arenaSize->setScope(func);
-    }
-    if (kernels && !kernels->getScope()) {
-        kernels->setScope(func);
-    }
-    if (fileParamNode && !fileParamNode->getScope()) {
-        fileParamNode->setScope(func);
+    if (params) {
+        for (int i = 0; i < params->getNumParams(); i++) {
+            Node* param = params->getParamElement(i);
+            if (param && !param->getScope()) {
+                param->setScope(func);
+            }
+        }
     }
     
-    // Verificar se conseguimos extrair o nome do arquivo
     if (tfliteFile.empty()) {
         yyerrorcpp("Nome do arquivo .tflite não foi extraído corretamente para o modelo '" + modelName + "'.", this);
         setSemanticError();
         return nullptr;
     }
     
-    // Construir caminho relativo ao arquivo .rob usando source_filename do módulo
+    // Construir caminho relativo ao arquivo .rob
     std::string sourceFile = mainmodule->getSourceFileName();
-    std::string sourceDir = "./"; // default
+    std::string sourceDir = "./";
     
     size_t lastSlash = sourceFile.find_last_of('/');
     if (lastSlash != std::string::npos) {
@@ -86,6 +80,7 @@ Value* ModelNode::generateDeclaration(FunctionImpl *func, BasicBlock *block, Bas
     }
     
     std::string fullPath = sourceDir + tfliteFile;
+    // filesystem::path full_path(tfLLiteFile);
     std::ifstream file(fullPath);
     if (!file.good()) {
         yyerrorcpp("Arquivo '" + fullPath + "' não encontrado para o modelo '" + modelName + "'.", this);
@@ -95,7 +90,7 @@ Value* ModelNode::generateDeclaration(FunctionImpl *func, BasicBlock *block, Bas
     
     tfliteFile = fullPath;
     
-    // Ler arquivo
+    // Ler arquivo .tflite
     file.seekg(0, std::ios::end);
     size_t fileSize = file.tellg();
     file.seekg(0, std::ios::beg);
@@ -104,25 +99,21 @@ Value* ModelNode::generateDeclaration(FunctionImpl *func, BasicBlock *block, Bas
     file.read(reinterpret_cast<char*>(buffer.data()), fileSize);
     file.close();
     
-    // Arquivo carregado com sucesso
-    
-    // Criar array global com os dados do modelo usando LLVM
+    // Criar array global com os dados do modelo
     Type* i8Type = Type::getInt8Ty(global_context);
     ArrayType* modelDataType = ArrayType::get(i8Type, fileSize);
     
-    // Converter buffer para array de constantes LLVM
     std::vector<Constant*> modelDataConstants;
     modelDataConstants.reserve(fileSize);
     for (size_t i = 0; i < fileSize; i++) {
         modelDataConstants.push_back(ConstantInt::get(i8Type, buffer[i]));
     }
     
-    // Criar array global constante com os dados do modelo
     std::string modelDataName = modelName + "_model_data";
     GlobalVariable* modelDataGlobal = new GlobalVariable(
         *mainmodule, 
         modelDataType,
-        true,  // é constante
+        true,
         GlobalValue::InternalLinkage,
         ConstantArray::get(modelDataType, modelDataConstants),
         modelDataName
@@ -134,13 +125,12 @@ Value* ModelNode::generateDeclaration(FunctionImpl *func, BasicBlock *block, Bas
     GlobalVariable* modelLenGlobal = new GlobalVariable(
         *mainmodule,
         i32Type,
-        true,  // é constante
+        true,
         GlobalValue::InternalLinkage,
         ConstantInt::get(i32Type, fileSize),
         modelLenName
     );
     
-    // Gerar inicialização do interpretador
     return generateModelInitialization(func, block, allocblock, modelDataGlobal, modelLenGlobal);
 }
 
@@ -148,10 +138,47 @@ Value* ModelNode::generateDeclaration(FunctionImpl *func, BasicBlock *block, Bas
 
 Value* ModelNode::generateModelInitialization(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, 
                                             GlobalVariable* modelDataGlobal, GlobalVariable* modelLenGlobal) {
+    // VALIDAÇÕES SEMÂNTICAS PRIMEIRO (antes de qualquer geração de código LLVM)
+    if (!kernels) {
+        yyerrorcpp("Erro: Modelo '" + modelName + "' deve especificar um array de kernels necessários.", this);
+        setSemanticError();
+        return nullptr;
+    }
     
+    // Detectar o tamanho do array de kernels ANTES de gerar código LLVM
+    Node* kernelsSymbol = nullptr;
+    size_t arraySize = 0;
+    
+    if (Load* loadNode = dynamic_cast<Load*>(kernels)) {
+        kernelsSymbol = loadNode->getIdentSymbol(false);
+    }
+    
+    if (kernelsSymbol) {
+        if (Array* arrayNode = dynamic_cast<Array*>(kernelsSymbol)) {
+            arraySize = arrayNode->getSize();
+        } else {
+            arraySize = 1;
+        }
+    } else {
+        yyerrorcpp("Erro: Não foi possível determinar o símbolo do array de kernels para o modelo '" + modelName + "'.", this);
+        setSemanticError();
+        return nullptr;
+    }
+    
+    if (arraySize == 0) {
+        yyerrorcpp("Erro: Array de kernels do modelo '" + modelName + "' não pode estar vazio.", this);
+        setSemanticError();
+        return nullptr;
+    }
+    
+    if (arraySize > 255) {
+        yyerrorcpp("Erro: Array de kernels do modelo '" + modelName + "' tem " + std::to_string(arraySize) + " elementos, mas o máximo suportado é 255.", this);
+        setSemanticError();
+        return nullptr;
+    }
+
     Builder->SetInsertPoint(allocblock);
     
-    // Criar arena estática (aloca uma única vez)
     Value* arenaSizeValue;
     if (arenaSize) {
         arenaSizeValue = arenaSize->generate(func, block, allocblock);
@@ -159,7 +186,6 @@ Value* ModelNode::generateModelInitialization(FunctionImpl *func, BasicBlock *bl
         arenaSizeValue = ConstantInt::get(Type::getInt32Ty(global_context), 2048);
     }
     
-    // Converter para ConstantInt se possível para criar array estático
     ConstantInt* constantArenaSize = dyn_cast<ConstantInt>(arenaSizeValue);
     if (!constantArenaSize) {
         yyerrorcpp("Tamanho da arena do modelo '" + modelName + "' deve ser uma constante.", this);
@@ -171,24 +197,24 @@ Value* ModelNode::generateModelInitialization(FunctionImpl *func, BasicBlock *bl
     Type* i8Type = Type::getInt8Ty(global_context);
     ArrayType* arenaType = ArrayType::get(i8Type, arenaSize);
     
-    // Criar arena global estática
+    // Criar arena global
     std::string arenaName = modelName + "_arena";
     GlobalVariable* arenaGlobal = new GlobalVariable(
         *mainmodule,
         arenaType,
-        false, // não é constante (será modificada)
+        false,
         GlobalValue::InternalLinkage,
-        ConstantAggregateZero::get(arenaType), // inicializar com zeros
+        ConstantAggregateZero::get(arenaType),
         arenaName
     );
     
-    // Criar variável global para a instância do interpretador
+    // Criar variável global para instância do interpretador
     std::string instanceName = modelName + "_instance";
     PointerType* ptrType = PointerType::getUnqual(Type::getInt8Ty(global_context));
     GlobalVariable* instanceGlobal = new GlobalVariable(
         *mainmodule,
         ptrType,
-        false, // não é constante
+        false,
         GlobalValue::InternalLinkage,
         ConstantPointerNull::get(ptrType),
         instanceName
@@ -196,74 +222,344 @@ Value* ModelNode::generateModelInitialization(FunctionImpl *func, BasicBlock *bl
     
     Builder->SetInsertPoint(block);
     
-    // Verificar se já foi inicializado (lazy initialization)
+    // Implementar lazy initialization
     Value* currentInstance = Builder->CreateLoad(ptrType, instanceGlobal, "current_instance");
     Value* isNull = Builder->CreateICmpEQ(currentInstance, 
         ConstantPointerNull::get(ptrType), 
         "is_null");
     
-    // Criar blocos para inicialização condicional
     BasicBlock* initBlock = BasicBlock::Create(global_context, "init_model", func->getLLVMFunction());
     BasicBlock* afterInitBlock = BasicBlock::Create(global_context, "after_init", func->getLLVMFunction());
     
     Builder->CreateCondBr(isNull, initBlock, afterInitBlock);
     
-    // Bloco de inicialização
     Builder->SetInsertPoint(initBlock);
     
-    // Preparar argumentos para InitializeInterpreterAuto
+    // Preparar argumentos para InitializeInterpreter
     PointerType* i8PtrType = PointerType::getUnqual(Type::getInt8Ty(global_context));
     Value* modelDataPtr = Builder->CreateBitCast(modelDataGlobal, i8PtrType);
-    Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
     Value* arenaPtr = Builder->CreateBitCast(arenaGlobal, i8PtrType);
-    Value* arenaSizeArg = ConstantInt::get(Type::getInt64Ty(global_context), arenaSize);
     
-    // Criar call para InitializeInterpreterAuto
+    // Gerar código LLVM para o array de kernels (validações já foram feitas)
+    Value* kernelsArrayValue = kernels->generate(func, initBlock, allocblock);
+    if (!kernelsArrayValue) {
+        // ERRO: Criar terminador antes de retornar
+        Builder->CreateStore(ConstantPointerNull::get(ptrType), instanceGlobal);
+        Builder->CreateBr(afterInitBlock);
+        yyerrorcpp("Erro: Não foi possível gerar código para o array de kernels do modelo '" + modelName + "'.", this);
+        setSemanticError();
+        return nullptr;
+    }
+    
+    Value* kernelsArrayPtr = Builder->CreateBitCast(kernelsArrayValue, i8PtrType);
+    Value* numKernels = ConstantInt::get(Type::getInt8Ty(global_context), (uint8_t)arraySize);
+    
+    // Continuar com a geração dos argumentos para InitializeInterpreter
+    Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
+    Value* arenaSizeArg = ConstantInt::get(Type::getInt32Ty(global_context), (uint32_t)arenaSize);
+    
     std::vector<Type*> argTypes = {
-        i8PtrType, // model_data
+        i8PtrType,                          // model_data
+        i8PtrType,                          // tensor_arena  
+        i8PtrType,                          // required_kernels
         Type::getInt32Ty(global_context),   // dummy int
-        i8PtrType, // arena
-        Type::getInt32Ty(global_context),   // dummy int  
-        Type::getInt64Ty(global_context)    // arena_size
+        Type::getInt32Ty(global_context),   // tensor_arena_size
+        Type::getInt8Ty(global_context)     // num_kernels
     };
     
-    FunctionType* funcType = FunctionType::get(i8PtrType, argTypes, false);
-    FunctionCallee initFunc = mainmodule->getOrInsertFunction("InitializeInterpreterAuto", funcType);
+    FunctionType* funcType = FunctionType::get(Type::getInt64Ty(global_context), argTypes, false);
+    FunctionCallee initFunc = mainmodule->getOrInsertFunction("InitializeInterpreter", funcType);
     
-    std::vector<Value*> args = {modelDataPtr, dummyInt, arenaPtr, dummyInt, arenaSizeArg};
+    std::vector<Value*> args = {modelDataPtr, arenaPtr, kernelsArrayPtr, dummyInt, arenaSizeArg, numKernels};
     Value* newInstance = Builder->CreateCall(initFunc, args, "new_instance");
     
-    // Armazenar nova instância
-    Builder->CreateStore(newInstance, instanceGlobal);
-    
-    // TODO: Adicionar verificação de erro (se newInstance == NULL)
-    
+    // Converter uintptr_t para ponteiro
+    Value* instancePtr = Builder->CreateIntToPtr(newInstance, ptrType, "instance_ptr");
+    Builder->CreateStore(instancePtr, instanceGlobal);
     Builder->CreateBr(afterInitBlock);
     
-    // Continuar após inicialização
     Builder->SetInsertPoint(afterInitBlock);
     
-    // Retornar a instância (carregada novamente para garantir valor atual)
     return Builder->CreateLoad(ptrType, instanceGlobal, "model_instance");
 }
 
 Value* ModelNode::generateMemberAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) {
-    // Implementar acesso a membros do modelo (input, output, etc.)
-    // Por enquanto, retornar nullptr - implementar conforme necessário
-    std::string memberVariableName = modelName + "_" + memberName;
+    if (!getScope()) {
+        setScope(func);
+    }
     
-    if (assignedValue) {
-        // Atribuição: modelo.input = valor
-        // TODO: Implementar lógica de atribuição
-        Value* value = assignedValue->generate(func, block, allocblock);
-        return value;
+    if (assignedValue && !assignedValue->getScope()) {
+        assignedValue->setScope(func);
+    }
+    
+    Builder->SetInsertPoint(block);
+    
+    std::string instanceName = modelName + "_instance";
+    GlobalVariable* instanceGlobal = mainmodule->getNamedGlobal(instanceName);
+    if (!instanceGlobal) {
+        yyerrorcpp("Modelo '" + modelName + "' não foi declarado antes do acesso ao membro '" + memberName + "'.", this);
+        setSemanticError();
+        return nullptr;
+    }
+    
+    PointerType* ptrType = PointerType::getUnqual(Type::getInt8Ty(global_context));
+    Value* modelInstance = Builder->CreateLoad(ptrType, instanceGlobal, "model_instance");
+    
+    if (memberName == "input") {
+        return generateInputAccess(func, block, allocblock, modelInstance);
+    } else if (memberName == "output") {
+        return generateOutputAccess(func, block, allocblock, modelInstance);
+    } else if (memberName == "invoke") {
+        return generateInvoke(func, block, allocblock, modelInstance);
     } else {
-        // Acesso: modelo.input
-        // TODO: Implementar lógica de acesso a membro
-        // Por enquanto retornar nullptr
+        yyerrorcpp("Membro '" + memberName + "' não suportado no modelo '" + modelName + "'. Use 'input', 'output' ou 'invoke'.", this);
+        setSemanticError();
         return nullptr;
     }
 }
 
+Value* ModelNode::generateInputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
+    if (assignedValue) {
+        return generateInputAssignment(func, block, allocblock, modelInstance);
+    } else {
+        yyerrorcpp("Não é possível ler diretamente do tensor de entrada '" + modelName + ".input'. Use apenas para atribuição: '" + modelName + ".input = dados'.", this);
+        setSemanticError();
+        return nullptr;
+    }
+}
 
+Value* ModelNode::generateOutputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
+    if (assignedValue) {
+        yyerrorcpp("Não é possível atribuir valores ao tensor de saída '" + modelName + ".output'.", this);
+        setSemanticError();
+        return nullptr;
+    } else {
+        return generateGetOutputTensor(func, block, allocblock, modelInstance);
+    }
+}
+
+Value* ModelNode::generateInputAssignment(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
+    PointerType* i8PtrType = PointerType::getUnqual(Type::getInt8Ty(global_context));
+    Value* tensorIndex = ConstantInt::get(Type::getInt64Ty(global_context), 0);
+    Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
+    
+    FunctionType* getInputType = FunctionType::get(
+        Type::getInt64Ty(global_context),
+        {Type::getInt64Ty(global_context), Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
+        false
+    );
+    FunctionCallee getInputFunc = mainmodule->getOrInsertFunction("GetInputTensor", getInputType);
+    
+    Value* modelHandle = Builder->CreatePtrToInt(modelInstance, Type::getInt64Ty(global_context));
+    Value* tensorHandle = Builder->CreateCall(getInputFunc, {modelHandle, tensorIndex, dummyInt}, "input_tensor");
+    
+    FunctionType* getSizeType = FunctionType::get(
+        Type::getInt64Ty(global_context),
+        {Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
+        false
+    );
+    FunctionCallee getSizeFunc = mainmodule->getOrInsertFunction("GetTensorSize", getSizeType);
+    Value* tensorSize = Builder->CreateCall(getSizeFunc, {tensorHandle, dummyInt}, "tensor_size");
+    
+    Load* loadNode = dynamic_cast<Load*>(assignedValue);
+    if (loadNode) {
+        // Para Load nodes, sempre tentar como array primeiro
+        return generateVariableArrayToTensorCopy(func, block, allocblock, tensorHandle, tensorSize, loadNode);
+    } else {
+        Value* assignedData = assignedValue->generate(func, block, allocblock);
+        if (!assignedData) {
+            yyerrorcpp("Erro ao gerar dados para atribuição ao tensor de entrada.", this);
+            setSemanticError();
+            return nullptr;
+        }
+        return generateScalarToTensorCopy(func, block, allocblock, tensorHandle, assignedData);
+    }
+}
+
+Value* ModelNode::generateGetOutputTensor(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
+    Value* tensorIndex = ConstantInt::get(Type::getInt64Ty(global_context), 0);
+    Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
+    
+    // Primeiro obter o handle do tensor de saída
+    FunctionType* getOutputType = FunctionType::get(
+        Type::getInt64Ty(global_context),
+        {Type::getInt64Ty(global_context), Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
+        false
+    );
+    FunctionCallee getOutputFunc = mainmodule->getOrInsertFunction("GetOutputTensor", getOutputType);
+    
+    Value* modelHandle = Builder->CreatePtrToInt(modelInstance, Type::getInt64Ty(global_context));
+    Value* tensorHandle = Builder->CreateCall(getOutputFunc, {modelHandle, tensorIndex, dummyInt}, "output_tensor");
+    
+    // Agora ler o valor do tensor usando GetTensorAsFloat
+    FunctionType* getValueType = FunctionType::get(
+        Type::getFloatTy(global_context),
+        {Type::getInt64Ty(global_context), Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
+        false
+    );
+    FunctionCallee getValueFunc = mainmodule->getOrInsertFunction("GetTensorAsFloat", getValueType);
+    
+    Value* elementIndex = ConstantInt::get(Type::getInt64Ty(global_context), 0);
+    Value* outputValue = Builder->CreateCall(getValueFunc, {tensorHandle, elementIndex, dummyInt}, "output_value");
+    
+    // Converter para double para compatibilidade com o sistema de tipos
+    return Builder->CreateFPExt(outputValue, Type::getDoubleTy(global_context), "output_double");
+}
+
+
+
+
+
+Value* ModelNode::generateVariableArrayToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, 
+                                                   Value* tensorHandle, Value* tensorSize, Load* loadNode) {
+    FunctionType* setValueType = FunctionType::get(
+        Type::getVoidTy(global_context),
+        {Type::getInt64Ty(global_context), Type::getInt64Ty(global_context), Type::getFloatTy(global_context), Type::getInt32Ty(global_context)},
+        false
+    );
+    FunctionCallee setValueFunc = mainmodule->getOrInsertFunction("SetTensorValue", setValueType);
+    
+    uint64_t tensorElements = 1;
+    if (ConstantInt* constSize = dyn_cast<ConstantInt>(tensorSize)) {
+        tensorElements = constSize->getZExtValue();
+    }
+    
+    // Detectar tamanho do array através do símbolo original
+    size_t arraySize = 1;
+    Node* originalSymbol = loadNode->getIdentSymbol(false);
+    if (originalSymbol) {
+        Array* arrayNode = dynamic_cast<Array*>(originalSymbol);
+        if (arrayNode) {
+            arraySize = arrayNode->getSize();
+        }
+    }
+    
+    // Verificar compatibilidade de tamanhos
+    if (arraySize != tensorElements) {
+        const std::string& varName = loadNode->getName();
+        yyerrorcpp("Incompatibilidade de tamanho: variável '" + varName + "' tem " + 
+                  std::to_string(arraySize) + " elementos, mas tensor de entrada espera " + 
+                  std::to_string(tensorElements) + " elementos.", this);
+        setSemanticError();
+        return tensorHandle;
+    }
+
+    Value* varPtr = assignedValue->generate(func, block, allocblock);
+    if (!varPtr) {
+        yyerrorcpp("Erro ao obter ponteiro da variável array para cópia ao tensor.", this);
+        setSemanticError();
+        return tensorHandle;
+    }
+    
+    // Sempre tratar como array primeiro (dados = {1.57} é um array de 1 elemento)
+    for (uint64_t i = 0; i < tensorElements; i++) {
+        Value* elementValue;
+        
+        if (arraySize == 1 && tensorElements == 1) {
+            // Array de 1 elemento: carregar diretamente
+            if (varPtr->getType()->isPointerTy()) {
+                // FORÇA carregar como float primeiro (dados é gerado como float)
+                Value* floatVal = Builder->CreateLoad(Type::getFloatTy(global_context), varPtr, "single_float");
+                elementValue = Builder->CreateFPExt(floatVal, Type::getDoubleTy(global_context), "float_to_double");
+            } else {
+                elementValue = varPtr;
+            }
+        } else {
+            // Array com múltiplos elementos: usar GEP
+            Value* offset = ConstantInt::get(Type::getInt64Ty(global_context), i);
+            Value* elementPtr = Builder->CreateGEP(Type::getDoubleTy(global_context), varPtr, offset, "element_ptr_" + std::to_string(i));
+            elementValue = Builder->CreateLoad(Type::getDoubleTy(global_context), elementPtr, "array_element_" + std::to_string(i));
+        }
+        
+        Value* elementFloat = convertToFloat(elementValue);
+        Value* tensorIndex = ConstantInt::get(Type::getInt64Ty(global_context), i);
+        Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
+        Builder->CreateCall(setValueFunc, {tensorHandle, tensorIndex, elementFloat, dummyInt});
+    }
+    
+    return tensorHandle;
+}
+
+
+
+Value* ModelNode::generateScalarToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* tensorHandle, Value* data) {
+    FunctionType* setValueType = FunctionType::get(
+        Type::getVoidTy(global_context),
+        {Type::getInt64Ty(global_context), Type::getInt64Ty(global_context), Type::getFloatTy(global_context), Type::getInt32Ty(global_context)},
+        false
+    );
+    FunctionCallee setValueFunc = mainmodule->getOrInsertFunction("SetTensorValue", setValueType);
+    
+    // Se data é um ponteiro, carregar o valor primeiro
+    Value* floatValue;
+    if (data->getType()->isPointerTy()) {
+        Value* loadedValue = Builder->CreateLoad(Type::getDoubleTy(global_context), data, "loaded_scalar");
+        floatValue = convertToFloat(loadedValue);
+    } else {
+        floatValue = convertToFloat(data);
+    }
+    
+    Value* index = ConstantInt::get(Type::getInt64Ty(global_context), 0);
+    Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
+    Builder->CreateCall(setValueFunc, {tensorHandle, index, floatValue, dummyInt});
+    
+    return tensorHandle;
+}
+
+Value* ModelNode::convertToFloat(Value* value) {
+    Type* valueType = value->getType();
+    
+    if (valueType->isFloatTy()) {
+        return value;
+    } else if (valueType->isIntegerTy()) {
+        if (ConstantInt* constInt = dyn_cast<ConstantInt>(value)) {
+            int64_t intValue = constInt->getSExtValue();
+            return ConstantFP::get(Type::getFloatTy(global_context), static_cast<double>(intValue));
+        } else {
+            return Builder->CreateSIToFP(value, Type::getFloatTy(global_context), "int_to_float");
+        }
+    } else if (valueType->isDoubleTy()) {
+        if (ConstantFP* constFP = dyn_cast<ConstantFP>(value)) {
+            double doubleValue = constFP->getValueAPF().convertToDouble();
+            return ConstantFP::get(Type::getFloatTy(global_context), static_cast<float>(doubleValue));
+        } else {
+            return Builder->CreateFPTrunc(value, Type::getFloatTy(global_context), "double_to_float");
+        }
+    } else if (valueType->isPointerTy()) {
+        Value* loadedDouble = Builder->CreateLoad(Type::getDoubleTy(global_context), value, "loaded_double");
+        return convertToFloat(loadedDouble);
+    } else {
+        std::string typeName;
+        llvm::raw_string_ostream stream(typeName);
+        valueType->print(stream);
+        stream.flush();
+        
+        // DEBUG: Este caso pode estar sendo executado
+        yyerrorcpp("TIPO DESCONHECIDO: '" + typeName + "' - retornando 0.0f (DEBUG).", this);
+        return ConstantFP::get(Type::getFloatTy(global_context), 0.0f);
+    }
+}
+
+Value* ModelNode::generateInvoke(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
+    if (assignedValue) {
+        yyerrorcpp("Não é possível atribuir valores à operação '" + modelName + ".invoke'.", this);
+        setSemanticError();
+        return nullptr;
+    }
+    
+    Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
+    
+    // Criar call para InvokeInterpreter
+    FunctionType* invokeType = FunctionType::get(
+        Type::getInt32Ty(global_context),
+        {Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
+        false
+    );
+    FunctionCallee invokeFunc = mainmodule->getOrInsertFunction("InvokeInterpreter", invokeType);
+    
+    Value* modelHandle = Builder->CreatePtrToInt(modelInstance, Type::getInt64Ty(global_context));
+    Value* result = Builder->CreateCall(invokeFunc, {modelHandle, dummyInt}, "invoke_result");
+    
+    return result;
+}
 

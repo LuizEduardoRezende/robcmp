@@ -2,14 +2,15 @@
 
 int8 main() {
   const arena_size = 262144;
-  const kernels = {34, 53, 33, 79};
-  dados = {1, 2, 3, 4, 5, 6};
-  
+  const kernels = {9};
+  dados = {1.57};
+
   model meu_modelo("hello_world_float.tflite", arena_size, kernels);
-  /*
   meu_modelo.input = dados;
-  invoke meu_modelo();
+
+  
+  invoke meu_modelo;
   output = meu_modelo.output;
-  */
+  
   return 0;
 }

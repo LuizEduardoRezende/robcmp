@@ -19,7 +19,8 @@
 %type <node> bind asminline
 %type <strings> type_impls
 
-%type <node> model_stmt 
+%type <node> model_stmt invoke_stmt
+%type <ident> TOK_MODEL_INPUT TOK_MODEL_OUTPUT
 
 %type <ae> element
 %type <aes> elements relements array
@@ -348,14 +349,19 @@ stmt : ident_or_xident '+' '+' ';'					{ $$ = new Scalar($1, new BinaryOp(new Lo
 	 | condblock
 	 | whileblock
 	 | interface_impl
-	 | TOK_IDENTIFIER '.' TOK_INPUT '=' expr ';'      			{ $$ = new ModelNode($1, "input", $5, @1);}
-	 | TOK_IDENTIFIER '.' TOK_INVOKE '(' ')' ';'      			{ $$ = new ModelNode($1, "invoke", @1); }
-	 | TOK_IDENTIFIER '=' TOK_IDENTIFIER '.' TOK_OUTPUT ';' 	{ $$ = new ModelNode($3, "output", @3); }
-	 | model_stmt ';' 											{ $$ = $1; } // TFLM
+	 | model_stmt ';'
+	 | invoke_stmt ';'
 
 complexvar_set : TOK_XIDENTIFIER[id] '=' logicexpr	{ $$ = new Scalar($id, $logicexpr);	$$->setLocation(@id); }
 complexvar_set : TOK_XIDENTIFIER[id] '=' array		{ $$ = new Array($id, $array, @id); }
 complexvar_set : TOK_XIDENTIFIER[id] '=' matrix		{ $$ = new Matrix($id, $matrix, @id); }
+complexvar_set : TOK_MODEL_INPUT[id] '=' logicexpr { 
+	// Extract model name from "model.input"
+	std::string fullName($id);
+	std::string modelName = fullName.substr(0, fullName.find('.'));
+	$$ = new ModelNode(modelName.c_str(), "input", $logicexpr, @id);
+	$$->setLocation(@id); 
+}
 
 returnblock : TOK_RETURN logicexpr		{ $$ = new Return($2); }
 returnblock : TOK_RETURN				{ $$ = new Return(@1); }
@@ -459,6 +465,13 @@ factor : '(' expr ')' 			{ $$ = $2; }
 	   | TOK_STRING				{ $$ = new StringConst("conststr", $1, @1); }
 	   | ident_or_xident[id] '[' expr ']'				{ $$ = new LoadArray($1, $3, @id);} 
 	   | ident_or_xident[id] '[' expr ']' '[' expr ']'	{ $$ = new LoadMatrix($1, $3, $6, @id);}
+	   | TOK_MODEL_OUTPUT[id] { 
+			// Extract model name from "model.output"
+			std::string fullName($id);
+			std::string modelName = fullName.substr(0, fullName.find('.'));
+			$$ = new ModelNode(modelName.c_str(), "output", @id);
+			$$->setLocation(@id); 
+		}
 	   | call_or_cast
 	   | unary
 	   ;
@@ -502,6 +515,10 @@ paramscall : %empty { $$ = new ParamsCall(); }
 
 model_stmt : TOK_MODEL TOK_IDENTIFIER '(' paramscall ')' {
     $$ = new ModelNode($2, $4, @2);
+}
+
+invoke_stmt : TOK_INVOKE TOK_IDENTIFIER {
+    $$ = new ModelNode($2, "invoke", @2);
 }
 
 %%

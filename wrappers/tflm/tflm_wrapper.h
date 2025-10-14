@@ -231,11 +231,6 @@ typedef enum {
 // Retorna 0 em caso de erro, senão retorna handle válido
 uintptr_t InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena, const uint8_t* required_kernels, int, int tensor_arena_size, int8_t num_kernels);
 
-// Inicializa um interpretador TensorFlow Lite Micro com detecção automática de kernels
-// Analisa o modelo e registra automaticamente apenas os kernels necessários
-// Retorna 0 em caso de erro, senão retorna handle válido
-uintptr_t InitializeInterpreterAuto(const uint8_t* model_data, int, uint8_t* tensor_arena, int, size_t tensor_arena_size);
-
 // Destrói e libera a memória de um interpretador
 void DestroyInterpreter(uintptr_t instance_handle, int);
 

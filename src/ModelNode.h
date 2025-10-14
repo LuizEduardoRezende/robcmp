@@ -4,6 +4,8 @@
 // Forward declarations
 class ParamsCall;
 class FunctionImpl;
+class Load;
+class ArrayElement;
 
 // LLVM Forward declarations
 namespace llvm {
@@ -46,5 +48,16 @@ public:
 private:
     std::string memberName;     // para acesso a membros
     Node *assignedValue;        // valor atribuído
+
+    // Métodos auxiliares para acesso aos tensores
+    Value* generateInputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
+    Value* generateOutputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
+    Value* generateInputAssignment(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
+    Value* generateGetOutputTensor(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
+    Value* generateArrayToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* tensorHandle, Value* tensorSize);
+    Value* generateVariableArrayToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* tensorHandle, Value* tensorSize, Load* loadNode);
+    Value* generateScalarToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* tensorHandle, Value* data);
+    Value* generateInvoke(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
+    Value* convertToFloat(Value* value);
 };
 
