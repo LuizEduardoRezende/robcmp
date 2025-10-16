@@ -39,6 +39,9 @@ public:
     // Constructor para atribuições: nome_modelo.input = valor
     ModelNode(const char *name, const char *member, Node *value, location_t l);
 
+    // Construtor para acesso a membros com índice e valor (input[index] = valor)
+    ModelNode(const char *name, const char *member, Node *index, Node *value, location_t l);
+
     virtual Value* generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) override;
     virtual Value* generateDeclaration(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock);
     virtual Value* generateModelInitialization(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, 
@@ -48,6 +51,8 @@ public:
 private:
     std::string memberName;     // para acesso a membros
     Node *assignedValue;        // valor atribuído
+    Node *tensorIndex;         // Índice do tensor para acesso com [index]
+
 
     // Métodos auxiliares para acesso aos tensores
     Value* generateInputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);

@@ -1024,6 +1024,56 @@ size_t GetTensorSize(uintptr_t tensor_handle, int) {
     return tensor->bytes / element_size;
 }
 
+void SetTensorArray(uintptr_t tensor_handle, const float* values, size_t count, int) {
+    if (tensor_handle == 0 || values == nullptr) {
+        MicroPrintf("ERRO: tensor_handle ou values nulo");
+        return;
+    }
+    
+    size_t tensor_size = GetTensorSize(tensor_handle, 0);
+    size_t copy_size = (count < tensor_size) ? count : tensor_size;
+    
+    MicroPrintf("Definindo %zu valores no tensor (tamanho: %zu)", copy_size, tensor_size);
+    
+    for (size_t i = 0; i < copy_size; ++i) {
+        SetTensorValue(tensor_handle, i, values[i], 0);
+    }
+    
+    // Preencher com zeros se necessário
+    for (size_t i = copy_size; i < tensor_size; ++i) {
+        SetTensorValue(tensor_handle, i, 0.0f, 0);
+    }
+}
+
+// Função para obter um tensor completo como array
+void GetTensorArray(uintptr_t tensor_handle, float* values, size_t max_count, int) {
+    if (tensor_handle == 0 || values == nullptr) {
+        MicroPrintf("ERRO: tensor_handle ou values nulo");
+        return;
+    }
+    
+    size_t tensor_size = GetTensorSize(tensor_handle, 0);
+    size_t copy_size = (max_count < tensor_size) ? max_count : tensor_size;
+    
+    MicroPrintf("Obtendo %zu valores do tensor (tamanho: %zu)", copy_size, tensor_size);
+    
+    for (size_t i = 0; i < copy_size; ++i) {
+        values[i] = GetTensorAsFloat(tensor_handle, i, 0);
+    }
+}
+
+size_t GetInputTensorCount(uintptr_t instance_handle, int) {
+    if (instance_handle == 0) return 0;
+    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
+    return instance->interpreter->inputs_size();
+}
+
+size_t GetOutputTensorCount(uintptr_t instance_handle, int) {
+    if (instance_handle == 0) return 0;
+    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
+    return instance->interpreter->outputs_size();
+}
+
 void InvokeInterpreter(uintptr_t instance_handle, int) {
     if (instance_handle == 0) {
         MicroPrintf("ERRO: instance_handle nulo");
@@ -1142,6 +1192,11 @@ void VerifyModelData(const uint8_t* model_data, int) {
     } else {
         MicroPrintf("✗ tflite::GetModel() retornou NULL!");
     }
+}
+
+// Função simples para imprimir float com quebras de linha
+void PrintFloat(float value) {
+    MicroPrintf("\n%.6f\n", value);
 }
 
 } // extern "C"

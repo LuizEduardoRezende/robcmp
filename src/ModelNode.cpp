@@ -13,7 +13,7 @@
 
 
 ModelNode::ModelNode(const char *name, ParamsCall *p, location_t l) 
-: Node(l), modelName(name), params(p), arenaSize(nullptr), kernels(nullptr), assignedValue(nullptr), fileParamNode(nullptr) {
+: Node(l), modelName(name), params(p), arenaSize(nullptr), kernels(nullptr), assignedValue(nullptr), tensorIndex(nullptr), fileParamNode(nullptr) {
     
     if (params && params->getNumParams() >= 3) {
         Node *fileParam = params->getParamElement(0);
@@ -30,11 +30,15 @@ ModelNode::ModelNode(const char *name, ParamsCall *p, location_t l)
 }
 
 ModelNode::ModelNode(const char *name, const char *member, location_t l)
-    : Node(l), modelName(name), memberName(member), fileParamNode(nullptr), params(nullptr), arenaSize(nullptr), kernels(nullptr), assignedValue(nullptr) {
+    : Node(l), modelName(name), memberName(member), fileParamNode(nullptr), params(nullptr), arenaSize(nullptr), kernels(nullptr), assignedValue(nullptr), tensorIndex(nullptr) {
 }
 
 ModelNode::ModelNode(const char *name, const char *member, Node *value, location_t l)
-    : Node(l), modelName(name), memberName(member), fileParamNode(nullptr), assignedValue(value), params(nullptr), arenaSize(nullptr), kernels(nullptr) {
+    : Node(l), modelName(name), memberName(member), fileParamNode(nullptr), assignedValue(value), tensorIndex(nullptr), params(nullptr), arenaSize(nullptr), kernels(nullptr) {
+}
+
+ModelNode::ModelNode(const char *name, const char *member, Node *index, Node *value, location_t l)
+    : Node(l), modelName(name), memberName(member), fileParamNode(nullptr), assignedValue(value), tensorIndex(index), params(nullptr), arenaSize(nullptr), kernels(nullptr) {
 }
 
 Value* ModelNode::generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) {
@@ -329,18 +333,30 @@ Value* ModelNode::generateInputAccess(FunctionImpl *func, BasicBlock *block, Bas
 }
 
 Value* ModelNode::generateOutputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
-    if (assignedValue) {
-        yyerrorcpp("Não é possível atribuir valores ao tensor de saída '" + modelName + ".output'.", this);
-        setSemanticError();
-        return nullptr;
-    } else {
-        return generateGetOutputTensor(func, block, allocblock, modelInstance);
-    }
+    // Para output, sempre gerar leitura do tensor (assignedValue é irrelevante aqui)
+    return generateGetOutputTensor(func, block, allocblock, modelInstance);
 }
 
 Value* ModelNode::generateInputAssignment(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
     PointerType* i8PtrType = PointerType::getUnqual(Type::getInt8Ty(global_context));
-    Value* tensorIndex = ConstantInt::get(Type::getInt64Ty(global_context), 0);
+    
+    // Use o índice fornecido ou 0 como padrão
+    Value* tensorIndexValue;
+    if (tensorIndex) {
+        tensorIndexValue = tensorIndex->generate(func, block, allocblock);
+        if (!tensorIndexValue) {
+            yyerrorcpp("Erro ao gerar índice do tensor de entrada.", this);
+            setSemanticError();
+            return nullptr;
+        }
+        // Converter para int64 se necessário
+        if (tensorIndexValue->getType()->isIntegerTy() && !tensorIndexValue->getType()->isIntegerTy(64)) {
+            tensorIndexValue = Builder->CreateZExt(tensorIndexValue, Type::getInt64Ty(global_context), "tensor_index_ext");
+        }
+    } else {
+        tensorIndexValue = ConstantInt::get(Type::getInt64Ty(global_context), 0);
+    }
+    
     Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
     
     FunctionType* getInputType = FunctionType::get(
@@ -351,7 +367,7 @@ Value* ModelNode::generateInputAssignment(FunctionImpl *func, BasicBlock *block,
     FunctionCallee getInputFunc = mainmodule->getOrInsertFunction("GetInputTensor", getInputType);
     
     Value* modelHandle = Builder->CreatePtrToInt(modelInstance, Type::getInt64Ty(global_context));
-    Value* tensorHandle = Builder->CreateCall(getInputFunc, {modelHandle, tensorIndex, dummyInt}, "input_tensor");
+    Value* tensorHandle = Builder->CreateCall(getInputFunc, {modelHandle, tensorIndexValue, dummyInt}, "input_tensor");
     
     FunctionType* getSizeType = FunctionType::get(
         Type::getInt64Ty(global_context),
@@ -377,7 +393,23 @@ Value* ModelNode::generateInputAssignment(FunctionImpl *func, BasicBlock *block,
 }
 
 Value* ModelNode::generateGetOutputTensor(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
-    Value* tensorIndex = ConstantInt::get(Type::getInt64Ty(global_context), 0);
+    // Use o índice fornecido ou 0 como padrão
+    Value* tensorIndexValue;
+    if (tensorIndex) {
+        tensorIndexValue = tensorIndex->generate(func, block, allocblock);
+        if (!tensorIndexValue) {
+            yyerrorcpp("Erro ao gerar índice do tensor de saída.", this);
+            setSemanticError();
+            return nullptr;
+        }
+        // Converter para int64 se necessário
+        if (tensorIndexValue->getType()->isIntegerTy() && !tensorIndexValue->getType()->isIntegerTy(64)) {
+            tensorIndexValue = Builder->CreateZExt(tensorIndexValue, Type::getInt64Ty(global_context), "tensor_index_ext");
+        }
+    } else {
+        tensorIndexValue = ConstantInt::get(Type::getInt64Ty(global_context), 0);
+    }
+    
     Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
     
     // Primeiro obter o handle do tensor de saída
@@ -389,41 +421,51 @@ Value* ModelNode::generateGetOutputTensor(FunctionImpl *func, BasicBlock *block,
     FunctionCallee getOutputFunc = mainmodule->getOrInsertFunction("GetOutputTensor", getOutputType);
     
     Value* modelHandle = Builder->CreatePtrToInt(modelInstance, Type::getInt64Ty(global_context));
-    Value* tensorHandle = Builder->CreateCall(getOutputFunc, {modelHandle, tensorIndex, dummyInt}, "output_tensor");
+    Value* tensorHandle = Builder->CreateCall(getOutputFunc, {modelHandle, tensorIndexValue, dummyInt}, "output_tensor");
     
-    // Agora ler o valor do tensor usando GetTensorAsFloat
-    FunctionType* getValueType = FunctionType::get(
-        Type::getFloatTy(global_context),
-        {Type::getInt64Ty(global_context), Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
+    // Obter o tamanho do tensor de saída
+    FunctionType* getSizeType = FunctionType::get(
+        Type::getInt64Ty(global_context),
+        {Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
         false
     );
-    FunctionCallee getValueFunc = mainmodule->getOrInsertFunction("GetTensorAsFloat", getValueType);
+    FunctionCallee getSizeFunc = mainmodule->getOrInsertFunction("GetTensorSize", getSizeType);
+    Value* tensorSize = Builder->CreateCall(getSizeFunc, {tensorHandle, dummyInt}, "tensor_size");
     
-    Value* elementIndex = ConstantInt::get(Type::getInt64Ty(global_context), 0);
-    Value* outputValue = Builder->CreateCall(getValueFunc, {tensorHandle, elementIndex, dummyInt}, "output_value");
+    // ESTRATÉGIA SIMPLES: Usar GetTensorArray do wrapper!
+    // Alocar array de float baseado no tamanho do tensor
+    PointerType* floatPtrType = PointerType::getUnqual(Type::getFloatTy(global_context));
     
-    // Converter para double para compatibilidade com o sistema de tipos
-    return Builder->CreateFPExt(outputValue, Type::getDoubleTy(global_context), "output_double");
+    // Malloc para array de float
+    FunctionType* mallocType = FunctionType::get(
+        PointerType::getUnqual(Type::getInt8Ty(global_context)),
+        {Type::getInt64Ty(global_context)},
+        false
+    );
+    FunctionCallee mallocFunc = mainmodule->getOrInsertFunction("malloc", mallocType);
+    
+    Value* sizeOfFloat = ConstantInt::get(Type::getInt64Ty(global_context), 4); // sizeof(float)
+    Value* arrayBytes = Builder->CreateMul(tensorSize, sizeOfFloat, "array_bytes");
+    Value* mallocPtr = Builder->CreateCall(mallocFunc, {arrayBytes}, "malloc_ptr");
+    Value* floatArray = Builder->CreateBitCast(mallocPtr, floatPtrType, "float_array");
+    
+    // Chamar GetTensorArray - wrapper faz todo o trabalho!
+    FunctionType* getArrayType = FunctionType::get(
+        Type::getVoidTy(global_context),
+        {Type::getInt64Ty(global_context), floatPtrType, Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
+        false
+    );
+    FunctionCallee getArrayFunc = mainmodule->getOrInsertFunction("GetTensorArray", getArrayType);
+    
+    Builder->CreateCall(getArrayFunc, {tensorHandle, floatArray, tensorSize, dummyInt});
+    
+    // Converter para double* para compatibilidade com sistema de tipos
+    PointerType* doublePtrType = PointerType::getUnqual(Type::getDoubleTy(global_context));
+    return Builder->CreateBitCast(floatArray, doublePtrType, "output_double_array");
 }
-
-
-
-
 
 Value* ModelNode::generateVariableArrayToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, 
                                                    Value* tensorHandle, Value* tensorSize, Load* loadNode) {
-    FunctionType* setValueType = FunctionType::get(
-        Type::getVoidTy(global_context),
-        {Type::getInt64Ty(global_context), Type::getInt64Ty(global_context), Type::getFloatTy(global_context), Type::getInt32Ty(global_context)},
-        false
-    );
-    FunctionCallee setValueFunc = mainmodule->getOrInsertFunction("SetTensorValue", setValueType);
-    
-    uint64_t tensorElements = 1;
-    if (ConstantInt* constSize = dyn_cast<ConstantInt>(tensorSize)) {
-        tensorElements = constSize->getZExtValue();
-    }
-    
     // Detectar tamanho do array através do símbolo original
     size_t arraySize = 1;
     Node* originalSymbol = loadNode->getIdentSymbol(false);
@@ -433,16 +475,6 @@ Value* ModelNode::generateVariableArrayToTensorCopy(FunctionImpl *func, BasicBlo
             arraySize = arrayNode->getSize();
         }
     }
-    
-    // Verificar compatibilidade de tamanhos
-    if (arraySize != tensorElements) {
-        const std::string& varName = loadNode->getName();
-        yyerrorcpp("Incompatibilidade de tamanho: variável '" + varName + "' tem " + 
-                  std::to_string(arraySize) + " elementos, mas tensor de entrada espera " + 
-                  std::to_string(tensorElements) + " elementos.", this);
-        setSemanticError();
-        return tensorHandle;
-    }
 
     Value* varPtr = assignedValue->generate(func, block, allocblock);
     if (!varPtr) {
@@ -451,38 +483,52 @@ Value* ModelNode::generateVariableArrayToTensorCopy(FunctionImpl *func, BasicBlo
         return tensorHandle;
     }
     
-    // Sempre tratar como array primeiro (dados = {1.57} é um array de 1 elemento)
-    for (uint64_t i = 0; i < tensorElements; i++) {
-        Value* elementValue;
-        
-        if (arraySize == 1 && tensorElements == 1) {
-            // Array de 1 elemento: carregar diretamente
-            if (varPtr->getType()->isPointerTy()) {
-                // FORÇA carregar como float primeiro (dados é gerado como float)
-                Value* floatVal = Builder->CreateLoad(Type::getFloatTy(global_context), varPtr, "single_float");
-                elementValue = Builder->CreateFPExt(floatVal, Type::getDoubleTy(global_context), "float_to_double");
-            } else {
-                elementValue = varPtr;
-            }
-        } else {
-            // Array com múltiplos elementos: usar GEP
-            Value* offset = ConstantInt::get(Type::getInt64Ty(global_context), i);
-            Value* elementPtr = Builder->CreateGEP(Type::getDoubleTy(global_context), varPtr, offset, "element_ptr_" + std::to_string(i));
-            elementValue = Builder->CreateLoad(Type::getDoubleTy(global_context), elementPtr, "array_element_" + std::to_string(i));
-        }
-        
-        Value* elementFloat = convertToFloat(elementValue);
-        Value* tensorIndex = ConstantInt::get(Type::getInt64Ty(global_context), i);
-        Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
-        Builder->CreateCall(setValueFunc, {tensorHandle, tensorIndex, elementFloat, dummyInt});
+    // VERIFICAÇÃO SEMÂNTICA: Arrays devem ser float*
+    PointerType* floatPtrType = PointerType::getUnqual(Type::getFloatTy(global_context));
+    if (varPtr->getType() != floatPtrType) {
+        yyerrorcpp("ERRO SEMÂNTICO: Array deve conter valores float. Conversões serão feitas no wrapper.", this);
+        setSemanticError();
+        return tensorHandle;
     }
+    
+    // Chamar SetTensorArray - wrapper fará todas as conversões necessárias
+    Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
+    Value* arrayCount = ConstantInt::get(Type::getInt64Ty(global_context), arraySize);
+    
+    FunctionType* setArrayType = FunctionType::get(
+        Type::getVoidTy(global_context),
+        {Type::getInt64Ty(global_context), floatPtrType, Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
+        false
+    );
+    FunctionCallee setArrayFunc = mainmodule->getOrInsertFunction("SetTensorArray", setArrayType);
+    
+    Builder->CreateCall(setArrayFunc, {tensorHandle, varPtr, arrayCount, dummyInt});
     
     return tensorHandle;
 }
 
-
-
 Value* ModelNode::generateScalarToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* tensorHandle, Value* data) {
+    // VERIFICAÇÃO SEMÂNTICA: Valores devem ser float
+    Value* floatValue;
+    if (data->getType()->isPointerTy()) {
+        // Ponteiro para float
+        if (data->getType() != PointerType::getUnqual(Type::getFloatTy(global_context))) {
+            yyerrorcpp("ERRO SEMÂNTICO: Valor deve ser float. Conversões serão feitas no wrapper.", this);
+            setSemanticError();
+            return tensorHandle;
+        }
+        floatValue = Builder->CreateLoad(Type::getFloatTy(global_context), data, "loaded_float");
+    } else {
+        // Valor direto
+        if (!data->getType()->isFloatTy()) {
+            yyerrorcpp("ERRO SEMÂNTICO: Valor deve ser float. Conversões serão feitas no wrapper.", this);
+            setSemanticError();
+            return tensorHandle;
+        }
+        floatValue = data;
+    }
+    
+    // Chamar SetTensorValue - wrapper fará conversões necessárias
     FunctionType* setValueType = FunctionType::get(
         Type::getVoidTy(global_context),
         {Type::getInt64Ty(global_context), Type::getInt64Ty(global_context), Type::getFloatTy(global_context), Type::getInt32Ty(global_context)},
@@ -490,54 +536,11 @@ Value* ModelNode::generateScalarToTensorCopy(FunctionImpl *func, BasicBlock *blo
     );
     FunctionCallee setValueFunc = mainmodule->getOrInsertFunction("SetTensorValue", setValueType);
     
-    // Se data é um ponteiro, carregar o valor primeiro
-    Value* floatValue;
-    if (data->getType()->isPointerTy()) {
-        Value* loadedValue = Builder->CreateLoad(Type::getDoubleTy(global_context), data, "loaded_scalar");
-        floatValue = convertToFloat(loadedValue);
-    } else {
-        floatValue = convertToFloat(data);
-    }
-    
     Value* index = ConstantInt::get(Type::getInt64Ty(global_context), 0);
     Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
     Builder->CreateCall(setValueFunc, {tensorHandle, index, floatValue, dummyInt});
     
     return tensorHandle;
-}
-
-Value* ModelNode::convertToFloat(Value* value) {
-    Type* valueType = value->getType();
-    
-    if (valueType->isFloatTy()) {
-        return value;
-    } else if (valueType->isIntegerTy()) {
-        if (ConstantInt* constInt = dyn_cast<ConstantInt>(value)) {
-            int64_t intValue = constInt->getSExtValue();
-            return ConstantFP::get(Type::getFloatTy(global_context), static_cast<double>(intValue));
-        } else {
-            return Builder->CreateSIToFP(value, Type::getFloatTy(global_context), "int_to_float");
-        }
-    } else if (valueType->isDoubleTy()) {
-        if (ConstantFP* constFP = dyn_cast<ConstantFP>(value)) {
-            double doubleValue = constFP->getValueAPF().convertToDouble();
-            return ConstantFP::get(Type::getFloatTy(global_context), static_cast<float>(doubleValue));
-        } else {
-            return Builder->CreateFPTrunc(value, Type::getFloatTy(global_context), "double_to_float");
-        }
-    } else if (valueType->isPointerTy()) {
-        Value* loadedDouble = Builder->CreateLoad(Type::getDoubleTy(global_context), value, "loaded_double");
-        return convertToFloat(loadedDouble);
-    } else {
-        std::string typeName;
-        llvm::raw_string_ostream stream(typeName);
-        valueType->print(stream);
-        stream.flush();
-        
-        // DEBUG: Este caso pode estar sendo executado
-        yyerrorcpp("TIPO DESCONHECIDO: '" + typeName + "' - retornando 0.0f (DEBUG).", this);
-        return ConstantFP::get(Type::getFloatTy(global_context), 0.0f);
-    }
 }
 
 Value* ModelNode::generateInvoke(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {

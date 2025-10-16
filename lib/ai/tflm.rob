@@ -215,9 +215,6 @@ enum KERNELS{
 // Inicialização com kernels específicos
 uint64 InitializeInterpreter(uint8[] model_data, uint8[] tensor_arena, uint8[] required_kernels);
 
-// Inicialização com detecção automática de kernels
-uint64 InitializeInterpreterAuto(uint8[] model_data, uint8[] tensor_arena);
-
 // Destruição e limpeza
 void DestroyInterpreter(uint64 instance_handle);
 
@@ -230,6 +227,14 @@ void SetTensorValue(uint64 tensor_handle, uint64 index, float value);
 float GetTensorAsFloat(uint64 tensor_handle, uint64 index);
 uint64 GetTensorSize(uint64 tensor_handle);
 
+// Manipulação de arrays completos
+void SetTensorArray(uint64 tensor_handle, float[] values, uint64 count);
+void GetTensorArray(uint64 tensor_handle, float[] values, uint64 max_count);
+
+// Informações sobre tensores
+uint64 GetInputTensorCount(uint64 instance_handle);
+uint64 GetOutputTensorCount(uint64 instance_handle);
+
 // Execução de inferência
 void InvokeInterpreter(uint64 instance_handle);
 
@@ -237,8 +242,8 @@ void InvokeInterpreter(uint64 instance_handle);
 void DiagnoseModel(uint8[] model_data);
 void VerifyModelData(uint8[] model_data);
 
-// Executa benchmark otimizado
-uint64 RunBenchmarkOptimized(uint8[] model_data, uint8[] tensor_arena, uint32 num_invocations);
+// Função simples para imprimir float com quebras de linha
+void PrintFloat(float value);
 
 int8 main(){
     return 0;

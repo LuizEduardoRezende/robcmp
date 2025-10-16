@@ -40,23 +40,26 @@ int8 test_spam_with_kernels(){
     // Frase: "win free money online click www site com"
     test_sentence_2 = {1.0, 93.0, 326.0, 72.0, 8.0, 485.0, 24.0, 35.0, 6.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
-    // Primeira Inferência
-    i = 0;
-    while (i < 20) {
-        SetTensorValue(input_tensor, i, test_sentence_1[i]);
-        i = i + 1;
-    }
-    InvokeInterpreter(interpreter_handle);
-    result = GetTensorAsFloat(output_tensor, 1);
+    // Buffer para receber o output completo como vetor
+    output_values = {0.0, 0.0}; // Para modelos de classificação binária (2 classes)
     
-    i = 0;
-    while (i < 20) {
-        SetTensorValue(input_tensor, i, test_sentence_2[i]);
-        i = i + 1;
-    }
+    // Primeira Inferência - usando SetTensorArray para entrada e GetTensorArray para saída
+    SetTensorArray(input_tensor, test_sentence_1, 20);
     InvokeInterpreter(interpreter_handle);
-    result = GetTensorAsFloat(output_tensor, 1);
     
+    // Obter todo o tensor de saída como vetor
+    GetTensorArray(output_tensor, output_values, 2);
+
+    // Segunda Inferência
+    SetTensorArray(input_tensor, test_sentence_2, 20);
+    InvokeInterpreter(interpreter_handle);
+    
+    // Obter todo o tensor de saída como vetor novamente
+    GetTensorArray(output_tensor, output_values, 2);
+
+    PrintFloat(output_values[0]);
+    PrintFloat(output_values[1]);
+
     // Limpeza
     DestroyInterpreter(interpreter_handle);
     

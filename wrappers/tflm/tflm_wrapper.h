@@ -273,6 +273,21 @@ void DiagnoseModel(const uint8_t* model_data, int);
 // Verifica magic number e validações básicas do arquivo .tflite
 void VerifyModelData(const uint8_t* model_data, int);
 
+// Função para obter um tensor completo como array
+void GetTensorArray(uintptr_t tensor_handle, float* values, size_t max_count, int);
+
+// Função para definir um tensor completo a partir de um array
+void SetTensorArray(uintptr_t tensor_handle, const float* values, size_t count, int);
+
+// Função para obter o número de tensores de entrada
+size_t GetInputTensorCount(uintptr_t instance_handle, int);
+
+// Função para obter o número de tensores de saída
+size_t GetOutputTensorCount(uintptr_t instance_handle, int);
+
+// Função simples para imprimir float com quebras de linha
+void PrintFloat(float value);
+
 #ifdef __cplusplus
 }
 #endif

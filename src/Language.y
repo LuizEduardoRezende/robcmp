@@ -355,11 +355,11 @@ stmt : ident_or_xident '+' '+' ';'					{ $$ = new Scalar($1, new BinaryOp(new Lo
 complexvar_set : TOK_XIDENTIFIER[id] '=' logicexpr	{ $$ = new Scalar($id, $logicexpr);	$$->setLocation(@id); }
 complexvar_set : TOK_XIDENTIFIER[id] '=' array		{ $$ = new Array($id, $array, @id); }
 complexvar_set : TOK_XIDENTIFIER[id] '=' matrix		{ $$ = new Matrix($id, $matrix, @id); }
-complexvar_set : TOK_MODEL_INPUT[id] '=' logicexpr { 
+complexvar_set : TOK_MODEL_INPUT[id] '[' expr ']' '=' logicexpr { 
 	// Extract model name from "model.input"
 	std::string fullName($id);
 	std::string modelName = fullName.substr(0, fullName.find('.'));
-	$$ = new ModelNode(modelName.c_str(), "input", $logicexpr, @id);
+	$$ = new ModelNode(modelName.c_str(), "input", $expr, $logicexpr, @id);
 	$$->setLocation(@id); 
 }
 
@@ -465,11 +465,11 @@ factor : '(' expr ')' 			{ $$ = $2; }
 	   | TOK_STRING				{ $$ = new StringConst("conststr", $1, @1); }
 	   | ident_or_xident[id] '[' expr ']'				{ $$ = new LoadArray($1, $3, @id);} 
 	   | ident_or_xident[id] '[' expr ']' '[' expr ']'	{ $$ = new LoadMatrix($1, $3, $6, @id);}
-	   | TOK_MODEL_OUTPUT[id] { 
+	   | TOK_MODEL_OUTPUT[id] '[' expr ']' { 
 			// Extract model name from "model.output"
 			std::string fullName($id);
 			std::string modelName = fullName.substr(0, fullName.find('.'));
-			$$ = new ModelNode(modelName.c_str(), "output", @id);
+			$$ = new ModelNode(modelName.c_str(), "output", $expr, nullptr, @id);
 			$$->setLocation(@id); 
 		}
 	   | call_or_cast
