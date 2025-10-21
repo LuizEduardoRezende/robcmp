@@ -10,5 +10,5 @@ int8 main() {
   invoke meu_modelo;
   output = meu_modelo.output[0];
   
-  return 0;
+  return output[0];
 }

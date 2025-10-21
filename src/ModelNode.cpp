@@ -1,16 +1,18 @@
 #include "ModelNode.h"
-#include "ParamsCall.h"
-#include "StringConst.h"
 #include "BackLLVM.h"
 #include "FunctionImpl.h"
-#include "Array.h"
-#include "ArrayElements.h"
-#include "Load.h"
 #include "../wrappers/tflm/tflm_wrapper.h"
-#include <iostream>
-#include <fstream>
-#include <vector>
 
+#include "ParamsCall.h"
+#include "StringConst.h"
+#include "Load.h"
+
+#include "Array.h"
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <vector>
 
 ModelNode::ModelNode(const char *name, ParamsCall *p, location_t l) 
 : Node(l), modelName(name), params(p), arenaSize(nullptr), kernels(nullptr), assignedValue(nullptr), tensorIndex(nullptr), fileParamNode(nullptr) {
@@ -84,24 +86,37 @@ Value* ModelNode::generateDeclaration(FunctionImpl *func, BasicBlock *block, Bas
     }
     
     std::string fullPath = sourceDir + tfliteFile;
-    // filesystem::path full_path(tfLLiteFile);
-    std::ifstream file(fullPath);
-    if (!file.good()) {
+    
+    // Abrir arquivo usando POSIX
+    int fd = open(fullPath.c_str(), O_RDONLY);
+    if (fd == -1) {
         yyerrorcpp("Arquivo '" + fullPath + "' não encontrado para o modelo '" + modelName + "'.", this);
         setSemanticError();
         return nullptr;
     }
     
+    // Obter tamanho do arquivo
+    struct stat st;
+    if (fstat(fd, &st) == -1) {
+        close(fd);
+        yyerrorcpp("Erro ao obter tamanho do arquivo '" + fullPath + "'.", this);
+        setSemanticError();
+        return nullptr;
+    }
+    
     tfliteFile = fullPath;
+    size_t fileSize = st.st_size;
     
     // Ler arquivo .tflite
-    file.seekg(0, std::ios::end);
-    size_t fileSize = file.tellg();
-    file.seekg(0, std::ios::beg);
-    
     std::vector<unsigned char> buffer(fileSize);
-    file.read(reinterpret_cast<char*>(buffer.data()), fileSize);
-    file.close();
+    ssize_t bytesRead = read(fd, buffer.data(), fileSize);
+    close(fd);
+    
+    if (bytesRead != static_cast<ssize_t>(fileSize)) {
+        yyerrorcpp("Erro ao ler arquivo '" + fullPath + "' completamente.", this);
+        setSemanticError();
+        return nullptr;
+    }
     
     // Criar array global com os dados do modelo
     Type* i8Type = Type::getInt8Ty(global_context);

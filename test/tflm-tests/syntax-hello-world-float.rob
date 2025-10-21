@@ -4,11 +4,11 @@ int8 main() {
   dados = {1.57};
 
   model meu_modelo("hello_world_float.tflite", arena_size, kernels);
-  meu_modelo.input = dados;
+  meu_modelo.input[0] = dados;
 
   
   invoke meu_modelo;
-  output = meu_modelo.output;
+  output = meu_modelo.output[0];
   
   return 0;
 }
