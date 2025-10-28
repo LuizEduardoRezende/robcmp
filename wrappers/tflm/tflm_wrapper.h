@@ -276,6 +276,9 @@ void VerifyModelData(const uint8_t* model_data, int);
 // Função para obter um tensor completo como array
 void GetTensorArray(uintptr_t tensor_handle, float* values, size_t max_count, int);
 
+// Função para alocar e retornar um array preenchido com os valores do tensor
+float* AllocAndGetTensorArray(uintptr_t tensor_handle, size_t* out_size, int);
+
 // Função para definir um tensor completo a partir de um array
 void SetTensorArray(uintptr_t tensor_handle, const float* values, size_t count, int);
 

@@ -506,7 +506,6 @@ uintptr_t InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena
         return 0;
     }
 
-    // Debug: Print tensor information (como no exemplo oficial)
     MicroPrintf("\n=== TENSOR DEBUG ===");
     for (size_t i = 0; i < instance->interpreter->inputs_size(); ++i) {
         TfLiteTensor* input_tensor = instance->interpreter->input(i);
@@ -876,7 +875,7 @@ float GetTensorAsFloat(uintptr_t tensor_handle, size_t index, int) {
                 return 0.0f;
             }
             result = tensor->data.f[index];
-            MicroPrintf("Output[%zu] = %.6f", index, result);
+            MicroPrintf("Output[%zu] = %.6f (float)", index, result);
             return result;
         }
         
@@ -1055,11 +1054,27 @@ void GetTensorArray(uintptr_t tensor_handle, float* values, size_t max_count, in
     size_t tensor_size = GetTensorSize(tensor_handle, 0);
     size_t copy_size = (max_count < tensor_size) ? max_count : tensor_size;
     
-    MicroPrintf("Obtendo %zu valores do tensor (tamanho: %zu)", copy_size, tensor_size);
+    MicroPrintf("GetTensorArray: tensor_handle=%p, values(ptr)=%p, max_count=%zu, tensor_size=%zu, copy_size=%zu", (void*)tensor_handle, (void*)values, max_count, tensor_size, copy_size);
     
     for (size_t i = 0; i < copy_size; ++i) {
-        values[i] = GetTensorAsFloat(tensor_handle, i, 0);
+        float v = GetTensorAsFloat(tensor_handle, i, 0);
+        values[i] = v;
+        MicroPrintf("GetTensorArray: values[%zu]=%f (copied)", i, v);
     }
+}
+
+// Função para alocar e retornar um array preenchido com os valores do tensor
+float* AllocAndGetTensorArray(uintptr_t tensor_handle, size_t* out_size, int) {
+    size_t tensor_size = GetTensorSize(tensor_handle, 0);
+    float* arr = (float*)malloc(sizeof(float) * tensor_size);
+    if (!arr) {
+        MicroPrintf("ERRO: malloc falhou em AllocAndGetTensorArray");
+        if (out_size) *out_size = 0;
+        return nullptr;
+    }
+    GetTensorArray(tensor_handle, arr, tensor_size, 0);
+    if (out_size) *out_size = tensor_size;
+    return arr;
 }
 
 size_t GetInputTensorCount(uintptr_t instance_handle, int) {
