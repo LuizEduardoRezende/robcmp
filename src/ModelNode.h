@@ -44,7 +44,6 @@ public:
 
     virtual Value* generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) override;
     virtual Value* generateDeclaration(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock);
-    virtual Value* generateModelInitialization(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, GlobalVariable* modelDataGlobal, GlobalVariable* modelLenGlobal);
     virtual Value* generateMemberAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock);
     virtual DataType getDataType() override;
     virtual const std::string getName() const override;

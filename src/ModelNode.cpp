@@ -148,14 +148,7 @@ Value* ModelNode::generateDeclaration(FunctionImpl *func, BasicBlock *block, Bas
         ConstantInt::get(i32Type, fileSize),
         modelLenName
     );
-    
-    return generateModelInitialization(func, block, allocblock, modelDataGlobal, modelLenGlobal);
-}
 
-
-
-Value* ModelNode::generateModelInitialization(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, 
-                                            GlobalVariable* modelDataGlobal, GlobalVariable* modelLenGlobal) {
     // VALIDAÇÕES SEMÂNTICAS PRIMEIRO (antes de qualquer geração de código LLVM)
     if (!kernels) {
         yyerrorcpp("Erro: Modelo '" + modelName + "' deve especificar um array de kernels necessários.", this);
@@ -212,7 +205,6 @@ Value* ModelNode::generateModelInitialization(FunctionImpl *func, BasicBlock *bl
     }
     
     uint64_t arenaSize = constantArenaSize->getZExtValue();
-    Type* i8Type = Type::getInt8Ty(global_context);
     ArrayType* arenaType = ArrayType::get(i8Type, arenaSize);
     
     // Criar arena global
@@ -337,21 +329,12 @@ Value* ModelNode::generateMemberAccess(FunctionImpl *func, BasicBlock *block, Ba
 }
 
 Value* ModelNode::generateInputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
-    if (assignedValue) {
-        return generateInputAssignment(func, block, allocblock, modelInstance);
-    } else {
+    if(!assignedValue){
         yyerrorcpp("Não é possível ler diretamente do tensor de entrada '" + modelName + ".input'. Use apenas para atribuição: '" + modelName + ".input = dados'.", this);
         setSemanticError();
         return nullptr;
-    }
-}
+    }  
 
-Value* ModelNode::generateOutputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
-    // Para output, sempre gerar leitura do tensor completo
-    return generateGetOutputTensor(func, block, allocblock, modelInstance);
-}
-
-Value* ModelNode::generateInputAssignment(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
     PointerType* i8PtrType = PointerType::getUnqual(Type::getInt8Ty(global_context));
     
     // Use o índice fornecido ou 0 como padrão
@@ -406,7 +389,7 @@ Value* ModelNode::generateInputAssignment(FunctionImpl *func, BasicBlock *block,
     }
 }
 
-Value* ModelNode::generateGetOutputTensor(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance, Value** outSize) {
+Value* ModelNode::generateOutputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
     // Use o índice fornecido ou 0 como padrão (índice do tensor de saída, não índice dentro do tensor)
     Value* tensorIndexValue;
     if (tensorIndex) {
@@ -449,20 +432,13 @@ Value* ModelNode::generateGetOutputTensor(FunctionImpl *func, BasicBlock *block,
 
     // Alocar variável temporária para size_t (opcional)
     Value* outSizePtr = nullptr;
-    if (outSize) {
-        outSizePtr = Builder->CreateAlloca(Type::getInt64Ty(global_context), nullptr, "out_size_ptr");
-    } else {
-        outSizePtr = ConstantPointerNull::get(sizeTPtrType);
-    }
+    outSizePtr = ConstantPointerNull::get(sizeTPtrType);
     Value* floatArray = Builder->CreateCall(allocGetArrayFunc, {tensorHandle, outSizePtr, dummyInt}, "float_array");
-    if (outSize && outSizePtr) {
-        *outSize = Builder->CreateLoad(Type::getInt64Ty(global_context), outSizePtr, "tensor_size_loaded");
-    }
     // DEBUG: Print first value of floatArray
     {
         FunctionType* printfType = FunctionType::get(IntegerType::getInt32Ty(global_context), PointerType::get(Type::getInt8Ty(global_context), 0), true);
         FunctionCallee printfFunc = mainmodule->getOrInsertFunction("printf", printfType);
-        Value* fmtStr = Builder->CreateGlobalStringPtr("[DEBUG] ModelNode floatArray[0]: %f\n");
+        Value* fmtStr = Builder->CreateGlobalString("[DEBUG] ModelNode floatArray[0]: %f\n");
         Value* firstValue = Builder->CreateLoad(Type::getFloatTy(global_context), floatArray, "first_output_value");
         Builder->CreateCall(printfFunc, {fmtStr, firstValue});
     }
