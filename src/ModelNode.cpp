@@ -11,7 +11,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-
 #include <vector>
 
 ModelNode::ModelNode(const char *name, ParamsCall *p, location_t l) 
@@ -348,7 +347,7 @@ Value* ModelNode::generateInputAccess(FunctionImpl *func, BasicBlock *block, Bas
 }
 
 Value* ModelNode::generateOutputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
-    // Para output, sempre gerar leitura do tensor (assignedValue é irrelevante aqui)
+    // Para output, sempre gerar leitura do tensor completo
     return generateGetOutputTensor(func, block, allocblock, modelInstance);
 }
 
@@ -407,8 +406,8 @@ Value* ModelNode::generateInputAssignment(FunctionImpl *func, BasicBlock *block,
     }
 }
 
-Value* ModelNode::generateGetOutputTensor(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance) {
-    // Use o índice fornecido ou 0 como padrão
+Value* ModelNode::generateGetOutputTensor(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance, Value** outSize) {
+    // Use o índice fornecido ou 0 como padrão (índice do tensor de saída, não índice dentro do tensor)
     Value* tensorIndexValue;
     if (tensorIndex) {
         tensorIndexValue = tensorIndex->generate(func, block, allocblock);
@@ -427,7 +426,7 @@ Value* ModelNode::generateGetOutputTensor(FunctionImpl *func, BasicBlock *block,
     
     Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
     
-    // Primeiro obter o handle do tensor de saída
+    // Obter o handle do tensor de saída
     FunctionType* getOutputType = FunctionType::get(
         Type::getInt64Ty(global_context),
         {Type::getInt64Ty(global_context), Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
@@ -437,46 +436,37 @@ Value* ModelNode::generateGetOutputTensor(FunctionImpl *func, BasicBlock *block,
     
     Value* modelHandle = Builder->CreatePtrToInt(modelInstance, Type::getInt64Ty(global_context));
     Value* tensorHandle = Builder->CreateCall(getOutputFunc, {modelHandle, tensorIndexValue, dummyInt}, "output_tensor");
-    
-    // Obter o tamanho do tensor de saída
-    FunctionType* getSizeType = FunctionType::get(
-        Type::getInt64Ty(global_context),
-        {Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
-        false
-    );
-    FunctionCallee getSizeFunc = mainmodule->getOrInsertFunction("GetTensorSize", getSizeType);
-    Value* tensorSize = Builder->CreateCall(getSizeFunc, {tensorHandle, dummyInt}, "tensor_size");
-    
-    // ESTRATÉGIA SIMPLES: Usar GetTensorArray do wrapper!
-    // Alocar array de float baseado no tamanho do tensor
+
+    // Chamar AllocAndGetTensorArray
     PointerType* floatPtrType = PointerType::getUnqual(Type::getFloatTy(global_context));
-    
-    // Malloc para array de float
-    FunctionType* mallocType = FunctionType::get(
-        PointerType::getUnqual(Type::getInt8Ty(global_context)),
-        {Type::getInt64Ty(global_context)},
+    PointerType* sizeTPtrType = PointerType::getUnqual(Type::getInt64Ty(global_context));
+    FunctionType* allocGetArrayType = FunctionType::get(
+        floatPtrType,
+        {Type::getInt64Ty(global_context), sizeTPtrType, Type::getInt32Ty(global_context)},
         false
     );
-    FunctionCallee mallocFunc = mainmodule->getOrInsertFunction("malloc", mallocType);
-    
-    Value* sizeOfFloat = ConstantInt::get(Type::getInt64Ty(global_context), 4); // sizeof(float)
-    Value* arrayBytes = Builder->CreateMul(tensorSize, sizeOfFloat, "array_bytes");
-    Value* mallocPtr = Builder->CreateCall(mallocFunc, {arrayBytes}, "malloc_ptr");
-    Value* floatArray = Builder->CreateBitCast(mallocPtr, floatPtrType, "float_array");
-    
-    // Chamar GetTensorArray - wrapper faz todo o trabalho!
-    FunctionType* getArrayType = FunctionType::get(
-        Type::getVoidTy(global_context),
-        {Type::getInt64Ty(global_context), floatPtrType, Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
-        false
-    );
-    FunctionCallee getArrayFunc = mainmodule->getOrInsertFunction("GetTensorArray", getArrayType);
-    
-    Builder->CreateCall(getArrayFunc, {tensorHandle, floatArray, tensorSize, dummyInt});
-    
-    // Converter para double* para compatibilidade com sistema de tipos
-    PointerType* doublePtrType = PointerType::getUnqual(Type::getDoubleTy(global_context));
-    return Builder->CreateBitCast(floatArray, doublePtrType, "output_double_array");
+    FunctionCallee allocGetArrayFunc = mainmodule->getOrInsertFunction("AllocAndGetTensorArray", allocGetArrayType);
+
+    // Alocar variável temporária para size_t (opcional)
+    Value* outSizePtr = nullptr;
+    if (outSize) {
+        outSizePtr = Builder->CreateAlloca(Type::getInt64Ty(global_context), nullptr, "out_size_ptr");
+    } else {
+        outSizePtr = ConstantPointerNull::get(sizeTPtrType);
+    }
+    Value* floatArray = Builder->CreateCall(allocGetArrayFunc, {tensorHandle, outSizePtr, dummyInt}, "float_array");
+    if (outSize && outSizePtr) {
+        *outSize = Builder->CreateLoad(Type::getInt64Ty(global_context), outSizePtr, "tensor_size_loaded");
+    }
+    // DEBUG: Print first value of floatArray
+    {
+        FunctionType* printfType = FunctionType::get(IntegerType::getInt32Ty(global_context), PointerType::get(Type::getInt8Ty(global_context), 0), true);
+        FunctionCallee printfFunc = mainmodule->getOrInsertFunction("printf", printfType);
+        Value* fmtStr = Builder->CreateGlobalStringPtr("[DEBUG] ModelNode floatArray[0]: %f\n");
+        Value* firstValue = Builder->CreateLoad(Type::getFloatTy(global_context), floatArray, "first_output_value");
+        Builder->CreateCall(printfFunc, {fmtStr, firstValue});
+    }
+    return floatArray;
 }
 
 Value* ModelNode::generateVariableArrayToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, 
@@ -579,5 +569,18 @@ Value* ModelNode::generateInvoke(FunctionImpl *func, BasicBlock *block, BasicBlo
     Value* result = Builder->CreateCall(invokeFunc, {modelHandle, dummyInt}, "invoke_result");
     
     return result;
+}
+
+DataType ModelNode::getDataType() {
+    if (memberName == "output") {
+        // Retorna tipo array de float (1 dimensão)
+        return buildTypes->getArrayType("float", getLoc(), 1, true);
+    }
+    // Outros casos podem ser tratados conforme necessário
+    return BuildTypes::undefinedType;
+}
+
+const std::string ModelNode::getName() const {
+    return modelName;
 }
 

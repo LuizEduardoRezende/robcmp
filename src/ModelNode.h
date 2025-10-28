@@ -39,30 +39,30 @@ public:
     // Constructor para atribuições: nome_modelo.input = valor
     ModelNode(const char *name, const char *member, Node *value, location_t l);
 
-    // Construtor para acesso a membros com índice e valor (input[index] = valor)
+    // Construtor para acesso a tensores com índice e arrays (input[index] = array)
     ModelNode(const char *name, const char *member, Node *index, Node *value, location_t l);
 
     virtual Value* generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) override;
     virtual Value* generateDeclaration(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock);
-    virtual Value* generateModelInitialization(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, 
-                                               GlobalVariable* modelDataGlobal, GlobalVariable* modelLenGlobal);
+    virtual Value* generateModelInitialization(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, GlobalVariable* modelDataGlobal, GlobalVariable* modelLenGlobal);
     virtual Value* generateMemberAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock);
+    virtual DataType getDataType() override;
+    virtual const std::string getName() const override;
+    std::string getMemberName() const { return memberName; }
+    bool hasTensorIndex() const { return tensorIndex != nullptr; }
     
+    // Métodos auxiliares para acesso aos tensores
+    Value* generateInputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
+    Value* generateOutputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, llvm::Value* modelInstance);
+    Value* generateGetOutputTensor(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, llvm::Value* modelInstance, llvm::Value** outSize = nullptr);
+    Value* generateInputAssignment(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
+    Value* generateVariableArrayToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* tensorHandle, Value* tensorSize, Load* loadNode);
+    Value* generateScalarToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* tensorHandle, Value* data);
+    Value* generateInvoke(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
+
 private:
     std::string memberName;     // para acesso a membros
     Node *assignedValue;        // valor atribuído
     Node *tensorIndex;         // Índice do tensor para acesso com [index]
-
-
-    // Métodos auxiliares para acesso aos tensores
-    Value* generateInputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
-    Value* generateOutputAccess(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
-    Value* generateInputAssignment(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
-    Value* generateGetOutputTensor(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
-    Value* generateArrayToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* tensorHandle, Value* tensorSize);
-    Value* generateVariableArrayToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* tensorHandle, Value* tensorSize, Load* loadNode);
-    Value* generateScalarToTensorCopy(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* tensorHandle, Value* data);
-    Value* generateInvoke(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock, Value* modelInstance);
-    Value* convertToFloat(Value* value);
 };
 
