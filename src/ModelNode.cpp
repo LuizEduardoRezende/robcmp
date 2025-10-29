@@ -533,18 +533,18 @@ Value* ModelNode::generateInvoke(FunctionImpl *func, BasicBlock *block, BasicBlo
     
     Value* dummyInt = ConstantInt::get(Type::getInt32Ty(global_context), 0);
     
-    // Criar call para InvokeInterpreter
+    // Criar chamada para InvokeInterpreter
     FunctionType* invokeType = FunctionType::get(
-        Type::getInt32Ty(global_context),
+        Type::getVoidTy(global_context),
         {Type::getInt64Ty(global_context), Type::getInt32Ty(global_context)},
         false
     );
     FunctionCallee invokeFunc = mainmodule->getOrInsertFunction("InvokeInterpreter", invokeType);
     
     Value* modelHandle = Builder->CreatePtrToInt(modelInstance, Type::getInt64Ty(global_context));
-    Value* result = Builder->CreateCall(invokeFunc, {modelHandle, dummyInt}, "invoke_result");
+    Builder->CreateCall(invokeFunc, {modelHandle, dummyInt});
     
-    return result;
+    return nullptr;
 }
 
 DataType ModelNode::getDataType() {
