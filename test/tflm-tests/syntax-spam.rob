@@ -1,14 +1,28 @@
+use ai.tflm;
+
 int8 main() {
   const arena_size = 262144;
   const kernels = {36, 40, 9, 25};
+  // "This is a great article thank you for the information"
   dados = {1.0, 82.0, 70.0, 214.0, 55.0, 98.0, 84.0, 47.0, 89.0, 26.0, 73.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    
+  // output = {5.0, 10.0}; 
+
+  // meu_modelo = model("spam.tflite", arena_size, kernels);
   model meu_modelo("spam.tflite", arena_size, kernels);
   meu_modelo.input[0] = dados;
 
-  
   invoke meu_modelo;
+
   output = meu_modelo.output[0];
-  
-  return output[0];
+  // sem a declaração prévia do array output gera falha de tipo
+
+  PrintFloat(output[0]);
+  PrintFloat(output[1]);
+
+  if (output[0] > 0.90) and (output[1] < 0.10){
+    return 0;
+  }else{
+    return 1;
+  }
+
 }
