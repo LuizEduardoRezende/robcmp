@@ -11,29 +11,38 @@ ifeq ($(FILE),)
 $(error Erro: Defina o arquivo com FILE=nome. Exemplo: make FILE=syntax-tests)
 endif
 
-# Configurações automáticas
-TEST_DIR = ../test/tflm-tests
-ROB_FILE = $(TEST_DIR)/$(FILE).rob
-OBJ_FILE = $(FILE).o
-EXE_FILE = $(FILE)
+# Diretórios
+ROOT_DIR := $(CURDIR)
+BUILD_DIR := $(ROOT_DIR)/build
+TEST_DIR := $(ROOT_DIR)/test/tflm-tests
+THIRD_PARTY := $(ROOT_DIR)/third-party/tflite-micro
+
+# Fontes e objetos
+ROB_FILE := $(TEST_DIR)/$(FILE).rob
+OBJ_FILE := $(BUILD_DIR)/$(FILE).o
+EXE_FILE := $(BUILD_DIR)/$(FILE)
 
 # Ferramentas e bibliotecas
-ROBCMP = ./robcmp
-CLANG = clang++
-WRAPPER_LIB = libtflm_wrapper_static.a
-TFLM_LIB = ../third-party/tflite-micro/gen/linux_x86_64_default_gcc/lib/libtensorflow-microlite.a
+ROBCMP := $(BUILD_DIR)/robcmp
+CLANG := clang++
+WRAPPER_LIB := $(BUILD_DIR)/libtflm_wrapper_static.a
+TFLM_LIB := $(THIRD_PARTY)/gen/*/lib/libtensorflow-microlite.a
 
 # Verificações de dependências
-REQUIRED_FILES = $(ROBCMP) $(WRAPPER_LIB) $(TFLM_LIB)
+REQUIRED_FILES := $(ROBCMP) $(WRAPPER_LIB) $(TFLM_LIB)
 
 # Target padrão
 all: $(EXE_FILE)
 	@echo "   Sucesso! Executável '$(EXE_FILE)' criado."
-	@echo "   Execute com: ./$(EXE_FILE) ou make FILE=$(FILE) run"
+	@echo "   Execute com: $(EXE_FILE) ou make FILE=$(FILE) run"
+
+# Garante que o diretório build existe
+$(BUILD_DIR):
+	@mkdir -p $(BUILD_DIR)
 
 # Compila .rob para .o
-$(OBJ_FILE): $(ROB_FILE)
-	$(ROBCMP) $(ROB_FILE) -I ../lib -o $(OBJ_FILE)
+$(OBJ_FILE): $(ROB_FILE) | $(BUILD_DIR)
+	$(ROBCMP) $(ROB_FILE) -I $(ROOT_DIR)/lib -o $(OBJ_FILE)
 
 # Linka .o com bibliotecas
 $(EXE_FILE): $(OBJ_FILE)
@@ -41,10 +50,8 @@ $(EXE_FILE): $(OBJ_FILE)
 
 # Executa o programa
 run: $(EXE_FILE)
-	./$(EXE_FILE)
+	$(EXE_FILE)
 
-
-# Limpeza específica do arquivo atual
 clean:
 	@echo "Limpando arquivos de $(FILE)..."
 	rm -f $(OBJ_FILE) $(EXE_FILE)
@@ -52,9 +59,7 @@ clean:
 # Limpeza completa (todos os arquivos .o e executáveis)
 clean-all:
 	@echo "Limpeza completa..."
-	rm -f *.o
-	@# Remove executáveis (arquivos sem extensão que não sejam diretórios)
-	@find . -maxdepth 1 -type f -executable ! -name "*.*" ! -name "robcmp" ! -name "Makefile*" -delete 2>/dev/null || true
+	rm -f $(BUILD_DIR)/*.o
 	@echo "Limpeza completa concluída."
 
 # Help
@@ -67,7 +72,7 @@ help:
 	@echo "  make FILE=nome_arquivo clean  # Remove arquivos gerados"
 	@echo ""
 	@echo "Outros comandos:"
-	@echo "  make clean-all                # Remove todos os .o e executáveis"
+	@echo "  make clean-all                # Remove todos os .o e executáveis da build/"
 	@echo "  make help                     # Mostra esta ajuda"
 
 .PHONY: all run clean clean-all help
