@@ -72,7 +72,7 @@ help:
 	@echo "  make FILE=nome_arquivo clean  # Remove arquivos gerados"
 	@echo ""
 	@echo "Outros comandos:"
-	@echo "  make clean-all                # Remove todos os .o e executáveis da build/"
+	@echo "  make clean-all                # Remove todos os .o da build/"
 	@echo "  make help                     # Mostra esta ajuda"
 
 .PHONY: all run clean clean-all help
