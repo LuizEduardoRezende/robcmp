@@ -91,7 +91,7 @@ set_target_properties(robcmp PROPERTIES
 
 # tflm_wrapper.cpp
 set(TFLM_DIR ${CMAKE_SOURCE_DIR}/third-party/tflite-micro)
-set(TFLM_LIB_DIR ${TFLM_DIR}/gen/linux_x86_64_default_gcc/lib)
+set(TFLM_LIB_DIR ${TFLM_DIR}/gen/*/lib)
 
 # Biblioteca estática
 add_library(tflm_wrapper_static STATIC
@@ -103,7 +103,7 @@ target_include_directories(tflm_wrapper_static PRIVATE
     ${TFLM_DIR}
     ${TFLM_DIR}/tensorflow/lite/micro/tools/make/downloads/flatbuffers/include
     ${TFLM_DIR}/tensorflow/lite/micro/tools/make/downloads/gemmlowp
-    ${TFLM_DIR}/tensorflow/lite/micro/tools/make/gen/linux_x86_64_default_gcc/genfiles
+    ${TFLM_DIR}/tensorflow/lite/micro/tools/make/gen/*/genfiles
     ${TFLM_DIR}/tensorflow/lite/micro/tools/make/downloads/ruy
 )
 
