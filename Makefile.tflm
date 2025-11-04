@@ -67,12 +67,12 @@ help:
 	@echo "  Makefile para rob + TensorFlow Lite Micro"
 	@echo ""
 	@echo "Uso:"
-	@echo "  make FILE=nome_arquivo        # Compila o arquivo"
-	@echo "  make FILE=nome_arquivo run    # Compila e executa"
-	@echo "  make FILE=nome_arquivo clean  # Remove arquivos gerados"
+	@echo "  make -f Makefile.tflm FILE=nome_arquivo        # Compila o arquivo"
+	@echo "  make -f Makefile.tflm FILE=nome_arquivo run    # Compila e executa"
+	@echo "  make -f Makefile.tflm FILE=nome_arquivo clean  # Remove arquivos gerados"
 	@echo ""
 	@echo "Outros comandos:"
-	@echo "  make clean-all                # Remove todos os .o da build/"
-	@echo "  make help                     # Mostra esta ajuda"
+	@echo "  make -f Makefile.tflm clean-all                # Remove todos os .o da build/"
+	@echo "  make -f Makefile.tflm help                     # Mostra esta ajuda"
 
 .PHONY: all run clean clean-all help
