@@ -1,14 +1,22 @@
+use ai.tflm;
+
 int8 main() {
   const arena_size = 262144;
   const kernels = {9};
   dados = {1.57};
+  output = {2.0};
 
   model meu_modelo("hello_world_float.tflite", arena_size, kernels);
   meu_modelo.input[0] = dados;
 
-  
   invoke meu_modelo;
   output = meu_modelo.output[0];
   
-  return 0;
+  //teste1 = {1.0, 2.0, 3.0};
+  //teste2 = {4.0, 5.0, 6.0};
+  //teste1 = teste2;
+
+  PrintFloat(output[0]);
+
+  return 1;
 }

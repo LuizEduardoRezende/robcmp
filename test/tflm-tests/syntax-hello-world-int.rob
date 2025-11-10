@@ -1,8 +1,11 @@
+use ai.tflm;
+
 int8 main() {
   const arena_size = 262144;
   const kernels = {9};
   dados = {1.57};
-    
+  output = {0.0};
+
   model meu_modelo("hello_world_int8.tflite", arena_size, kernels);
   meu_modelo.input[0] = dados;
 
@@ -10,7 +13,7 @@ int8 main() {
   invoke meu_modelo;
   output = meu_modelo.output[0];
   
-  return 0;
-}
+  PrintFloat(output[0]);
 
-// teste de reposta do modelo;
+  return 1;
+}

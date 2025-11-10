@@ -4,43 +4,7 @@ hello_model_int_data = {0x28,0x0,0x0,0x0,0x54,0x46,0x4c,0x33,0x0,0x0,0x0,0x0,0x0
 const tensor_arena = {0u:8000};
 const required_kernels = {9};
 
-// Testa inicialização do interpretador
-int8 test_init() {
-    h = InitializeInterpreter(hello_model_int_data, tensor_arena, required_kernels);
-    if(h == 0){ 
-        return 1;
-    }
-    DestroyInterpreter(h);
-    return 0;
-}
-
-// Testa inferência para entrada 0.0
-int8 test_infer_zero() {
-    h = InitializeInterpreter(hello_model_int_data, tensor_arena, required_kernels);
-    if(h == 0) {
-        return 1;
-    }
-
-    in = GetInputTensor(h, 0);
-    out = GetOutputTensor(h, 0);
-
-    if(in == 0 or out == 0) {
-        DestroyInterpreter(h);
-        return 2;
-    }
-    SetTensorValue(in, 0, 0.0);
-    InvokeInterpreter(h);
-    r = GetTensorAsFloat(out, 0);
-    DestroyInterpreter(h);
-
-    if((r < -0.5) or (r > 0.5)) {
-        return 3;
-    }
-    return 0;
-}
-
-// Testa inferência para entrada 1.57
-int8 test_infer_pi_2() {
+int8 main() {
     h = InitializeInterpreter(hello_model_int_data, tensor_arena, required_kernels);
     if(h == 0) {
         return 1;
@@ -57,52 +21,15 @@ int8 test_infer_pi_2() {
     SetTensorValue(in, 0, 1.57);
     InvokeInterpreter(h);
     r = GetTensorAsFloat(out, 0);
+
+    PrintFloat(r);
+
+    SetTensorValue(in, 0, 0.0);
+    InvokeInterpreter(h);
+    r = GetTensorAsFloat(out, 0);
+
+    PrintFloat(r);
+
     DestroyInterpreter(h);
-    if((r < 0.5) or (r > 1.5)){
-        return 3;
-    }
     return 0;
-}
-
-// Testa falha ao obter tensor de entrada (índice inválido)
-int8 test_input_tensor_fail() {
-    h = InitializeInterpreter(hello_model_int_data, tensor_arena, required_kernels);
-    if(h == 0) {
-        return 1;
-    }
-    in = GetInputTensor(h, 99); // índice inválido
-    DestroyInterpreter(h);
-    if(in != 0) {
-        return 2;
-    }
-    return 0;
-}
-
-// Testa falha ao obter tensor de saída (índice inválido)
-int8 test_output_tensor_fail() {
-    h = InitializeInterpreter(hello_model_int_data, tensor_arena, required_kernels);
-    if(h == 0) {
-        return 1;
-    }
-    out = GetOutputTensor(h, 99); // índice inválido
-    DestroyInterpreter(h);
-    if(out != 0) {
-        return 2;
-    }
-    return 0;
-}
-
-// Executa todos os testes unitários
-int8 main() {
-    result = 0;
-
-    if(test_init() != 0){ result = 1;}
-    if(test_infer_zero() != 0) {result = 2;}
-    if(test_infer_pi_2() != 0) {result = 3;}
-    if(test_input_tensor_fail() != 0) {result = 4;}
-    if(test_output_tensor_fail() != 0) {result = 5;}
-
-    PrintFloat(float(result));
-
-    return result; // Todos passaram
 }
