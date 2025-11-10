@@ -700,7 +700,7 @@ void SetTensorValue(uintptr_t tensor_handle, size_t index, float value, int) {
                 MicroPrintf("ERRO: tensor->data.i32 é NULL");
                 return;
             }
-            int32_t int_value = (int32_t)value;
+            int32_t int_value = (int32_t)roundf(value); // arredondamento correto
             tensor->data.i32[index] = int_value;
             MicroPrintf("Input[%zu] = %d", index, int_value);
             break;
@@ -725,7 +725,7 @@ void SetTensorValue(uintptr_t tensor_handle, size_t index, float value, int) {
                     int32_t zero_point = quant->zero_point->data[0];
                     
                     // Quantização: q = round(value/scale) + zero_point
-                    int32_t quantized = (int32_t)(value / scale + 0.5f) + zero_point;
+                    int32_t quantized = (int32_t)roundf(value / scale) + zero_point;
                     
                     // Clamping para int8
                     if (quantized > 127) quantized = 127;
@@ -734,14 +734,14 @@ void SetTensorValue(uintptr_t tensor_handle, size_t index, float value, int) {
                     tensor->data.int8[index] = (int8_t)quantized;
                     MicroPrintf("Input[%zu] = %.6f (quantized to %d)", index, value, (int8_t)quantized);
                 } else {
-                    int8_t int_value = (int8_t)value;
+                    int8_t int_value = (int8_t)roundf(value);
                     if (int_value > 127) int_value = 127;
                     if (int_value < -128) int_value = -128;
                     tensor->data.int8[index] = int_value;
                     MicroPrintf("Input[%zu] = %d", index, int_value);
                 }
             } else {
-                int8_t int_value = (int8_t)value;
+                int8_t int_value = (int8_t)roundf(value);
                 if (int_value > 127) int_value = 127;
                 if (int_value < -128) int_value = -128;
                 tensor->data.int8[index] = int_value;
@@ -767,7 +767,7 @@ void SetTensorValue(uintptr_t tensor_handle, size_t index, float value, int) {
                     float scale = quant->scale->data[0];
                     int32_t zero_point = quant->zero_point->data[0];
                     
-                    int32_t quantized = (int32_t)(value / scale + 0.5f) + zero_point;
+                    int32_t quantized = (int32_t)roundf(value / scale) + zero_point;
                     
                     // Clamping para uint8
                     if (quantized > 255) quantized = 255;
@@ -776,16 +776,16 @@ void SetTensorValue(uintptr_t tensor_handle, size_t index, float value, int) {
                     tensor->data.uint8[index] = (uint8_t)quantized;
                     MicroPrintf("Input[%zu] = %.6f (quantized to %u)", index, value, (uint8_t)quantized);
                 } else {
-                    uint8_t uint_value = (uint8_t)value;
-                    if (value > 255.0f) uint_value = 255;
-                    if (value < 0.0f) uint_value = 0;
+                    uint8_t uint_value = (uint8_t)roundf(value);
+                    if (uint_value > 255) uint_value = 255;
+                    if (uint_value < 0) uint_value = 0;
                     tensor->data.uint8[index] = uint_value;
                     MicroPrintf("Input[%zu] = %u", index, uint_value);
                 }
             } else {
-                uint8_t uint_value = (uint8_t)value;
-                if (value > 255.0f) uint_value = 255;
-                if (value < 0.0f) uint_value = 0;
+                uint8_t uint_value = (uint8_t)roundf(value);
+                if (uint_value > 255) uint_value = 255;
+                if (uint_value < 0) uint_value = 0;
                 tensor->data.uint8[index] = uint_value;
                 MicroPrintf("Input[%zu] = %u", index, uint_value);
             }
@@ -809,7 +809,7 @@ void SetTensorValue(uintptr_t tensor_handle, size_t index, float value, int) {
                     float scale = quant->scale->data[0];
                     int32_t zero_point = quant->zero_point->data[0];
                     
-                    int32_t quantized = (int32_t)(value / scale + 0.5f) + zero_point;
+                    int32_t quantized = (int32_t)roundf(value / scale) + zero_point;
                     
                     // Clamping para int16
                     if (quantized > 32767) quantized = 32767;
@@ -818,12 +818,12 @@ void SetTensorValue(uintptr_t tensor_handle, size_t index, float value, int) {
                     tensor->data.i16[index] = (int16_t)quantized;
                     MicroPrintf("Input[%zu] = %.6f (quantized to %d)", index, value, (int16_t)quantized);
                 } else {
-                    int16_t int_value = (int16_t)value;
+                    int16_t int_value = (int16_t)roundf(value);
                     tensor->data.i16[index] = int_value;
                     MicroPrintf("Input[%zu] = %d", index, int_value);
                 }
             } else {
-                int16_t int_value = (int16_t)value;
+                int16_t int_value = (int16_t)roundf(value);
                 tensor->data.i16[index] = int_value;
                 MicroPrintf("Input[%zu] = %d", index, int_value);
             }
@@ -835,7 +835,7 @@ void SetTensorValue(uintptr_t tensor_handle, size_t index, float value, int) {
                 MicroPrintf("ERRO: tensor->data.i64 é NULL");
                 return;
             }
-            int64_t int_value = (int64_t)value;
+            int64_t int_value = (int64_t)roundf(value);
             tensor->data.i64[index] = int_value;
             MicroPrintf("Input[%zu] = %lld", index, (long long)int_value);
             break;
