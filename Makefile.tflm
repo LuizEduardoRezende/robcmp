@@ -24,7 +24,7 @@ EXE_FILE := $(BUILD_DIR)/$(FILE)
 
 # Ferramentas e bibliotecas
 ROBCMP := $(BUILD_DIR)/robcmp
-CLANG := clang++
+LLVM_LLD := ld.lld
 WRAPPER_LIB := $(BUILD_DIR)/libtflm_wrapper_static.a
 TFLM_LIB := $(THIRD_PARTY)/gen/*/lib/libtensorflow-microlite.a
 
@@ -40,13 +40,31 @@ all: $(EXE_FILE)
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
 
-# Compila .rob para .o
+# Compila .rob para .o com otimização de tamanho
 $(OBJ_FILE): $(ROB_FILE) | $(BUILD_DIR)
-	$(ROBCMP) $(ROB_FILE) -I $(ROOT_DIR)/lib -o $(OBJ_FILE)
+	$(ROBCMP) $(ROB_FILE) -I $(ROOT_DIR)/lib -Oz -o $(OBJ_FILE)
 
-# Linka .o com bibliotecas
+# Linka usando clang++ como driver com otimizações ld.lld (512KB - hello-world-float)
 $(EXE_FILE): $(OBJ_FILE)
-	$(CLANG) $(OBJ_FILE) $(WRAPPER_LIB) $(TFLM_LIB) -o $(EXE_FILE) -lstdc++
+	clang++ -fuse-ld=lld \
+	-flto=thin -fwhole-program-vtables \
+	-Wl,--gc-sections -Wl,--as-needed -Wl,--strip-all \
+ 	-Wl,--lto-whole-program-visibility \
+ 	-o $(EXE_FILE) $(OBJ_FILE) $(WRAPPER_LIB) $(TFLM_LIB)
+
+# Versão anterior usando ld.lld diretamente ((502KB - hello-world-float), porém mais complexo)
+#$(EXE_FILE): $(OBJ_FILE)
+#	$(LLVM_LLD) --gc-sections --lto=thin --lto-whole-program-visibility \
+#	--as-needed --strip-all \
+#	-o $(EXE_FILE) \
+#	/usr/lib/x86_64-linux-gnu/crt1.o \
+#	/usr/lib/x86_64-linux-gnu/crti.o \
+#	$(OBJ_FILE) $(WRAPPER_LIB) $(TFLM_LIB) \
+#	-L/usr/lib/x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13 \
+#	-lstdc++ -lc -lm -lgcc_s \
+#	--dynamic-linker=/lib64/ld-linux-x86-64.so.2 \
+#	/usr/lib/x86_64-linux-gnu/crtn.o
+
 
 # Executa o programa
 run: $(EXE_FILE)

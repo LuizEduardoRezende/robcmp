@@ -49,11 +49,15 @@ test: setup ${ALL_TT}
 # Compilar .rob para .o
 out/%.o : %.rob ${ROBCMP} Makefile
 	@mkdir -p out
-	${ROBCMP} ${OPT} -I ../../lib $< -o $@
+	${ROBCMP} ${OPT} -I ../../lib $< -Oz -o $@
 
 # Linkar .o com bibliotecas TFLM para criar executável
 out/% : out/%.o
-	${CLANG} $< ${WRAPPER_LIB} ${TFLM_LIB} -o $@ -lstdc++
+	${CLANG} -fuse-ld=lld \
+	-flto=thin -fwhole-program-vtables \
+	-Wl,--gc-sections -Wl,--as-needed -Wl,--strip-all \
+	-Wl,--lto-whole-program-visibility \
+	-o $@ $< ${WRAPPER_LIB} ${TFLM_LIB}
 
 # Limpeza
 clean:

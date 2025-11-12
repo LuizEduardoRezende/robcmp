@@ -237,10 +237,10 @@ void Program::doSemanticAnalysis() {
 
 	buildTypes->generateDebugInfoForTypes();
 	
-	/*std::fstream fs;
+	std::fstream fs;
 	fs.open("ast", std::fstream::out);
 	PrintAstVisitor(fs).visit(*this);
-	fs.close();*/
+	fs.close();
 }
 
 void Program::generate() {
