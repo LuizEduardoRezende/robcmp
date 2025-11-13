@@ -5,14 +5,6 @@ set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -O0 -fno-exceptions")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -fno-exceptions")
 
-#add_compile_definitions()
-    
-#TF_LITE_STATIC_MEMORY=1 (desnecessária para o funcionamento)
-#TF_LITE_MCU_DEBUG_LOG=1 (desnecessária para o funcionamento)
-#TFLITE_EMULATE_FLOAT=0 (desnecessária para o funcionamento)
-#TF_LITE_USE_GLOBAL_POOL=0 (desnecessária para o funcionamento)
-#TF_LITE_USE_CPPSTD_STRING_VIEW=0 (desnecessária para o funcionamento)
-
 project(robcmp)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -114,11 +106,10 @@ target_compile_options(tflm_wrapper_static PRIVATE
     -DTF_LITE_STATIC_MEMORY=1
     -fno-rtti
     -fno-exceptions
-    -f function-sections
-    -f data-sections
+    -ffunction-sections
+    -fdata-sections
 )
     
-
 target_link_libraries(tflm_wrapper_static
     ${TFLM_LIB_DIR}/libtensorflow-microlite.a
 )
