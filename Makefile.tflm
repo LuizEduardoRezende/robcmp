@@ -52,6 +52,7 @@ $(EXE_FILE): $(OBJ_FILE)
  	-Wl,--lto-whole-program-visibility \
  	-o $(EXE_FILE) $(OBJ_FILE) $(WRAPPER_LIB) $(TFLM_LIB)
 
+
 # Versão anterior usando ld.lld diretamente ((502KB - hello-world-float), porém mais complexo)
 #$(EXE_FILE): $(OBJ_FILE)
 #	$(LLVM_LLD) --gc-sections --lto=thin --lto-whole-program-visibility \
@@ -64,6 +65,8 @@ $(EXE_FILE): $(OBJ_FILE)
 #	-lstdc++ -lc -lm -lgcc_s \
 #	--dynamic-linker=/lib64/ld-linux-x86-64.so.2 \
 #	/usr/lib/x86_64-linux-gnu/crtn.o
+
+
 
 
 # Executa o programa

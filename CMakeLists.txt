@@ -114,14 +114,21 @@ target_compile_options(tflm_wrapper_static PRIVATE
     -DTF_LITE_STATIC_MEMORY=1
     -fno-rtti
     -fno-exceptions
-    )
+    -f function-sections
+    -f data-sections
+)
+    
+
+target_link_libraries(tflm_wrapper_static
+    ${TFLM_LIB_DIR}/libtensorflow-microlite.a
+)
+
+target_link_options(tflm_wrapper_static PRIVATE
+    -Wl,--gc-sections
+)
 
 #-DTF_LITE_MCU_DEBUG_LOG (desnecessária para o funcionamento)
 #-fno-threadsafe-statics (desnecessária para o funcionamento)
 #-DTFLITE_EMULATE_FLOAT=0 (desnecessária para o funcionamento)
 #-Wno-unused-parameter (desnecessária para o funcionamento)
 #-Wno-unused-variable (desnecessária para o funcionamento)
-
-target_link_libraries(tflm_wrapper_static
-    ${TFLM_LIB_DIR}/libtensorflow-microlite.a
-)
