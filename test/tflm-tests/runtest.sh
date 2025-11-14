@@ -12,7 +12,6 @@ TEST_NAME=$2
 
 echo -n " ...           $ROB_FILE "
 
-# Compilar usando o Makefile local
 make -s out/$TEST_NAME &> /dev/null
 
 if [ "$?" -eq 0 ]; then
@@ -21,10 +20,10 @@ if [ "$?" -eq 0 ]; then
     STATUS=$?
     
     if [ "${STATUS}" -eq 0 ]; then
-        echo -e \\r${GREEN}[PASS]\\t\\t${NC}
+        echo -e \\r${GREEN}[PASS]\\t\\t${NC}$ROB_FILE
     else
-        echo -e \\r${RED}[FAILED] ${STATUS}\\t${NC}
+        echo -e \\r${RED}[FAILED] ${STATUS}\\t${NC}$ROB_FILE
     fi
 else
-    echo -e \\r${RED}[BUILD FAILED]\\t${NC}
+    echo -e \\r${RED}[BUILD FAILED]\\t${NC}$ROB_FILE
 fi

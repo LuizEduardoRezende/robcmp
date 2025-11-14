@@ -7,7 +7,7 @@ spam_model_data_size = 83304;
 // Arena de memória para tensores (16KB para garantir espaço suficiente)
 tensor_arena = {0u:4096};
 
-// Kernels necessários para o modelo Spam, Gather, Mean, FullyConnected e Softmax
+// Kernels necessários para o modelo Spam: Gather, Mean, FullyConnected e Softmax
 required_kernels = {36, 40, 9, 25};
 
 

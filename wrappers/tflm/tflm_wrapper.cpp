@@ -1,6 +1,4 @@
 #include "third-party/tflite-micro/tensorflow/lite/micro/micro_interpreter.h"
-#include "third-party/tflite-micro/tensorflow/lite/micro/recording_micro_interpreter.h"
-#include "third-party/tflite-micro/tensorflow/lite/micro/recording_micro_allocator.h"
 #include "third-party/tflite-micro/tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "third-party/tflite-micro/tensorflow/lite/schema/schema_generated.h"
 #include "third-party/tflite-micro/tensorflow/lite/c/common.h"
@@ -8,10 +6,19 @@
 #include <cstring>
 #include <cstdint>
 
+// Incluir configuração de kernels
+#include "kernel_config.h"
+
 
 extern "C" {
 
-using MutableResolver = tflite::MicroMutableOpResolver<100>;
+#define MicroPrintf(...) ((void)0)
+
+#ifndef TFLM_MAX_OPS
+#define TFLM_MAX_OPS 50
+#endif
+
+using MutableResolver = tflite::MicroMutableOpResolver<TFLM_MAX_OPS>;
 
 // Enumeração para tipos de kernel possíveis de um modelo
 typedef enum {
@@ -25,32 +32,32 @@ typedef enum {
   EMBEDDING_LOOKUP = 7,
   FLOOR = 8,
   FULLY_CONNECTED = 9,
-  HASHTABLE_LOOKUP = 10,
+  HASHTABLE_LOOKUP = 10, //Não suportado no TFLM
   L2_NORMALIZATION = 11,
   L2_POOL_2D = 12,
-  LOCAL_RESPONSE_NORMALIZATION = 13,
+  LOCAL_RESPONSE_NORMALIZATION = 13, //Não suportado no TFLM
   LOGISTIC = 14,
-  LSH_PROJECTION = 15,
-  LSTM = 16,
+  LSH_PROJECTION = 15, //Não suportado no TFLM
+  LSTM = 16, //Não suportado no TFLM
   MAX_POOL_2D = 17,
   MUL = 18,
   RELU = 19,
-  RELU_N1_TO_1 = 20,
+  RELU_N1_TO_1 = 20, //Não suportado no TFLM
   RELU6 = 21,
   RESHAPE = 22,
   RESIZE_BILINEAR = 23,
-  RNN = 24,
+  RNN = 24, //Não suportado no TFLM
   SOFTMAX = 25,
   SPACE_TO_DEPTH = 26,
   SVDF = 27,
   TANH = 28,
-  CONCAT_EMBEDDINGS = 29,
-  SKIP_GRAM = 30,
-  CALL = 31,
-  CUSTOM = 32,
-  EMBEDDING_LOOKUP_SPARSE = 33,
+  CONCAT_EMBEDDINGS = 29, //Não suportado no TFLM
+  SKIP_GRAM = 30, //Não suportado no TFLM
+  CALL = 31, //Não suportado no TFLM
+  CUSTOM = 32, //Não suportado no TFLM
+  EMBEDDING_LOOKUP_SPARSE = 33, //Não suportado no TFLM
   PAD = 34,
-  UNIDIRECTIONAL_SEQUENCE_RNN = 35,
+  UNIDIRECTIONAL_SEQUENCE_RNN = 35, //Não suportado no TFLM
   GATHER = 36,
   BATCH_TO_SPACE_ND = 37,
   SPACE_TO_BATCH_ND = 38,
@@ -61,13 +68,13 @@ typedef enum {
   SQUEEZE = 43,
   UNIDIRECTIONAL_SEQUENCE_LSTM = 44,
   STRIDED_SLICE = 45,
-  BIDIRECTIONAL_SEQUENCE_RNN = 46,
+  BIDIRECTIONAL_SEQUENCE_RNN = 46, //Não suportado no TFLM
   EXP = 47,
-  TOPK_V2 = 48,
+  TOPK_V2 = 48, //Não suportado no TFLM
   SPLIT = 49,
   LOG_SOFTMAX = 50,
-  DELEGATE = 51,
-  BIDIRECTIONAL_SEQUENCE_LSTM = 52,
+  DELEGATE = 51, //Não suportado no TFLM
+  BIDIRECTIONAL_SEQUENCE_LSTM = 52, //Não suportado no TFLM
   CAST = 53,
   PRELU = 54,
   MAXIMUM = 55,
@@ -79,12 +86,12 @@ typedef enum {
   GREATER = 61,
   GREATER_EQUAL = 62,
   LESS_EQUAL = 63,
-  SELECT = 64,
+  SELECT = 64, //Não suportado no TFLM
   SLICE = 65,
   SIN = 66,
   TRANSPOSE_CONV = 67,
-  SPARSE_TO_DENSE = 68,
-  TILE = 69,
+  SPARSE_TO_DENSE = 68, //Não suportado no TFLM
+  TILE = 69, //Não suportado no TFLM
   EXPAND_DIMS = 70,
   EQUAL = 71,
   NOT_EQUAL = 72,
@@ -93,362 +100,838 @@ typedef enum {
   SQRT = 75,
   RSQRT = 76,
   SHAPE = 77,
-  POW = 78,
+  POW = 78, //Não suportado no TFLM
   ARG_MIN = 79,
-  FAKE_QUANT = 80,
-  REDUCE_PROD = 81,
+  FAKE_QUANT = 80, //Não suportado no TFLM
+  REDUCE_PROD = 81, //Não suportado no TFLM
   REDUCE_MAX = 82,
   PACK = 83,
   LOGICAL_OR = 84,
-  ONE_HOT = 85,
+  ONE_HOT = 85, //Não suportado no TFLM
   LOGICAL_AND = 86,
   LOGICAL_NOT = 87,
   UNPACK = 88,
   REDUCE_MIN = 89,
   FLOOR_DIV = 90,
-  REDUCE_ANY = 91,
+  REDUCE_ANY = 91, //Não suportado no TFLM
   SQUARE = 92,
   ZEROS_LIKE = 93,
   FILL = 94,
   FLOOR_MOD = 95,
-  RANGE = 96,
+  RANGE = 96, //Não suportado no TFLM
   RESIZE_NEAREST_NEIGHBOR = 97,
   LEAKY_RELU = 98,
   SQUARED_DIFFERENCE = 99,
   MIRROR_PAD = 100,
   ABS = 101,
   SPLIT_V = 102,
-  UNIQUE = 103,
+  UNIQUE = 103, //Não suportado no TFLM
   CEIL = 104,
   REVERSE_V2 = 105,
   ADD_N = 106,
   GATHER_ND = 107,
   COS = 108,
-  WHERE = 109,
-  RANK = 110,
+  WHERE = 109, // Não suportado no TFLM
+  RANK = 110, //Não suportado no TFLM
   ELU = 111,
-  REVERSE_SEQUENCE = 112,
-  MATRIX_DIAG = 113,
+  REVERSE_SEQUENCE = 112, //Não suportado no TFLM
+  MATRIX_DIAG = 113, //Não suportado no TFLM
   QUANTIZE = 114,
-  MATRIX_SET_DIAG = 115,
+  MATRIX_SET_DIAG = 115, //Não suportado no TFLM
   ROUND = 116,
   HARD_SWISH = 117,
   IF = 118,
   WHILE = 119,
-  NON_MAX_SUPPRESSION_V4 = 120,
-  NON_MAX_SUPPRESSION_V5 = 121,
-  SCATTER_ND = 122,
+  NON_MAX_SUPPRESSION_V4 = 120, //Não suportado no TFLM
+  NON_MAX_SUPPRESSION_V5 = 121, //Não suportado no TFLM
+  SCATTER_ND = 122, //Não suportado no TFLM
   SELECT_V2 = 123,
-  DENSIFY = 124,
-  SEGMENT_SUM = 125,
+  DENSIFY = 124, //Não suportado no TFLM
+  SEGMENT_SUM = 125, //Não suportado no TFLM
   BATCH_MATMUL = 126,
-  PLACEHOLDER_FOR_GREATER_OP_CODES = 127,
+  PLACEHOLDER_FOR_GREATER_OP_CODES = 127, //Não suportado no TFLM
   CUMSUM = 128,
   CALL_ONCE = 129,
   BROADCAST_TO = 130,
-  RFFT2D = 131,
-  CONV_3D = 132,
-  IMAG = 133,
-  REAL = 134,
-  COMPLEX_ABS = 135,
-  HASHTABLE = 136,
-  HASHTABLE_FIND = 137,
-  HASHTABLE_IMPORT = 138,
-  HASHTABLE_SIZE = 139,
-  REDUCE_ALL = 140,
-  CONV_3D_TRANSPOSE = 141,
+  RFFT2D = 131, //Não suportado no TFLM
+  CONV_3D = 132, //Não suportado no TFLM
+  IMAG = 133, //Não suportado no TFLM
+  REAL = 134, //Não suportado no TFLM
+  COMPLEX_ABS = 135, //Não suportado no TFLM
+  HASHTABLE = 136, //Não suportado no TFLM
+  HASHTABLE_FIND = 137, //Não suportado no TFLM
+  HASHTABLE_IMPORT = 138, //Não suportado no TFLM
+  HASHTABLE_SIZE = 139, //Não suportado no TFLM
+  REDUCE_ALL = 140, //Não suportado no TFLM
+  CONV_3D_TRANSPOSE = 141, //Não suportado no TFLM
   VAR_HANDLE = 142,
   READ_VARIABLE = 143,
   ASSIGN_VARIABLE = 144,
   BROADCAST_ARGS = 145,
   RANDOM_STANDARD_NORMAL = 146,
-  BUCKETIZE = 147,
-  RANDOM_UNIFORM = 148,
-  MULTINOMIAL = 149,
-  GELU = 150,
-  DYNAMIC_UPDATE_SLICE = 151,
-  RELU_0_TO_1 = 152,
-  UNSORTED_SEGMENT_PROD = 153,
-  UNSORTED_SEGMENT_MAX = 154,
-  UNSORTED_SEGMENT_SUM = 155,
-  ATAN2 = 156,
-  UNSORTED_SEGMENT_MIN = 157,
-  SIGN = 158,
-  BITCAST = 159,
-  BITWISE_XOR = 160,
-  RIGHT_SHIFT = 161,
-  STABLEHLO_LOGISTIC = 162,
-  STABLEHLO_ADD = 163,
-  STABLEHLO_DIVIDE = 164,
-  STABLEHLO_MULTIPLY = 165,
-  STABLEHLO_MAXIMUM = 166,
-  STABLEHLO_RESHAPE = 167,
-  STABLEHLO_CLAMP = 168,
-  STABLEHLO_CONCATENATE = 169,
-  STABLEHLO_BROADCAST_IN_DIM = 170,
-  STABLEHLO_CONVOLUTION = 171,
-  STABLEHLO_SLICE = 172,
-  STABLEHLO_CUSTOM_CALL = 173,
-  STABLEHLO_REDUCE = 174,
-  STABLEHLO_ABS = 175,
-  STABLEHLO_AND = 176,
-  STABLEHLO_COSINE = 177,
-  STABLEHLO_EXPONENTIAL = 178,
-  STABLEHLO_FLOOR = 179,
-  STABLEHLO_LOG = 180,
-  STABLEHLO_MINIMUM = 181,
-  STABLEHLO_NEGATE = 182,
-  STABLEHLO_OR = 183,
-  STABLEHLO_POWER = 184,
-  STABLEHLO_REMAINDER = 185,
-  STABLEHLO_RSQRT = 186,
-  STABLEHLO_SELECT = 187,
-  STABLEHLO_SUBTRACT = 188,
-  STABLEHLO_TANH = 189,
-  STABLEHLO_SCATTER = 190,
-  STABLEHLO_COMPARE = 191,
-  STABLEHLO_CONVERT = 192,
-  STABLEHLO_DYNAMIC_SLICE = 193,
-  STABLEHLO_DYNAMIC_UPDATE_SLICE = 194,
-  STABLEHLO_PAD = 195,
-  STABLEHLO_IOTA = 196,
-  STABLEHLO_DOT_GENERAL = 197,
-  STABLEHLO_REDUCE_WINDOW = 198,
-  STABLEHLO_SORT = 199,
-  STABLEHLO_WHILE = 200,
-  STABLEHLO_GATHER = 201,
-  STABLEHLO_TRANSPOSE = 202,
-  DILATE = 203,
-  STABLEHLO_RNG_BIT_GENERATOR = 204,
-  REDUCE_WINDOW = 205,
-  STABLEHLO_COMPOSITE = 206,
-  STABLEHLO_SHIFT_LEFT = 207,
-  STABLEHLO_CBRT = 208,
-  STABLEHLO_CASE = 209
+  BUCKETIZE = 147, //Não suportado no TFLM
+  RANDOM_UNIFORM = 148, //Não suportado no TFLM
+  MULTINOMIAL = 149, //Não suportado no TFLM
+  GELU = 150, //Não suportado no TFLM
+  DYNAMIC_UPDATE_SLICE = 151, //Não suportado no TFLM
+  RELU_0_TO_1 = 152, //Não suportado no TFLM
+  UNSORTED_SEGMENT_PROD = 153, //Não suportado no TFLM
+  UNSORTED_SEGMENT_MAX = 154, //Não suportado no TFLM
+  UNSORTED_SEGMENT_SUM = 155, //Não suportado no TFLM
+  ATAN2 = 156, //Não suportado no TFLM
+  UNSORTED_SEGMENT_MIN = 157, //Não suportado no TFLM
+  SIGN = 158, //Não suportado no TFLM
+  BITCAST = 159, //Não suportado no TFLM
+  BITWISE_XOR = 160, //Não suportado no TFLM
+  RIGHT_SHIFT = 161, //Não suportado no TFLM
+  STABLEHLO_LOGISTIC = 162, //Não suportado no TFLM
+  STABLEHLO_ADD = 163, //Não suportado no TFLM
+  STABLEHLO_DIVIDE = 164, //Não suportado no TFLM
+  STABLEHLO_MULTIPLY = 165, //Não suportado no TFLM
+  STABLEHLO_MAXIMUM = 166, //Não suportado no TFLM
+  STABLEHLO_RESHAPE = 167, //Não suportado no TFLM
+  STABLEHLO_CLAMP = 168, //Não suportado no TFLM
+  STABLEHLO_CONCATENATE = 169, //Não suportado no TFLM
+  STABLEHLO_BROADCAST_IN_DIM = 170, //Não suportado no TFLM
+  STABLEHLO_CONVOLUTION = 171,//Não suportado no TFLM
+  STABLEHLO_SLICE = 172, //Não suportado no TFLM
+  STABLEHLO_CUSTOM_CALL = 173, //Não suportado no TFLM
+  STABLEHLO_REDUCE = 174, //Não suportado no TFLM
+  STABLEHLO_ABS = 175, //Não suportado no TFLM
+  STABLEHLO_AND = 176, //Não suportado no TFLM
+  STABLEHLO_COSINE = 177, //Não suportado no TFLM
+  STABLEHLO_EXPONENTIAL = 178, //Não suportado no TFLM
+  STABLEHLO_FLOOR = 179, //Não suportado no TFLM
+  STABLEHLO_LOG = 180, //Não suportado no TFLM
+  STABLEHLO_MINIMUM = 181, //Não suportado no TFLM
+  STABLEHLO_NEGATE = 182, //Não suportado no TFLM
+  STABLEHLO_OR = 183, //Não suportado no TFLM
+  STABLEHLO_POWER = 184, //Não suportado no TFLM
+  STABLEHLO_REMAINDER = 185, //Não suportado no TFLM
+  STABLEHLO_RSQRT = 186, //Não suportado no TFLM
+  STABLEHLO_SELECT = 187, //Não suportado no TFLM
+  STABLEHLO_SUBTRACT = 188, //Não suportado no TFLM
+  STABLEHLO_TANH = 189, //Não suportado no TFLM
+  STABLEHLO_SCATTER = 190, //Não suportado no TFLM
+  STABLEHLO_COMPARE = 191, //Não suportado no TFLM
+  STABLEHLO_CONVERT = 192, //Não suportado no TFLM
+  STABLEHLO_DYNAMIC_SLICE = 193, //Não suportado no TFLM
+  STABLEHLO_DYNAMIC_UPDATE_SLICE = 194, //Não suportado no TFLM
+  STABLEHLO_PAD = 195, //Não suportado no TFLM
+  STABLEHLO_IOTA = 196, //Não suportado no TFLM
+  STABLEHLO_DOT_GENERAL = 197, //Não suportado no TFLM
+  STABLEHLO_REDUCE_WINDOW = 198, //Não suportado no TFLM
+  STABLEHLO_SORT = 199, //Não suportado no TFLM
+  STABLEHLO_WHILE = 200, //Não suportado no TFLM
+  STABLEHLO_GATHER = 201, //Não suportado no TFLM
+  STABLEHLO_TRANSPOSE = 202, //Não suportado no TFLM
+  DILATE = 203, //Não suportado no TFLM
+  STABLEHLO_RNG_BIT_GENERATOR = 204, //Não suportado no TFLM
+  REDUCE_WINDOW = 205, //Não suportado no TFLM
+  STABLEHLO_COMPOSITE = 206, //Não suportado no TFLM
+  STABLEHLO_SHIFT_LEFT = 207, //Não suportado no TFLM
+  STABLEHLO_CBRT = 208, //Não suportado no TFLM
+  STABLEHLO_CASE = 209 //Não suportado no TFLM
 } KernelType;
 
-void RegisterOp(tflite::MicroMutableOpResolver<100>* resolver, KernelType kernel_type);
+void RegisterOp(tflite::MicroMutableOpResolver<TFLM_MAX_OPS>* resolver, KernelType kernel_type);
 
 struct TFLM_Instance {
-    tflite::RecordingMicroInterpreter* interpreter;
-    tflite::RecordingMicroAllocator* allocator;
+    tflite::MicroInterpreter* interpreter;
+    tflite::MicroAllocator* allocator;       
     MutableResolver* resolver;
 };
 
-void RegisterOp(tflite::MicroMutableOpResolver<100>* resolver, KernelType kernel_type) {
+void RegisterOp(tflite::MicroMutableOpResolver<TFLM_MAX_OPS>* resolver, KernelType kernel_type) {
     switch (kernel_type) {
-        case ADD: resolver->AddAdd(); break;
-        case AVERAGE_POOL_2D: resolver->AddAveragePool2D(); break;
-        case CONCATENATION: resolver->AddConcatenation(); break;
-        case CONV_2D: resolver->AddConv2D(); break;
-        case DEPTHWISE_CONV_2D: resolver->AddDepthwiseConv2D(); break;
-        case DEPTH_TO_SPACE: resolver->AddDepthToSpace(); break;
-        case DEQUANTIZE: resolver->AddDequantize(); break;
-        case EMBEDDING_LOOKUP: resolver->AddEmbeddingLookup(); break;
-        case FLOOR: resolver->AddFloor(); break;
-        case FULLY_CONNECTED: resolver->AddFullyConnected(); break;
-        case HASHTABLE_LOOKUP: MicroPrintf("AVISO: HASHTABLE_LOOKUP não suportado diretamente"); break;
-        case L2_NORMALIZATION: resolver->AddL2Normalization(); break;
-        case L2_POOL_2D: resolver->AddL2Pool2D(); break;
-        case LOCAL_RESPONSE_NORMALIZATION: MicroPrintf("AVISO: LOCAL_RESPONSE_NORMALIZATION não suportado diretamente"); break;
-        case LOGISTIC: resolver->AddLogistic(); break;
-        case LSH_PROJECTION: MicroPrintf("AVISO: LSH_PROJECTION não suportado diretamente"); break;
-        case LSTM: MicroPrintf("AVISO: LSTM não suportado diretamente"); break;
-        case MAX_POOL_2D: resolver->AddMaxPool2D(); break;
-        case MUL: resolver->AddMul(); break;
-        case RELU: resolver->AddRelu(); break;
-        case RELU_N1_TO_1: MicroPrintf("AVISO: RELU_N1_TO_1 não suportado diretamente"); break;
-        case RELU6: resolver->AddRelu6(); break;
-        case RESHAPE: resolver->AddReshape(); break;
-        case RESIZE_BILINEAR: resolver->AddResizeBilinear(); break;
-        case RNN: MicroPrintf("AVISO: RNN não suportado diretamente"); break;
-        case SOFTMAX: resolver->AddSoftmax(); break;
-        case SPACE_TO_DEPTH: resolver->AddSpaceToDepth(); break;
-        case SVDF: resolver->AddSvdf(); break;
-        case TANH: resolver->AddTanh(); break;
-        case CONCAT_EMBEDDINGS: MicroPrintf("AVISO: CONCAT_EMBEDDINGS não suportado diretamente"); break;
-        case SKIP_GRAM: MicroPrintf("AVISO: SKIP_GRAM não suportado diretamente"); break;
-        case CALL: MicroPrintf("AVISO: CALL não suportado diretamente"); break;
-        case CUSTOM: MicroPrintf("AVISO: CUSTOM não suportado diretamente"); break;
-        case EMBEDDING_LOOKUP_SPARSE: MicroPrintf("AVISO: EMBEDDING_LOOKUP_SPARSE não suportado diretamente"); break;
-        case PAD: resolver->AddPad(); break;
-        case UNIDIRECTIONAL_SEQUENCE_RNN: MicroPrintf("AVISO: UNIDIRECTIONAL_SEQUENCE_RNN não suportado diretamente"); break;
-        case GATHER: resolver->AddGather(); break;
-        case BATCH_TO_SPACE_ND: resolver->AddBatchToSpaceNd(); break;
-        case SPACE_TO_BATCH_ND: resolver->AddSpaceToBatchNd(); break;
-        case TRANSPOSE: resolver->AddTranspose(); break;
-        case MEAN: resolver->AddMean(); break;
-        case SUB: resolver->AddSub(); break;
-        case DIV: resolver->AddDiv(); break;
-        case SQUEEZE: resolver->AddSqueeze(); break;
-        case UNIDIRECTIONAL_SEQUENCE_LSTM: resolver->AddUnidirectionalSequenceLSTM(); break;
-        case STRIDED_SLICE: resolver->AddStridedSlice(); break;
-        case BIDIRECTIONAL_SEQUENCE_RNN: MicroPrintf("AVISO: BIDIRECTIONAL_SEQUENCE_RNN não suportado diretamente"); break;
-        case EXP: resolver->AddExp(); break;
-        case TOPK_V2: MicroPrintf("AVISO: TOPK_V2 não suportado diretamente"); break;
-        case SPLIT: resolver->AddSplit(); break;
-        case LOG_SOFTMAX: resolver->AddLogSoftmax(); break;
-        case DELEGATE: MicroPrintf("AVISO: DELEGATE não suportado diretamente"); break;
-        case BIDIRECTIONAL_SEQUENCE_LSTM: MicroPrintf("AVISO: BIDIRECTIONAL_SEQUENCE_LSTM não suportado diretamente"); break;
-        case CAST: resolver->AddCast(); break;
-        case PRELU: resolver->AddPrelu(); break;
-        case MAXIMUM: resolver->AddMaximum(); break;
-        case ARG_MAX: resolver->AddArgMax(); break;
-        case MINIMUM: resolver->AddMinimum(); break;
-        case LESS: resolver->AddLess(); break;
-        case NEG: resolver->AddNeg(); break;
-        case PADV2: resolver->AddPadV2(); break;
-        case GREATER: resolver->AddGreater(); break;
-        case GREATER_EQUAL: resolver->AddGreaterEqual(); break;
-        case LESS_EQUAL: resolver->AddLessEqual(); break;
-        case SELECT: MicroPrintf("AVISO: SELECT não suportado diretamente"); break;
-        case SLICE: resolver->AddSlice(); break;
-        case SIN: resolver->AddSin(); break;
-        case TRANSPOSE_CONV: resolver->AddTransposeConv(); break;
-        case SPARSE_TO_DENSE: MicroPrintf("AVISO: SPARSE_TO_DENSE não suportado diretamente"); break;
-        case TILE: MicroPrintf("AVISO: TILE não suportado diretamente"); break;
-        case EXPAND_DIMS: resolver->AddExpandDims(); break;
-        case EQUAL: resolver->AddEqual(); break;
-        case NOT_EQUAL: resolver->AddNotEqual(); break;
-        case LOG: resolver->AddLog(); break;
-        case SUM: resolver->AddSum(); break;
-        case SQRT: resolver->AddSqrt(); break;
-        case RSQRT: resolver->AddRsqrt(); break;
-        case SHAPE: resolver->AddShape(); break;
-        case POW: MicroPrintf("AVISO: POW não suportado diretamente"); break;
-        case ARG_MIN: resolver->AddArgMin(); break;
-        case FAKE_QUANT: MicroPrintf("AVISO: FAKE_QUANT não suportado diretamente"); break;
-        case REDUCE_PROD: MicroPrintf("AVISO: REDUCE_PROD não suportado diretamente"); break;
-        case REDUCE_MAX: resolver->AddReduceMax(); break;
-        case PACK: resolver->AddPack(); break;
-        case LOGICAL_OR: resolver->AddLogicalOr(); break;
-        case ONE_HOT: MicroPrintf("AVISO: ONE_HOT não suportado diretamente"); break;
-        case LOGICAL_AND: resolver->AddLogicalAnd(); break;
-        case LOGICAL_NOT: resolver->AddLogicalNot(); break;
-        case UNPACK: resolver->AddUnpack(); break;
-        case REDUCE_MIN: resolver->AddReduceMin(); break;
-        case FLOOR_DIV: resolver->AddFloorDiv(); break;
-        case REDUCE_ANY: MicroPrintf("AVISO: REDUCE_ANY não suportado diretamente"); break;
-        case SQUARE: resolver->AddSquare(); break;
-        case ZEROS_LIKE: resolver->AddZerosLike(); break;
-        case FILL: resolver->AddFill(); break;
-        case FLOOR_MOD: resolver->AddFloorMod(); break;
-        case RANGE: MicroPrintf("AVISO: RANGE não suportado diretamente"); break;
-        case RESIZE_NEAREST_NEIGHBOR: resolver->AddResizeNearestNeighbor(); break;
-        case LEAKY_RELU: resolver->AddLeakyRelu(); break;
-        case SQUARED_DIFFERENCE: resolver->AddSquaredDifference(); break;
-        case MIRROR_PAD: resolver->AddMirrorPad(); break;
-        case ABS: resolver->AddAbs(); break;
-        case SPLIT_V: resolver->AddSplitV(); break;
-        case UNIQUE: MicroPrintf("AVISO: UNIQUE não suportado diretamente"); break;
-        case CEIL: resolver->AddCeil(); break;
-        case REVERSE_V2: resolver->AddReverseV2(); break;
-        case ADD_N: resolver->AddAddN(); break;
-        case GATHER_ND: resolver->AddGatherNd(); break;
-        case COS: resolver->AddCos(); break;
-        case WHERE: MicroPrintf("AVISO: WHERE não suportado diretamente"); break;
-        case RANK: MicroPrintf("AVISO: RANK não suportado diretamente"); break;
-        case ELU: resolver->AddElu(); break;
-        case REVERSE_SEQUENCE: MicroPrintf("AVISO: REVERSE_SEQUENCE não suportado diretamente"); break;
-        case MATRIX_DIAG: MicroPrintf("AVISO: MATRIX_DIAG não suportado diretamente"); break;
-        case QUANTIZE: resolver->AddQuantize(); break;
-        case MATRIX_SET_DIAG: MicroPrintf("AVISO: MATRIX_SET_DIAG não suportado diretamente"); break;
-        case ROUND: resolver->AddRound(); break;
-        case HARD_SWISH: resolver->AddHardSwish(); break;
-        case IF: resolver->AddIf(); break;
-        case WHILE: resolver->AddWhile(); break;
-        case NON_MAX_SUPPRESSION_V4: MicroPrintf("AVISO: NON_MAX_SUPPRESSION_V4 não suportado diretamente"); break;
-        case NON_MAX_SUPPRESSION_V5: MicroPrintf("AVISO: NON_MAX_SUPPRESSION_V5 não suportado diretamente"); break;
-        case SCATTER_ND: MicroPrintf("AVISO: SCATTER_ND não suportado diretamente"); break;
-        case SELECT_V2: resolver->AddSelectV2(); break;
-        case DENSIFY: MicroPrintf("AVISO: DENSIFY não suportado diretamente"); break;
-        case SEGMENT_SUM: MicroPrintf("AVISO: SEGMENT_SUM não suportado diretamente"); break;
-        case BATCH_MATMUL: resolver->AddBatchMatMul(); break;
-        case PLACEHOLDER_FOR_GREATER_OP_CODES: MicroPrintf("AVISO: PLACEHOLDER_FOR_GREATER_OP_CODES não suportado diretamente"); break;
-        case CUMSUM: resolver->AddCumSum(); break;
-        case CALL_ONCE: resolver->AddCallOnce(); break;
-        case BROADCAST_TO: resolver->AddBroadcastTo(); break;
-        case RFFT2D: MicroPrintf("AVISO: RFFT2D não suportado diretamente"); break;
-        case CONV_3D: MicroPrintf("AVISO: CONV_3D não suportado diretamente"); break;
-        case IMAG: MicroPrintf("AVISO: IMAG não suportado diretamente"); break;
-        case REAL: MicroPrintf("AVISO: REAL não suportado diretamente"); break;
-        case COMPLEX_ABS: MicroPrintf("AVISO: COMPLEX_ABS não suportado diretamente"); break;
-        case HASHTABLE: MicroPrintf("AVISO: HASHTABLE não suportado diretamente"); break;
-        case HASHTABLE_FIND: MicroPrintf("AVISO: HASHTABLE_FIND não suportado diretamente"); break;
-        case HASHTABLE_IMPORT: MicroPrintf("AVISO: HASHTABLE_IMPORT não suportado diretamente"); break;
-        case HASHTABLE_SIZE: MicroPrintf("AVISO: HASHTABLE_SIZE não suportado diretamente"); break;
-        case REDUCE_ALL: MicroPrintf("AVISO: REDUCE_ALL não suportado diretamente"); break;
-        case CONV_3D_TRANSPOSE: MicroPrintf("AVISO: CONV_3D_TRANSPOSE não suportado diretamente"); break;
-        case VAR_HANDLE: resolver->AddVarHandle(); break;
-        case READ_VARIABLE: resolver->AddReadVariable(); break;
-        case ASSIGN_VARIABLE: resolver->AddAssignVariable(); break;
-        case BROADCAST_ARGS: resolver->AddBroadcastArgs(); break;
-        case RANDOM_STANDARD_NORMAL: MicroPrintf("AVISO: RANDOM_STANDARD_NORMAL não suportado diretamente"); break;
-        case BUCKETIZE: MicroPrintf("AVISO: BUCKETIZE não suportado diretamente"); break;
-        case RANDOM_UNIFORM: MicroPrintf("AVISO: RANDOM_UNIFORM não suportado diretamente"); break;
-        case MULTINOMIAL: MicroPrintf("AVISO: MULTINOMIAL não suportado diretamente"); break;
-        case GELU: MicroPrintf("AVISO: GELU não suportado diretamente"); break;
-        case DYNAMIC_UPDATE_SLICE: MicroPrintf("AVISO: DYNAMIC_UPDATE_SLICE não suportado diretamente"); break;
-        case RELU_0_TO_1: MicroPrintf("AVISO: RELU_0_TO_1 não suportado diretamente"); break;
-        case UNSORTED_SEGMENT_PROD: MicroPrintf("AVISO: UNSORTED_SEGMENT_PROD não suportado diretamente"); break;
-        case UNSORTED_SEGMENT_MAX: MicroPrintf("AVISO: UNSORTED_SEGMENT_MAX não suportado diretamente"); break;
-        case UNSORTED_SEGMENT_SUM: MicroPrintf("AVISO: UNSORTED_SEGMENT_SUM não suportado diretamente"); break;
-        case ATAN2: MicroPrintf("AVISO: ATAN2 não suportado diretamente"); break;
-        case UNSORTED_SEGMENT_MIN: MicroPrintf("AVISO: UNSORTED_SEGMENT_MIN não suportado diretamente"); break;
-        case SIGN: MicroPrintf("AVISO: SIGN não suportado diretamente"); break;
-        case BITCAST: MicroPrintf("AVISO: BITCAST não suportado diretamente"); break;
-        case BITWISE_XOR: MicroPrintf("AVISO: BITWISE_XOR não suportado diretamente"); break;
-        case RIGHT_SHIFT: MicroPrintf("AVISO: RIGHT_SHIFT não suportado diretamente"); break;
-        case STABLEHLO_LOGISTIC: MicroPrintf("AVISO: STABLEHLO_LOGISTIC não suportado diretamente"); break;
-        case STABLEHLO_ADD: MicroPrintf("AVISO: STABLEHLO_ADD não suportado diretamente"); break;
-        case STABLEHLO_DIVIDE: MicroPrintf("AVISO: STABLEHLO_DIVIDE não suportado diretamente"); break;
-        case STABLEHLO_MULTIPLY: MicroPrintf("AVISO: STABLEHLO_MULTIPLY não suportado diretamente"); break;
-        case STABLEHLO_MAXIMUM: MicroPrintf("AVISO: STABLEHLO_MAXIMUM não suportado diretamente"); break;
-        case STABLEHLO_RESHAPE: MicroPrintf("AVISO: STABLEHLO_RESHAPE não suportado diretamente"); break;
-        case STABLEHLO_CLAMP: MicroPrintf("AVISO: STABLEHLO_CLAMP não suportado diretamente"); break;
-        case STABLEHLO_CONCATENATE: MicroPrintf("AVISO: STABLEHLO_CONCATENATE não suportado diretamente"); break;
-        case STABLEHLO_BROADCAST_IN_DIM: MicroPrintf("AVISO: STABLEHLO_BROADCAST_IN_DIM não suportado diretamente"); break;
-        case STABLEHLO_CONVOLUTION: MicroPrintf("AVISO: STABLEHLO_CONVOLUTION não suportado diretamente"); break;
-        case STABLEHLO_SLICE: MicroPrintf("AVISO: STABLEHLO_SLICE não suportado diretamente"); break;
-        case STABLEHLO_CUSTOM_CALL: MicroPrintf("AVISO: STABLEHLO_CUSTOM_CALL não suportado diretamente"); break;
-        case STABLEHLO_REDUCE: MicroPrintf("AVISO: STABLEHLO_REDUCE não suportado diretamente"); break;
-        case STABLEHLO_ABS: MicroPrintf("AVISO: STABLEHLO_ABS não suportado diretamente"); break;
-        case STABLEHLO_AND: MicroPrintf("AVISO: STABLEHLO_AND não suportado diretamente"); break;
-        case STABLEHLO_COSINE: MicroPrintf("AVISO: STABLEHLO_COSINE não suportado diretamente"); break;
-        case STABLEHLO_EXPONENTIAL: MicroPrintf("AVISO: STABLEHLO_EXPONENTIAL não suportado diretamente"); break;
-        case STABLEHLO_FLOOR: MicroPrintf("AVISO: STABLEHLO_FLOOR não suportado diretamente"); break;
-        case STABLEHLO_LOG: MicroPrintf("AVISO: STABLEHLO_LOG não suportado diretamente"); break;
-        case STABLEHLO_MINIMUM: MicroPrintf("AVISO: STABLEHLO_MINIMUM não suportado diretamente"); break;
-        case STABLEHLO_NEGATE: MicroPrintf("AVISO: STABLEHLO_NEGATE não suportado diretamente"); break;
-        case STABLEHLO_OR: MicroPrintf("AVISO: STABLEHLO_OR não suportado diretamente"); break;
-        case STABLEHLO_POWER: MicroPrintf("AVISO: STABLEHLO_POWER não suportado diretamente"); break;
-        case STABLEHLO_REMAINDER: MicroPrintf("AVISO: STABLEHLO_REMAINDER não suportado diretamente"); break;
-        case STABLEHLO_RSQRT: MicroPrintf("AVISO: STABLEHLO_RSQRT não suportado diretamente"); break;
-        case STABLEHLO_SELECT: MicroPrintf("AVISO: STABLEHLO_SELECT não suportado diretamente"); break;
-        case STABLEHLO_SUBTRACT: MicroPrintf("AVISO: STABLEHLO_SUBTRACT não suportado diretamente"); break;
-        case STABLEHLO_TANH: MicroPrintf("AVISO: STABLEHLO_TANH não suportado diretamente"); break;
-        case STABLEHLO_SCATTER: MicroPrintf("AVISO: STABLEHLO_SCATTER não suportado diretamente"); break;
-        case STABLEHLO_COMPARE: MicroPrintf("AVISO: STABLEHLO_COMPARE não suportado diretamente"); break;
-        case STABLEHLO_CONVERT: MicroPrintf("AVISO: STABLEHLO_CONVERT não suportado diretamente"); break;
-        case STABLEHLO_DYNAMIC_SLICE: MicroPrintf("AVISO: STABLEHLO_DYNAMIC_SLICE não suportado diretamente"); break;
-        case STABLEHLO_DYNAMIC_UPDATE_SLICE: MicroPrintf("AVISO: STABLEHLO_DYNAMIC_UPDATE_SLICE não suportado diretamente"); break;
-        case STABLEHLO_PAD: MicroPrintf("AVISO: STABLEHLO_PAD não suportado diretamente"); break;
-        case STABLEHLO_IOTA: MicroPrintf("AVISO: STABLEHLO_IOTA não suportado diretamente"); break;
-        case STABLEHLO_DOT_GENERAL: MicroPrintf("AVISO: STABLEHLO_DOT_GENERAL não suportado diretamente"); break;
-        case STABLEHLO_REDUCE_WINDOW: MicroPrintf("AVISO: STABLEHLO_REDUCE_WINDOW não suportado diretamente"); break;
-        case STABLEHLO_SORT: MicroPrintf("AVISO: STABLEHLO_SORT não suportado diretamente"); break;
-        case STABLEHLO_WHILE: MicroPrintf("AVISO: STABLEHLO_WHILE não suportado diretamente"); break;
-        case STABLEHLO_GATHER: MicroPrintf("AVISO: STABLEHLO_GATHER não suportado diretamente"); break;
-        case STABLEHLO_TRANSPOSE: MicroPrintf("AVISO: STABLEHLO_TRANSPOSE não suportado diretamente"); break;
-        case DILATE: MicroPrintf("AVISO: DILATE não suportado diretamente"); break;
-        case STABLEHLO_RNG_BIT_GENERATOR: MicroPrintf("AVISO: STABLEHLO_RNG_BIT_GENERATOR não suportado diretamente"); break;
-        case REDUCE_WINDOW: MicroPrintf("AVISO: REDUCE_WINDOW não suportado diretamente"); break;
-        case STABLEHLO_COMPOSITE: MicroPrintf("AVISO: STABLEHLO_COMPOSITE não suportado diretamente"); break;
-        case STABLEHLO_SHIFT_LEFT: MicroPrintf("AVISO: STABLEHLO_SHIFT_LEFT não suportado diretamente"); break;
-        case STABLEHLO_CBRT: MicroPrintf("AVISO: STABLEHLO_CBRT não suportado diretamente"); break;
-        case STABLEHLO_CASE: MicroPrintf("AVISO: STABLEHLO_CASE não suportado diretamente"); break;
+        
+#if ENABLE_ADD
+        case ADD:
+            resolver->AddAdd();
+            MicroPrintf("✓ ADD registrado");
+            break;
+#endif
+
+#if ENABLE_AVERAGE_POOL_2D
+        case AVERAGE_POOL_2D:
+            resolver->AddAveragePool2D();
+            MicroPrintf("✓ AVERAGE_POOL_2D registrado");
+            break;
+#endif
+
+#if ENABLE_CONCATENATION
+        case CONCATENATION:
+            resolver->AddConcatenation();
+            MicroPrintf("✓ CONCATENATION registrado");
+            break;
+#endif
+
+#if ENABLE_CONV_2D
+        case CONV_2D:
+            resolver->AddConv2D();
+            MicroPrintf("✓ CONV_2D registrado");
+            break;
+#endif
+
+#if ENABLE_DEPTHWISE_CONV_2D
+        case DEPTHWISE_CONV_2D:
+            resolver->AddDepthwiseConv2D();
+            MicroPrintf("✓ DEPTHWISE_CONV_2D registrado");
+            break;
+#endif
+
+#if ENABLE_DEPTH_TO_SPACE
+        case DEPTH_TO_SPACE:
+            resolver->AddDepthToSpace();
+            MicroPrintf("✓ DEPTH_TO_SPACE registrado");
+            break;
+#endif
+
+#if ENABLE_DEQUANTIZE
+        case DEQUANTIZE:
+            resolver->AddDequantize();
+            MicroPrintf("✓ DEQUANTIZE registrado");
+            break;
+#endif
+
+#if ENABLE_EMBEDDING_LOOKUP
+        case EMBEDDING_LOOKUP:
+            resolver->AddEmbeddingLookup();
+            MicroPrintf("✓ EMBEDDING_LOOKUP registrado");
+            break;
+#endif
+
+#if ENABLE_FLOOR
+        case FLOOR:
+            resolver->AddFloor();
+            MicroPrintf("✓ FLOOR registrado");
+            break;
+#endif
+
+#if ENABLE_FULLY_CONNECTED
+        case FULLY_CONNECTED:
+            resolver->AddFullyConnected();
+            MicroPrintf("✓ FULLY_CONNECTED registrado");
+            break;
+#endif
+
+#if ENABLE_L2_NORMALIZATION
+        case L2_NORMALIZATION:
+            resolver->AddL2Normalization();
+            MicroPrintf("✓ L2_NORMALIZATION registrado");
+            break;
+#endif
+
+#if ENABLE_L2_POOL_2D
+        case L2_POOL_2D:
+            resolver->AddL2Pool2D();
+            MicroPrintf("✓ L2_POOL_2D registrado");
+            break;
+#endif
+
+#if ENABLE_LOGISTIC
+        case LOGISTIC:
+            resolver->AddLogistic();
+            MicroPrintf("✓ LOGISTIC registrado");
+            break;
+#endif
+
+#if ENABLE_MAX_POOL_2D
+        case MAX_POOL_2D:
+            resolver->AddMaxPool2D();
+            MicroPrintf("✓ MAX_POOL_2D registrado");
+            break;
+#endif
+
+#if ENABLE_MUL
+        case MUL:
+            resolver->AddMul();
+            MicroPrintf("✓ MUL registrado");
+            break;
+#endif
+
+#if ENABLE_RELU
+        case RELU:
+            resolver->AddRelu();
+            MicroPrintf("✓ RELU registrado");
+            break;
+#endif
+
+#if ENABLE_RELU6
+        case RELU6:
+            resolver->AddRelu6();
+            MicroPrintf("✓ RELU6 registrado");
+            break;
+#endif
+
+#if ENABLE_RESHAPE
+        case RESHAPE:
+            resolver->AddReshape();
+            MicroPrintf("✓ RESHAPE registrado");
+            break;
+#endif
+
+#if ENABLE_RESIZE_BILINEAR
+        case RESIZE_BILINEAR:
+            resolver->AddResizeBilinear();
+            MicroPrintf("✓ RESIZE_BILINEAR registrado");
+            break;
+#endif
+
+#if ENABLE_SOFTMAX
+        case SOFTMAX:
+            resolver->AddSoftmax();
+            MicroPrintf("✓ SOFTMAX registrado");
+            break;
+#endif
+
+#if ENABLE_SPACE_TO_DEPTH
+        case SPACE_TO_DEPTH:
+            resolver->AddSpaceToDepth();
+            MicroPrintf("✓ SPACE_TO_DEPTH registrado");
+            break;
+#endif
+
+#if ENABLE_SVDF
+        case SVDF:
+            resolver->AddSvdf();
+            MicroPrintf("✓ SVDF registrado");
+            break;
+#endif
+
+#if ENABLE_TANH
+        case TANH:
+            resolver->AddTanh();
+            MicroPrintf("✓ TANH registrado");
+            break;
+#endif
+
+#if ENABLE_PAD
+        case PAD:
+            resolver->AddPad();
+            MicroPrintf("✓ PAD registrado");
+            break;
+#endif
+
+#if ENABLE_GATHER
+        case GATHER:
+            resolver->AddGather();
+            MicroPrintf("✓ GATHER registrado");
+            break;
+#endif
+
+#if ENABLE_BATCH_TO_SPACE_ND
+        case BATCH_TO_SPACE_ND:
+            resolver->AddBatchToSpaceNd();
+            MicroPrintf("✓ BATCH_TO_SPACE_ND registrado");
+            break;
+#endif
+
+#if ENABLE_SPACE_TO_BATCH_ND
+        case SPACE_TO_BATCH_ND:
+            resolver->AddSpaceToBatchNd();
+            MicroPrintf("✓ SPACE_TO_BATCH_ND registrado");
+            break;
+#endif
+
+#if ENABLE_TRANSPOSE
+        case TRANSPOSE:
+            resolver->AddTranspose();
+            MicroPrintf("✓ TRANSPOSE registrado");
+            break;
+#endif
+
+#if ENABLE_MEAN
+        case MEAN:
+            resolver->AddMean();
+            MicroPrintf("✓ MEAN registrado");
+            break;
+#endif
+
+#if ENABLE_SUB
+        case SUB:
+            resolver->AddSub();
+            MicroPrintf("✓ SUB registrado");
+            break;
+#endif
+
+#if ENABLE_DIV
+        case DIV:
+            resolver->AddDiv();
+            MicroPrintf("✓ DIV registrado");
+            break;
+#endif
+
+#if ENABLE_SQUEEZE
+        case SQUEEZE:
+            resolver->AddSqueeze();
+            MicroPrintf("✓ SQUEEZE registrado");
+            break;
+#endif
+
+#if ENABLE_UNIDIRECTIONAL_SEQUENCE_LSTM
+        case UNIDIRECTIONAL_SEQUENCE_LSTM:
+            resolver->AddUnidirectionalSequenceLSTM();
+            MicroPrintf("✓ UNIDIRECTIONAL_SEQUENCE_LSTM registrado");
+            break;
+#endif
+
+#if ENABLE_STRIDED_SLICE
+        case STRIDED_SLICE:
+            resolver->AddStridedSlice();
+            MicroPrintf("✓ STRIDED_SLICE registrado");
+            break;
+#endif
+
+#if ENABLE_EXP
+        case EXP:
+            resolver->AddExp();
+            MicroPrintf("✓ EXP registrado");
+            break;
+#endif
+
+#if ENABLE_SPLIT
+        case SPLIT:
+            resolver->AddSplit();
+            MicroPrintf("✓ SPLIT registrado");
+            break;
+#endif
+
+#if ENABLE_LOG_SOFTMAX
+        case LOG_SOFTMAX:
+            resolver->AddLogSoftmax();
+            MicroPrintf("✓ LOG_SOFTMAX registrado");
+            break;
+#endif
+
+#if ENABLE_CAST
+        case CAST:
+            resolver->AddCast();
+            MicroPrintf("✓ CAST registrado");
+            break;
+#endif
+
+#if ENABLE_PRELU
+        case PRELU:
+            resolver->AddPrelu();
+            MicroPrintf("✓ PRELU registrado");
+            break;
+#endif
+
+#if ENABLE_MAXIMUM
+        case MAXIMUM:
+            resolver->AddMaximum();
+            MicroPrintf("✓ MAXIMUM registrado");
+            break;
+#endif
+
+#if ENABLE_ARG_MAX
+        case ARG_MAX:
+            resolver->AddArgMax();
+            MicroPrintf("✓ ARG_MAX registrado");
+            break;
+#endif
+
+#if ENABLE_MINIMUM
+        case MINIMUM:
+            resolver->AddMinimum();
+            MicroPrintf("✓ MINIMUM registrado");
+            break;
+#endif
+
+#if ENABLE_LESS
+        case LESS:
+            resolver->AddLess();
+            MicroPrintf("✓ LESS registrado");
+            break;
+#endif
+
+#if ENABLE_NEG
+        case NEG:
+            resolver->AddNeg();
+            MicroPrintf("✓ NEG registrado");
+            break;
+#endif
+
+#if ENABLE_PADV2
+        case PADV2:
+            resolver->AddPadV2();
+            MicroPrintf("✓ PADV2 registrado");
+            break;
+#endif
+
+#if ENABLE_GREATER
+        case GREATER:
+            resolver->AddGreater();
+            MicroPrintf("✓ GREATER registrado");
+            break;
+#endif
+
+#if ENABLE_GREATER_EQUAL
+        case GREATER_EQUAL:
+            resolver->AddGreaterEqual();
+            MicroPrintf("✓ GREATER_EQUAL registrado");
+            break;
+#endif
+
+#if ENABLE_LESS_EQUAL
+        case LESS_EQUAL:
+            resolver->AddLessEqual();
+            MicroPrintf("✓ LESS_EQUAL registrado");
+            break;
+#endif
+
+#if ENABLE_SLICE
+        case SLICE:
+            resolver->AddSlice();
+            MicroPrintf("✓ SLICE registrado");
+            break;
+#endif
+
+#if ENABLE_SIN
+        case SIN:
+            resolver->AddSin();
+            MicroPrintf("✓ SIN registrado");
+            break;
+#endif
+
+#if ENABLE_TRANSPOSE_CONV
+        case TRANSPOSE_CONV:
+            resolver->AddTransposeConv();
+            MicroPrintf("✓ TRANSPOSE_CONV registrado");
+            break;
+#endif
+
+#if ENABLE_EXPAND_DIMS
+        case EXPAND_DIMS:
+            resolver->AddExpandDims();
+            MicroPrintf("✓ EXPAND_DIMS registrado");
+            break;
+#endif
+
+#if ENABLE_EQUAL
+        case EQUAL:
+            resolver->AddEqual();
+            MicroPrintf("✓ EQUAL registrado");
+            break;
+#endif
+
+#if ENABLE_NOT_EQUAL
+        case NOT_EQUAL:
+            resolver->AddNotEqual();
+            MicroPrintf("✓ NOT_EQUAL registrado");
+            break;
+#endif
+
+#if ENABLE_LOG
+        case LOG:
+            resolver->AddLog();
+            MicroPrintf("✓ LOG registrado");
+            break;
+#endif
+
+#if ENABLE_SUM
+        case SUM:
+            resolver->AddSum();
+            MicroPrintf("✓ SUM registrado");
+            break;
+#endif
+
+#if ENABLE_SQRT
+        case SQRT:
+            resolver->AddSqrt();
+            MicroPrintf("✓ SQRT registrado");
+            break;
+#endif
+
+#if ENABLE_RSQRT
+        case RSQRT:
+            resolver->AddRsqrt();
+            MicroPrintf("✓ RSQRT registrado");
+            break;
+#endif
+
+#if ENABLE_SHAPE
+        case SHAPE:
+            resolver->AddShape();
+            MicroPrintf("✓ SHAPE registrado");
+            break;
+#endif
+
+#if ENABLE_ARG_MIN
+        case ARG_MIN:
+            resolver->AddArgMin();
+            MicroPrintf("✓ ARG_MIN registrado");
+            break;
+#endif
+
+#if ENABLE_REDUCE_MAX
+        case REDUCE_MAX:
+            resolver->AddReduceMax();
+            MicroPrintf("✓ REDUCE_MAX registrado");
+            break;
+#endif
+
+#if ENABLE_PACK
+        case PACK:
+            resolver->AddPack();
+            MicroPrintf("✓ PACK registrado");
+            break;
+#endif
+
+#if ENABLE_LOGICAL_OR
+        case LOGICAL_OR:
+            resolver->AddLogicalOr();
+            MicroPrintf("✓ LOGICAL_OR registrado");
+            break;
+#endif
+
+#if ENABLE_LOGICAL_AND
+        case LOGICAL_AND:
+            resolver->AddLogicalAnd();
+            MicroPrintf("✓ LOGICAL_AND registrado");
+            break;
+#endif
+
+#if ENABLE_LOGICAL_NOT
+        case LOGICAL_NOT:
+            resolver->AddLogicalNot();
+            MicroPrintf("✓ LOGICAL_NOT registrado");
+            break;
+#endif
+
+#if ENABLE_UNPACK
+        case UNPACK:
+            resolver->AddUnpack();
+            MicroPrintf("✓ UNPACK registrado");
+            break;
+#endif
+
+#if ENABLE_REDUCE_MIN
+        case REDUCE_MIN:
+            resolver->AddReduceMin();
+            MicroPrintf("✓ REDUCE_MIN registrado");
+            break;
+#endif
+
+#if ENABLE_FLOOR_DIV
+        case FLOOR_DIV:
+            resolver->AddFloorDiv();
+            MicroPrintf("✓ FLOOR_DIV registrado");
+            break;
+#endif
+
+#if ENABLE_SQUARE
+        case SQUARE:
+            resolver->AddSquare();
+            MicroPrintf("✓ SQUARE registrado");
+            break;
+#endif
+
+#if ENABLE_ZEROS_LIKE
+        case ZEROS_LIKE:
+            resolver->AddZerosLike();
+            MicroPrintf("✓ ZEROS_LIKE registrado");
+            break;
+#endif
+
+#if ENABLE_FILL
+        case FILL:
+            resolver->AddFill();
+            MicroPrintf("✓ FILL registrado");
+            break;
+#endif
+
+#if ENABLE_FLOOR_MOD
+        case FLOOR_MOD:
+            resolver->AddFloorMod();
+            MicroPrintf("✓ FLOOR_MOD registrado");
+            break;
+#endif
+
+#if ENABLE_RESIZE_NEAREST_NEIGHBOR
+        case RESIZE_NEAREST_NEIGHBOR:
+            resolver->AddResizeNearestNeighbor();
+            MicroPrintf("✓ RESIZE_NEAREST_NEIGHBOR registrado");
+            break;
+#endif
+
+#if ENABLE_LEAKY_RELU
+        case LEAKY_RELU:
+            resolver->AddLeakyRelu();
+            MicroPrintf("✓ LEAKY_RELU registrado");
+            break;
+#endif
+
+#if ENABLE_SQUARED_DIFFERENCE
+        case SQUARED_DIFFERENCE:
+            resolver->AddSquaredDifference();
+            MicroPrintf("✓ SQUARED_DIFFERENCE registrado");
+            break;
+#endif
+
+#if ENABLE_MIRROR_PAD
+        case MIRROR_PAD:
+            resolver->AddMirrorPad();
+            MicroPrintf("✓ MIRROR_PAD registrado");
+            break;
+#endif
+
+#if ENABLE_ABS
+        case ABS:
+            resolver->AddAbs();
+            MicroPrintf("✓ ABS registrado");
+            break;
+#endif
+
+#if ENABLE_SPLIT_V
+        case SPLIT_V:
+            resolver->AddSplitV();
+            MicroPrintf("✓ SPLIT_V registrado");
+            break;
+#endif
+
+#if ENABLE_CEIL
+        case CEIL:
+            resolver->AddCeil();
+            MicroPrintf("✓ CEIL registrado");
+            break;
+#endif
+
+#if ENABLE_REVERSE_V2
+        case REVERSE_V2:
+            resolver->AddReverseV2();
+            MicroPrintf("✓ REVERSE_V2 registrado");
+            break;
+#endif
+
+#if ENABLE_ADD_N
+        case ADD_N:
+            resolver->AddAddN();
+            MicroPrintf("✓ ADD_N registrado");
+            break;
+#endif
+
+#if ENABLE_GATHER_ND
+        case GATHER_ND:
+            resolver->AddGatherNd();
+            MicroPrintf("✓ GATHER_ND registrado");
+            break;
+#endif
+
+#if ENABLE_COS
+        case COS:
+            resolver->AddCos();
+            MicroPrintf("✓ COS registrado");
+            break;
+#endif
+
+#if ENABLE_ELU
+        case ELU:
+            resolver->AddElu();
+            MicroPrintf("✓ ELU registrado");
+            break;
+#endif
+
+#if ENABLE_QUANTIZE
+        case QUANTIZE:
+            resolver->AddQuantize();
+            MicroPrintf("✓ QUANTIZE registrado");
+            break;
+#endif
+
+#if ENABLE_ROUND
+        case ROUND:
+            resolver->AddRound();
+            MicroPrintf("✓ ROUND registrado");
+            break;
+#endif
+
+#if ENABLE_HARD_SWISH
+        case HARD_SWISH:
+            resolver->AddHardSwish();
+            MicroPrintf("✓ HARD_SWISH registrado");
+            break;
+#endif
+
+#if ENABLE_IF
+        case IF:
+            resolver->AddIf();
+            MicroPrintf("✓ IF registrado");
+            break;
+#endif
+
+#if ENABLE_WHILE
+        case WHILE:
+            resolver->AddWhile();
+            MicroPrintf("✓ WHILE registrado");
+            break;
+#endif
+
+#if ENABLE_SELECT_V2
+        case SELECT_V2:
+            resolver->AddSelectV2();
+            MicroPrintf("✓ SELECT_V2 registrado");
+            break;
+#endif
+
+#if ENABLE_BATCH_MATMUL
+        case BATCH_MATMUL:
+            resolver->AddBatchMatMul();
+            MicroPrintf("✓ BATCH_MATMUL registrado");
+            break;
+#endif
+
+#if ENABLE_CUMSUM
+        case CUMSUM:
+            resolver->AddCumSum();
+            MicroPrintf("✓ CUMSUM registrado");
+            break;
+#endif
+
+#if ENABLE_CALL_ONCE
+        case CALL_ONCE:
+            resolver->AddCallOnce();
+            MicroPrintf("✓ CALL_ONCE registrado");
+            break;
+#endif
+
+#if ENABLE_BROADCAST_TO
+        case BROADCAST_TO:
+            resolver->AddBroadcastTo();
+            MicroPrintf("✓ BROADCAST_TO registrado");
+            break;
+#endif
+
+#if ENABLE_VAR_HANDLE
+        case VAR_HANDLE:
+            resolver->AddVarHandle();
+            MicroPrintf("✓ VAR_HANDLE registrado");
+            break;
+#endif
+
+#if ENABLE_READ_VARIABLE
+        case READ_VARIABLE:
+            resolver->AddReadVariable();
+            MicroPrintf("✓ READ_VARIABLE registrado");
+            break;
+#endif
+
+#if ENABLE_ASSIGN_VARIABLE
+        case ASSIGN_VARIABLE:
+            resolver->AddAssignVariable();
+            MicroPrintf("✓ ASSIGN_VARIABLE registrado");
+            break;
+#endif
+
+#if ENABLE_BROADCAST_ARGS
+        case BROADCAST_ARGS:
+            resolver->AddBroadcastArgs();
+            MicroPrintf("✓ BROADCAST_ARGS registrado");
+            break;
+#endif
         default:
-            MicroPrintf("AVISO: Tipo de kernel não mapeado: %d", kernel_type);
+            MicroPrintf("⚠️  Kernel %d não suportado ou não habilitado na compilação", kernel_type);
             break;
     }
 }
@@ -477,17 +960,17 @@ uintptr_t InitializeInterpreter(const uint8_t* model_data, uint8_t* tensor_arena
         tflite::BuiltinOperator builtin_op = static_cast<tflite::BuiltinOperator>(kernel_type);
         MicroPrintf("  Kernel[%d]: %d -> %s", i, builtin_op, tflite::EnumNameBuiltinOperator(builtin_op));
         RegisterOp(instance->resolver, kernel_type);
-    }  
-    // Usar RecordingMicroInterpreter para melhor compatibilidade
-    instance->allocator = tflite::RecordingMicroAllocator::Create(tensor_arena, tensor_arena_size);
+    }
+
+    instance->allocator = tflite::MicroAllocator::Create(tensor_arena, tensor_arena_size);
     if (!instance->allocator) {
-        MicroPrintf("ERRO: Falha ao criar RecordingMicroAllocator");
+        MicroPrintf("ERRO: Falha ao criar MicroAllocator");
         delete instance->resolver;
         delete instance;
         return 0;
     }
     
-    instance->interpreter = new tflite::RecordingMicroInterpreter(
+    instance->interpreter = new tflite::MicroInterpreter(
         model, *(instance->resolver), instance->allocator, nullptr);
 
     MicroPrintf("\n=== VERIFICAÇÃO PRE-ALOCAÇÃO ===");
