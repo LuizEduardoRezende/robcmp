@@ -12,7 +12,7 @@
 
 extern "C" {
 
-#define MicroPrintf(...) ((void)0)
+// #define MicroPrintf(...) ((void)0)
 
 #ifndef TFLM_MAX_OPS
 #define TFLM_MAX_OPS 50
@@ -931,7 +931,7 @@ void RegisterOp(tflite::MicroMutableOpResolver<TFLM_MAX_OPS>* resolver, KernelTy
             break;
 #endif
         default:
-            MicroPrintf("⚠️  Kernel %d não suportado ou não habilitado na compilação", kernel_type);
+            MicroPrintf("!!! Kernel %d não suportado ou não habilitado na compilação", kernel_type);
             break;
     }
 }
@@ -1527,7 +1527,85 @@ void SetTensorArray(uintptr_t tensor_handle, const float* values, size_t count, 
     }
 }
 
-// Função para obter um tensor completo como array
+void SetTensorFromIntArray(uintptr_t tensor_handle, const int16_t* values, size_t count, int) {
+    if (tensor_handle == 0 || values == nullptr) {
+        MicroPrintf("ERRO: SetTensorFromIntArray: handle ou valores nulos");
+        return;
+    }
+
+    TfLiteTensor* tensor = reinterpret_cast<TfLiteTensor*>(tensor_handle);
+    
+    // Proteção contra escrita fora dos limites
+    size_t num_elements = 0;
+    if (tensor->type != kTfLiteNoType && tensor->bytes > 0) {
+        // Calcula quantos elementos cabem no tensor baseado no tamanho do tipo
+        size_t type_size = 1; // default
+        switch(tensor->type) {
+            case kTfLiteInt8: type_size = 1; break;
+            case kTfLiteUInt8: type_size = 1; break;
+            case kTfLiteInt16: type_size = 2; break;
+            case kTfLiteInt32: type_size = 4; break;
+            case kTfLiteFloat32: type_size = 4; break;
+            default: type_size = 1; break;
+        }
+        num_elements = tensor->bytes / type_size;
+    }
+
+    if (count > num_elements) {
+        MicroPrintf("AVISO: Tentativa de escrever %zu elementos em tensor de tamanho %zu. Truncando.", count, num_elements);
+        count = num_elements;
+    }
+
+    // LOG DE DEBUG (Opcional: Mostra os primeiros dados recebidos)
+    MicroPrintf("SetRaw: Copiando %zu elementos para tensor tipo %d", count, tensor->type);
+
+    // Switch para tratar o destino corretamente
+    switch (tensor->type) {
+        case kTfLiteInt8: {
+            int8_t* data = tflite::GetTensorData<int8_t>(tensor);
+            for (size_t i = 0; i < count; ++i) {
+                // Cast direto: int16 -> int8 (cuidado com overflow se o valor for > 127)
+                data[i] = static_cast<int8_t>(values[i]);
+            }
+            break;
+        }
+        case kTfLiteUInt8: {
+            uint8_t* data = tflite::GetTensorData<uint8_t>(tensor);
+            for (size_t i = 0; i < count; ++i) {
+                data[i] = static_cast<uint8_t>(values[i]);
+            }
+            break;
+        }
+        case kTfLiteInt16: {
+            int16_t* data = tflite::GetTensorData<int16_t>(tensor);
+            // Aqui podemos usar memcpy se a arquitetura permitir (endianness igual)
+            // Mas o loop é mais seguro para garantir compatibilidade.
+            for (size_t i = 0; i < count; ++i) {
+                data[i] = values[i];
+            }
+            break;
+        }
+        case kTfLiteInt32: {
+            int32_t* data = tflite::GetTensorData<int32_t>(tensor);
+            for (size_t i = 0; i < count; ++i) {
+                data[i] = static_cast<int32_t>(values[i]);
+            }
+            break;
+        }
+        case kTfLiteFloat32: {
+            // Caso raro: O usuário quer passar inteiros para um tensor float sem conversão matemática
+            float* data = tflite::GetTensorData<float>(tensor);
+            for (size_t i = 0; i < count; ++i) {
+                data[i] = static_cast<float>(values[i]);
+            }
+            break;
+        }
+        default:
+            MicroPrintf("ERRO: Tipo de tensor %d não suportado para SetTensorFromIntArray", tensor->type);
+            break;
+    }
+}
+
 void GetTensorArray(uintptr_t tensor_handle, float* values, size_t max_count, int) {
     if (tensor_handle == 0 || values == nullptr) {
         MicroPrintf("ERRO: tensor_handle ou values nulo");
