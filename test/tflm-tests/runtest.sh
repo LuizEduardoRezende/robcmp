@@ -20,10 +20,10 @@ if [ "$?" -eq 0 ]; then
     STATUS=$?
     
     if [ "${STATUS}" -eq 0 ]; then
-        echo -e \\r${GREEN}[PASS]\\t\\t${NC}$ROB_FILE
+        echo -e "\\r${GREEN}[PASS]         ${NC}$ROB_FILE"
     else
-        echo -e \\r${RED}[FAILED] ${STATUS}\\t${NC}$ROB_FILE
+        echo -e "\\r${RED}[FAILED] ${STATUS}     ${NC}$ROB_FILE"
     fi
 else
-    echo -e \\r${RED}[BUILD FAILED]\\t${NC}$ROB_FILE
+    echo -e "\\r${RED}[BUILD FAILED] ${NC}$ROB_FILE"
 fi
