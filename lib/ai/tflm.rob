@@ -222,15 +222,15 @@ void DestroyInterpreter(uint64 instance_handle);
 uint64 GetInputTensor(uint64 instance_handle, uint64 index);
 uint64 GetOutputTensor(uint64 instance_handle, uint64 index);
 
-// Manipulação de dados dos tensores
+// Manipulação de dados de entrada dos tensores
 void SetTensorValue(uint64 tensor_handle, uint64 index, float value);
+void SetTensorArray(uint64 tensor_handle, float[] values, uint64 count);
+void SetTensorFromIntArray(uint64 tensor_handle, int16[] values, uint64 count);
+
+// Manipulação de dados de saída dos tensores
 float GetTensorAsFloat(uint64 tensor_handle, uint64 index);
 uint64 GetTensorSize(uint64 tensor_handle);
-
-// Manipulação de arrays completos
-void SetTensorArray(uint64 tensor_handle, float[] values, uint64 count);
 void GetTensorArray(uint64 tensor_handle, float[] values, uint64 max_count);
-void SetTensorFromIntArray(uint64 tensor_handle, int16[] values, uint64 count);
 
 // Informações sobre tensores
 uint64 GetInputTensorCount(uint64 instance_handle);
