@@ -11,11 +11,11 @@
 
 extern "C" {
 
-// Configuração de logging baseada no kernel_config.h
+// Configuração de logging baseada no kernel_config.h 
 #if !ENABLE_DEBUG_LOGS
 #define MicroPrintf(...) ((void)0)
 #endif
-
+ 
 #ifndef TFLM_MAX_OPS
 #define TFLM_MAX_OPS 50
 #endif
