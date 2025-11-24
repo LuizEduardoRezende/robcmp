@@ -1,5 +1,14 @@
 #pragma once
 
+// Configuração de logging
+//1 = Habilitar logs de debug (MicroPrintf)
+//0 = Desabilitar logs de debug
+#define ENABLE_DEBUG_LOGS 0
+
+
+// Configuração de kernels
+//1 = Habilitar kernel
+//0 = Desabilitar kernel
 #define ENABLE_ADD 0
 #define ENABLE_AVERAGE_POOL_2D 1
 #define ENABLE_CONCATENATION 0
@@ -9,7 +18,7 @@
 #define ENABLE_DEQUANTIZE 0
 #define ENABLE_EMBEDDING_LOOKUP 0
 #define ENABLE_FLOOR 0
-#define ENABLE_FULLY_CONNECTED 1
+#define ENABLE_FULLY_CONNECTED 0
 #define ENABLE_HASHTABLE_LOOKUP 0 //Não suportado no TFLM
 #define ENABLE_L2_NORMALIZATION 0
 #define ENABLE_L2_POOL_2D 0
@@ -36,11 +45,11 @@
 #define ENABLE_EMBEDDING_LOOKUP_SPARSE 0 //Não suportado no TFLM
 #define ENABLE_PAD 0
 #define ENABLE_UNIDIRECTIONAL_SEQUENCE_RNN 0 //Não suportado no TFLM
-#define ENABLE_GATHER 1
+#define ENABLE_GATHER 0
 #define ENABLE_BATCH_TO_SPACE_ND 0
 #define ENABLE_SPACE_TO_BATCH_ND 0
 #define ENABLE_TRANSPOSE 0
-#define ENABLE_MEAN 1
+#define ENABLE_MEAN 0
 #define ENABLE_SUB 0
 #define ENABLE_DIV 0
 #define ENABLE_SQUEEZE 0

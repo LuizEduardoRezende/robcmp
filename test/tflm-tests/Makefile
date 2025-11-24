@@ -23,6 +23,7 @@ TFLM_LIB=$(TFLM_DIR)/gen/*/lib/libtensorflow-microlite.a
 
 # Adicionar estas novas flags de compilação
 WRAPPER_FLAGS = -fno-rtti -fno-exceptions -DTF_LITE_STATIC_MEMORY=1
+WRAPPER_FLAGS += -ffunction-sections -fdata-sections
 
 # Includes para o wrapper
 WRAPPER_INCLUDES = -I../../ -I$(WRAPPER_DIR) -I$(TFLM_DIR) 
@@ -32,12 +33,11 @@ WRAPPER_INCLUDES += -I$(TFLM_DIR)/tensorflow/lite/micro/tools/make/gen/*/genfile
 WRAPPER_INCLUDES += -I$(TFLM_DIR)/tensorflow/lite/micro/tools/make/downloads/ruy
 
 # Flags de linkagem para redução de tamanho
-LDFLAGS_OPTIMIZE = -Wl,--gc-sections -Wl,--strip-all -Wl,--strip-debug
-LDFLAGS_OPTIMIZE += -Wl,--discard-all -Wl,--discard-locals -flto
-LDFLAGS_OPTIMIZE += -Wl,--build-id=none -Wl,--relax
+LDFLAGS_OPTIMIZE = -Wl,--gc-sections -Wl,--strip-debug
+LDFLAGS_OPTIMIZE += -Wl,--discard-all
+LDFLAGS_OPTIMIZE += -Wl,--build-id=none -Wl,--relax -flto=thin
 #LDFLAGS_OPTIMIZE += -static -Wl, (aumenta muito o tamanho)
 #LDFLAGS_OPTIMIZE += -Wl,--lto-whole-program-visibility (erro de build)
-LDFLAGS_OPTIMIZE += -flto=thin
 
 # Target padrão
 all: out ${ALL_TT}
