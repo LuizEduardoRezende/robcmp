@@ -932,6 +932,14 @@ void RegisterOp(tflite::MicroMutableOpResolver<TFLM_MAX_OPS>* resolver, KernelTy
             MicroPrintf("✓ BROADCAST_ARGS registrado");
             break;
 #endif
+
+#if ENABLE_STANDARD_NORMAL
+        case RANDOM_STANDARD_NORMAL:
+            resolver->AddRandomStandardNormal();
+            MicroPrintf("✓ RANDOM_STANDARD_NORMAL registrado");
+            break;
+#endif
+
         default:
             MicroPrintf("!!! Kernel %d não suportado ou não habilitado na compilação", kernel_type);
             break;
