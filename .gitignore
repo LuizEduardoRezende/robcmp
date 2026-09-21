@@ -73,3 +73,6 @@ platformio/toolchain-robcmp/lib
 platformio/avr-gdb-build
 Documentation
 hack
+
+# Binário do inspetor de modelos (test/tflm)
+test/tflm/tflite_info
