@@ -1,0 +1,248 @@
+/*
+ * ai.tflm -- biblioteca padrão de inferência TinyML da Robotics Language.
+ *
+ * Declara (não implementa) as funções do wrapper C. A implementação vive na
+ * biblioteca estática do wrapper; a resolução acontece na linkedição.
+ *
+ * Uso:  use ai.tflm;
+ *
+ * ---------------------------------------------------------------------------
+ * MUDANÇA EM RELAÇÃO À VERSÃO DO TCC
+ *
+ * Antes, os kernels eram informados por um vetor de números em runtime:
+ *
+ *     const required_kernels = {9};          // 9 = FULLY_CONNECTED
+ *     h = InitializeInterpreter(modelo, arena, required_kernels);
+ *
+ * Agora cada kernel é uma chamada própria, entre a criação do resolver e a do
+ * modelo:
+ *
+ *     r = tflm_create_resolver();
+ *     tflm_add_fully_connected(r);
+ *     h = tflm_create_model(r, modelo, arena);
+ *
+ * O código fica auto-explicativo -- some o número mágico -- e o binário passa
+ * a conter apenas os kernels chamados: cada um é um símbolo independente, e o
+ * linker descarta os demais com --gc-sections, sem configuração manual.
+ *
+ * É também exatamente o que o compilador emite para a sintaxe nativa. Os dois
+ * modos são o mesmo mecanismo; a sintaxe nativa apenas dispensa você de
+ * escrever estas chamadas.
+ *
+ * Para descobrir quais kernels um modelo exige:
+ *
+ *     ./test/tflm/tflite_info seu_modelo.tflite
+ * ---------------------------------------------------------------------------
+ */
+
+
+// ---------------------------------------------------------------------------
+// Ciclo de vida do modelo
+// ---------------------------------------------------------------------------
+
+// Reserva uma instância. Devolve o handle do resolver, ou 0 se não houver slot.
+uint64 tflm_create_resolver();
+
+// Constrói o interpretador e aloca os tensores na arena. Devolve o handle do
+// modelo, ou 0 em caso de erro.
+uint64 tflm_create_model(uint64 resolver_handle, uint8[] model_data, uint8[] tensor_arena);
+
+// Libera a instância para reuso. Não devolve memória: não há heap.
+void tflm_free_model(uint64 handle);
+
+
+// ---------------------------------------------------------------------------
+// Execução
+// ---------------------------------------------------------------------------
+
+// Executa a inferência. Devolve 0 em caso de sucesso, -1 em caso de falha.
+int8 InvokeInterpreter(uint64 instance_handle);
+
+
+// ---------------------------------------------------------------------------
+// Registro de kernels -- operadores builtin
+//
+// Chame, entre tflm_create_resolver e tflm_create_model, uma função para cada
+// kernel que o modelo usa. Retorno: 0 = registrado, -1 = falha.
+// ---------------------------------------------------------------------------
+
+int8 tflm_add_add(uint64 resolver_handle);
+int8 tflm_add_average_pool_2d(uint64 resolver_handle);
+int8 tflm_add_concatenation(uint64 resolver_handle);
+int8 tflm_add_conv_2d(uint64 resolver_handle);
+int8 tflm_add_depthwise_conv_2d(uint64 resolver_handle);
+int8 tflm_add_depth_to_space(uint64 resolver_handle);
+int8 tflm_add_dequantize(uint64 resolver_handle);
+int8 tflm_add_embedding_lookup(uint64 resolver_handle);
+int8 tflm_add_floor(uint64 resolver_handle);
+int8 tflm_add_fully_connected(uint64 resolver_handle);
+int8 tflm_add_l2_normalization(uint64 resolver_handle);
+int8 tflm_add_l2_pool_2d(uint64 resolver_handle);
+int8 tflm_add_logistic(uint64 resolver_handle);
+int8 tflm_add_max_pool_2d(uint64 resolver_handle);
+int8 tflm_add_mul(uint64 resolver_handle);
+int8 tflm_add_relu(uint64 resolver_handle);
+int8 tflm_add_relu6(uint64 resolver_handle);
+int8 tflm_add_reshape(uint64 resolver_handle);
+int8 tflm_add_resize_bilinear(uint64 resolver_handle);
+int8 tflm_add_softmax(uint64 resolver_handle);
+int8 tflm_add_space_to_depth(uint64 resolver_handle);
+int8 tflm_add_svdf(uint64 resolver_handle);
+int8 tflm_add_tanh(uint64 resolver_handle);
+int8 tflm_add_pad(uint64 resolver_handle);
+int8 tflm_add_gather(uint64 resolver_handle);
+int8 tflm_add_batch_to_space_nd(uint64 resolver_handle);
+int8 tflm_add_space_to_batch_nd(uint64 resolver_handle);
+int8 tflm_add_transpose(uint64 resolver_handle);
+int8 tflm_add_mean(uint64 resolver_handle);
+int8 tflm_add_sub(uint64 resolver_handle);
+int8 tflm_add_div(uint64 resolver_handle);
+int8 tflm_add_squeeze(uint64 resolver_handle);
+int8 tflm_add_unidirectional_sequence_lstm(uint64 resolver_handle);
+int8 tflm_add_strided_slice(uint64 resolver_handle);
+int8 tflm_add_exp(uint64 resolver_handle);
+int8 tflm_add_split(uint64 resolver_handle);
+int8 tflm_add_log_softmax(uint64 resolver_handle);
+int8 tflm_add_cast(uint64 resolver_handle);
+int8 tflm_add_prelu(uint64 resolver_handle);
+int8 tflm_add_maximum(uint64 resolver_handle);
+int8 tflm_add_arg_max(uint64 resolver_handle);
+int8 tflm_add_minimum(uint64 resolver_handle);
+int8 tflm_add_less(uint64 resolver_handle);
+int8 tflm_add_neg(uint64 resolver_handle);
+int8 tflm_add_padv2(uint64 resolver_handle);
+int8 tflm_add_greater(uint64 resolver_handle);
+int8 tflm_add_greater_equal(uint64 resolver_handle);
+int8 tflm_add_less_equal(uint64 resolver_handle);
+int8 tflm_add_slice(uint64 resolver_handle);
+int8 tflm_add_sin(uint64 resolver_handle);
+int8 tflm_add_transpose_conv(uint64 resolver_handle);
+int8 tflm_add_expand_dims(uint64 resolver_handle);
+int8 tflm_add_equal(uint64 resolver_handle);
+int8 tflm_add_not_equal(uint64 resolver_handle);
+int8 tflm_add_log(uint64 resolver_handle);
+int8 tflm_add_sum(uint64 resolver_handle);
+int8 tflm_add_sqrt(uint64 resolver_handle);
+int8 tflm_add_rsqrt(uint64 resolver_handle);
+int8 tflm_add_shape(uint64 resolver_handle);
+int8 tflm_add_arg_min(uint64 resolver_handle);
+int8 tflm_add_reduce_max(uint64 resolver_handle);
+int8 tflm_add_pack(uint64 resolver_handle);
+int8 tflm_add_logical_or(uint64 resolver_handle);
+int8 tflm_add_logical_and(uint64 resolver_handle);
+int8 tflm_add_logical_not(uint64 resolver_handle);
+int8 tflm_add_unpack(uint64 resolver_handle);
+int8 tflm_add_reduce_min(uint64 resolver_handle);
+int8 tflm_add_floor_div(uint64 resolver_handle);
+int8 tflm_add_square(uint64 resolver_handle);
+int8 tflm_add_zeros_like(uint64 resolver_handle);
+int8 tflm_add_fill(uint64 resolver_handle);
+int8 tflm_add_floor_mod(uint64 resolver_handle);
+int8 tflm_add_resize_nearest_neighbor(uint64 resolver_handle);
+int8 tflm_add_leaky_relu(uint64 resolver_handle);
+int8 tflm_add_squared_difference(uint64 resolver_handle);
+int8 tflm_add_mirror_pad(uint64 resolver_handle);
+int8 tflm_add_abs(uint64 resolver_handle);
+int8 tflm_add_split_v(uint64 resolver_handle);
+int8 tflm_add_ceil(uint64 resolver_handle);
+int8 tflm_add_reverse_v2(uint64 resolver_handle);
+int8 tflm_add_add_n(uint64 resolver_handle);
+int8 tflm_add_gather_nd(uint64 resolver_handle);
+int8 tflm_add_cos(uint64 resolver_handle);
+int8 tflm_add_elu(uint64 resolver_handle);
+int8 tflm_add_quantize(uint64 resolver_handle);
+int8 tflm_add_round(uint64 resolver_handle);
+int8 tflm_add_hard_swish(uint64 resolver_handle);
+int8 tflm_add_if(uint64 resolver_handle);
+int8 tflm_add_while(uint64 resolver_handle);
+int8 tflm_add_select_v2(uint64 resolver_handle);
+int8 tflm_add_batch_matmul(uint64 resolver_handle);
+int8 tflm_add_cumsum(uint64 resolver_handle);
+int8 tflm_add_call_once(uint64 resolver_handle);
+int8 tflm_add_broadcast_to(uint64 resolver_handle);
+int8 tflm_add_var_handle(uint64 resolver_handle);
+int8 tflm_add_read_variable(uint64 resolver_handle);
+int8 tflm_add_assign_variable(uint64 resolver_handle);
+int8 tflm_add_broadcast_args(uint64 resolver_handle);
+int8 tflm_add_dynamic_update_slice(uint64 resolver_handle);
+int8 tflm_add_reduce_all(uint64 resolver_handle);
+
+
+// ---------------------------------------------------------------------------
+// Registro de kernels -- processamento de sinal
+//
+// Custom ops do pipeline de áudio, exigidos pelo audio_preprocessor do
+// Micro Speech. No .tflite aparecem em custom_code, não em builtin_code.
+// ---------------------------------------------------------------------------
+
+int8 tflm_add_delay(uint64 resolver_handle);
+int8 tflm_add_energy(uint64 resolver_handle);
+int8 tflm_add_fft_auto_scale(uint64 resolver_handle);
+int8 tflm_add_filter_bank(uint64 resolver_handle);
+int8 tflm_add_filter_bank_log(uint64 resolver_handle);
+int8 tflm_add_filter_bank_spectral_subtraction(uint64 resolver_handle);
+int8 tflm_add_filter_bank_square_root(uint64 resolver_handle);
+int8 tflm_add_framer(uint64 resolver_handle);
+int8 tflm_add_irfft(uint64 resolver_handle);
+int8 tflm_add_overlap_add(uint64 resolver_handle);
+int8 tflm_add_pcan(uint64 resolver_handle);
+int8 tflm_add_rfft(uint64 resolver_handle);
+int8 tflm_add_stacker(uint64 resolver_handle);
+int8 tflm_add_window(uint64 resolver_handle);
+
+
+// ---------------------------------------------------------------------------
+// Registro de kernels -- outros custom ops
+// ---------------------------------------------------------------------------
+
+int8 tflm_add_circular_buffer(uint64 resolver_handle);
+int8 tflm_add_detection_postprocess(uint64 resolver_handle);
+int8 tflm_add_basic_classifier(uint64 resolver_handle);
+int8 tflm_add_decode(uint64 resolver_handle);
+int8 tflm_add_ethos_u(uint64 resolver_handle);
+
+
+// ---------------------------------------------------------------------------
+// Acesso aos tensores
+// ---------------------------------------------------------------------------
+
+uint64 GetInputTensor(uint64 instance_handle, uint64 index);
+uint64 GetOutputTensor(uint64 instance_handle, uint64 index);
+
+uint64 GetInputTensorCount(uint64 instance_handle);
+uint64 GetOutputTensorCount(uint64 instance_handle);
+
+uint64 GetTensorSize(uint64 tensor_handle);
+
+
+// ---------------------------------------------------------------------------
+// Escrita nos tensores de entrada
+//
+// A conversão float -> quantizado é automática, usando o scale e o zero_point
+// do próprio modelo:  q = round(f/scale) + zero_point
+// ---------------------------------------------------------------------------
+
+void SetTensorValue(uint64 tensor_handle, uint64 index, float value);
+void SetTensorArray(uint64 tensor_handle, float[] values, uint64 count);
+void SetTensorFromIntArray(uint64 tensor_handle, int16[] values, uint64 count);
+
+
+// ---------------------------------------------------------------------------
+// Leitura dos tensores de saída
+//
+// Desquantização automática:  f = scale * (q - zero_point)
+// ---------------------------------------------------------------------------
+
+float GetTensorAsFloat(uint64 tensor_handle, uint64 index);
+void GetTensorArray(uint64 tensor_handle, float[] values, uint64 max_count);
+
+
+// ---------------------------------------------------------------------------
+// Utilitário
+// ---------------------------------------------------------------------------
+
+void PrintFloat(float value);
+
+int8 main(){
+    return 0;
+}

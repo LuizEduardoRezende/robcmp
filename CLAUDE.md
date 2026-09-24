@@ -10,6 +10,11 @@ execução de modelos TinyML nativamente na sintaxe da **Robotics Language (RL)*
 > consultados/mantidos separadamente (ex.: Google Docs de sistematização
 > mencionado no projeto, seção 6.1.5).
 
+> **Estado do trabalho:** `RESULTADOS.md`, na raiz, registra o que já foi feito,
+> os achados com evidência (e para qual seção da dissertação cada um serve), o
+> roteiro ordenado do que falta e as decisões em aberto. **Consulte-o no início
+> de cada sessão** — este arquivo descreve o projeto, aquele descreve o estado.
+
 ---
 
 ## 1. Contexto do projeto
