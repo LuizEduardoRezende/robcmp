@@ -216,6 +216,14 @@ static void testa_ciclo_de_vida() {
         CHECK(tensor_de(in)->data.int8[0] == 7, "SetTensorRawInt8 nao escreveu o valor");
         int8_t lido[1] = {0};
         CHECK(GetTensorRawInt8(in, lido, 1) == 0 && lido[0] == 7, "GetTensorRawInt8 nao leu o valor");
+
+        // SetTensorFromIntArray copia CRU (comportamento do TCC), nao quantiza:
+        // num tensor int8 com scale 0,0244801, o valor 5 tem de chegar como 5.
+        const int16_t cru[1] = {5};
+        SetTensorFromIntArray(in, cru, 1, 1);
+        CHECK(tensor_de(in)->data.int8[0] == 5,
+              "SetTensorFromIntArray quantizou (%d) em vez de copiar cru (5)",
+              tensor_de(in)->data.int8[0]);
         tflm_free_model(m);
     }
     printf("  reciclagem, limite, handles nulos, arena insuficiente e recusas da API crua: ok\n");

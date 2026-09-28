@@ -89,22 +89,47 @@ $(OUT)/validate_wrapper: validate_wrapper.cpp $(TESTDATA_OBJS) $(OUT)/libtflm_wr
 	$(WCXX) $(WRAPPER_FLAGS) $(WRAPPER_INCLUDES) validate_wrapper.cpp $(TESTDATA_OBJS) \
 		$(OUT)/libtflm_wrapper.a $(TFLM_LIB) -Wl,--gc-sections -o $@
 
-# Camada 2: programa RL compilado pelo robcmp para o host (sem -a) e linkado.
-$(OUT)/hello_world_float.rob: rob/hello_world_float.rob models/hello_world_float.tflite tflite_to_rob.py | $(OUT)
-	python3 tflite_to_rob.py models/hello_world_float.tflite modelo $< > $@
+# Camada 2: os testes do TCC portados para a API atual (rob/tcc_*.rob), em RL,
+# compilados pelo robcmp para o host (sem -a) e linkados com o wrapper e o TFLM.
+# O rob_embed.py insere nos templates os bytes dos modelos e dos dados de teste.
+ROB_TESTS = tcc_hello_world_float tcc_hello_world_int8 tcc_spam tcc_person_detect tcc_micro_speech
 
-$(OUT)/hello_world_float: $(OUT)/hello_world_float.rob $(OUT)/libtflm_wrapper.a $(ROBCMP)
-	$(ROBCMP) -I $(ROOT)/lib -o $(OUT)/hello_world_float.o $<
-	$(WCXX) $(OUT)/hello_world_float.o $(OUT)/libtflm_wrapper.a $(TFLM_LIB) -Wl,--gc-sections -o $@
+EMBED = python3 rob_embed.py
+
+$(OUT)/tcc_hello_world_float.rob: rob/tcc_hello_world.rob models/hello_world_float.tflite rob_embed.py | $(OUT)
+	$(EMBED) $< modelo=models/hello_world_float.tflite > $@
+
+$(OUT)/tcc_hello_world_int8.rob: rob/tcc_hello_world.rob models/hello_world_int8.tflite rob_embed.py | $(OUT)
+	$(EMBED) $< modelo=models/hello_world_int8.tflite > $@
+
+$(OUT)/tcc_spam.rob: rob/tcc_spam.rob models/spam.tflite rob_embed.py | $(OUT)
+	$(EMBED) $< modelo=models/spam.tflite > $@
+
+$(OUT)/tcc_person_detect.rob: rob/tcc_person_detect.rob models/person_detect.tflite data/person_image.bin data/no_person_image.bin rob_embed.py | $(OUT)
+	$(EMBED) $< modelo=models/person_detect.tflite \
+		imagem_pessoa=data/person_image.bin imagem_sem_pessoa=data/no_person_image.bin > $@
+
+$(OUT)/tcc_micro_speech.rob: rob/tcc_micro_speech.rob models/micro_speech_quantized.tflite data/micro_speech_yes_features.bin data/micro_speech_no_features.bin data/micro_speech_silence_features.bin rob_embed.py | $(OUT)
+	$(EMBED) $< modelo=models/micro_speech_quantized.tflite \
+		features_yes=data/micro_speech_yes_features.bin \
+		features_no=data/micro_speech_no_features.bin \
+		features_silence=data/micro_speech_silence_features.bin > $@
+
+$(addprefix $(OUT)/,$(ROB_TESTS)): $(OUT)/%: $(OUT)/%.rob $(OUT)/libtflm_wrapper.a $(ROBCMP)
+	$(ROBCMP) -I $(ROOT)/lib -o $(OUT)/$*.o $<
+	$(WCXX) $(OUT)/$*.o $(OUT)/libtflm_wrapper.a $(TFLM_LIB) -Wl,--gc-sections -o $@
 
 # Os testes leem os modelos por caminho relativo à raiz do repositório.
 validate: $(OUT)/validate_wrapper
 	@cd $(ROOT) && test/tflm/$(OUT)/validate_wrapper 2>/dev/null
 
-rob: $(OUT)/hello_world_float
-	@echo "== camada 2: programa RL (hello_world_float)"
-	@$(OUT)/hello_world_float; st=$$?; \
-	 if [ $$st -eq 0 ]; then echo "OK"; else echo "FALHOU na etapa $$st"; exit 1; fi
+rob: $(addprefix $(OUT)/,$(ROB_TESTS))
+	@echo "== camada 2: testes do TCC portados, em RL"
+	@falhou=0; for t in $(ROB_TESTS); do \
+		$(OUT)/$$t > $(OUT)/$$t.log 2>&1; st=$$?; \
+		if [ $$st -eq 0 ]; then printf "  %-24s OK\n" $$t; \
+		else printf "  %-24s FALHOU (codigo %d)\n" $$t $$st; falhou=1; fi; \
+	done; exit $$falhou
 
 check: validate rob
 

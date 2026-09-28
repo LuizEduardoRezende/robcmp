@@ -1119,11 +1119,31 @@ void SetTensorArray(uintptr_t tensor_handle, const float* values, size_t count, 
         tensor_write(t, i, values[i]);
 }
 
+// Copia inteiros para o tensor SEM quantizar: cada valor vai para o tipo do
+// tensor por cast direto. E o comportamento do wrapper do TCC, e o que os
+// programas ai.tflm existentes esperam -- o teste de micro speech do TCC passa
+// por aqui codigos int8 ja prontos, e quantiza-los os corromperia.
+//
+// A unificacao da conversao de tipos (B6) chegou a fazer esta funcao quantizar,
+// o que foi uma regressao; restaurado. Para valores REAIS, use SetTensorArray.
+// Para codigos com verificacao de tipo e tamanho, prefira SetTensorRawInt8/16.
 void SetTensorFromIntArray(uintptr_t tensor_handle, const int16_t* values, size_t count, int32_t values_len) {
+    (void)values_len;
     if (tensor_handle == 0 || !values) return;
     TfLiteTensor *t = reinterpret_cast<TfLiteTensor*>(tensor_handle);
-    for (size_t i = 0; i < count; ++i)
-        tensor_write(t, i, (float)values[i]);
+    if (!t->data.data || !t->dims) return;
+    size_t n = (size_t)tflite::ElementCount(*t->dims);
+    if (count > n) count = n;
+    switch (t->type) {
+        case kTfLiteInt8:    for (size_t i = 0; i < count; ++i) t->data.int8[i]  = (int8_t)values[i];  break;
+        case kTfLiteUInt8:   for (size_t i = 0; i < count; ++i) t->data.uint8[i] = (uint8_t)values[i]; break;
+        case kTfLiteInt16:   for (size_t i = 0; i < count; ++i) t->data.i16[i]   = values[i];           break;
+        case kTfLiteInt32:   for (size_t i = 0; i < count; ++i) t->data.i32[i]   = values[i];           break;
+        case kTfLiteFloat32: for (size_t i = 0; i < count; ++i) t->data.f[i]     = (float)values[i];    break;
+        default:
+            TFLM_LOG("ERRO: tipo de tensor nao suportado em SetTensorFromIntArray: %d", t->type);
+            break;
+    }
 }
 
 void GetTensorArray(uintptr_t tensor_handle, float* values, size_t max_count, int32_t values_len) {

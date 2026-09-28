@@ -1,0 +1,124 @@
+/*
+ * Porte de test/tflm-tests/lib-micro-speech.rob (branch tcc/tflm-front-end)
+ * para a API atual do wrapper.
+ *
+ * Mesma lógica, mesmas features pré-calculadas (yes, no, silence) e mesmos
+ * códigos de retorno do TCC. Como no TCC, só o classificador roda aqui: as
+ * features entram prontas, sem o audio_preprocessor. Muda a API:
+ *   - required_kernels                   -> tflm_add_depthwise_conv_2d,
+ *     tflm_add_fully_connected, tflm_add_reshape, tflm_add_softmax
+ *   - DestroyInterpreter                 -> tflm_free_model
+ *   - SetTensorFromIntArray(in, f, 1960) -> SetTensorRawInt8(in, f)
+ *
+ * As features são códigos int8 já na escala que o classificador espera. O TCC
+ * as declarava como int16[] e usava SetTensorFromIntArray, que copia cru; aqui
+ * vão como int8[] pela escrita crua, que também verifica tipo e tamanho.
+ *
+ * Devolve 0 se tudo passar, ou o código do teste que falhou.
+ */
+use ai.tflm;
+
+// @modelo@
+
+// @features_yes@
+
+// @features_no@
+
+// @features_silence@
+
+arena = {0u:12288};
+
+uint64 cria_modelo() {
+    r = tflm_create_resolver();
+    if r == 0 {
+        return 0;
+    }
+    tflm_add_depthwise_conv_2d(r);
+    tflm_add_fully_connected(r);
+    tflm_add_reshape(r);
+    tflm_add_softmax(r);
+    return tflm_create_model(r, modelo, arena);
+}
+
+// Categorias: [silence, unknown, yes, no]
+int8 test_infer_yes() {
+    h = cria_modelo();
+    if h == 0 {
+        return 1;
+    }
+    in = GetInputTensor(h, 0);
+    out = GetOutputTensor(h, 0);
+    if in == 0 or out == 0 {
+        tflm_free_model(h);
+        return 2;
+    }
+    output = {0.0, 0.0, 0.0, 0.0};
+    SetTensorRawInt8(in, features_yes);
+    InvokeInterpreter(h);
+    GetTensorArray(out, output, 4);
+    tflm_free_model(h);
+    if output[2] > output[0] and output[2] > output[1] and output[2] > output[3] {
+        return 0;
+    }
+    return 3;
+}
+
+int8 test_infer_no() {
+    h = cria_modelo();
+    if h == 0 {
+        return 1;
+    }
+    in = GetInputTensor(h, 0);
+    out = GetOutputTensor(h, 0);
+    if in == 0 or out == 0 {
+        tflm_free_model(h);
+        return 2;
+    }
+    output = {0.0, 0.0, 0.0, 0.0};
+    SetTensorRawInt8(in, features_no);
+    InvokeInterpreter(h);
+    GetTensorArray(out, output, 4);
+    tflm_free_model(h);
+    if output[3] > output[0] and output[3] > output[1] and output[3] > output[2] {
+        return 0;
+    }
+    return 4;
+}
+
+int8 test_infer_silence() {
+    h = cria_modelo();
+    if h == 0 {
+        return 1;
+    }
+    in = GetInputTensor(h, 0);
+    out = GetOutputTensor(h, 0);
+    if in == 0 or out == 0 {
+        tflm_free_model(h);
+        return 2;
+    }
+    output = {0.0, 0.0, 0.0, 0.0};
+    SetTensorRawInt8(in, features_silence);
+    InvokeInterpreter(h);
+    GetTensorArray(out, output, 4);
+    tflm_free_model(h);
+    if output[0] > output[1] and output[0] > output[2] and output[0] > output[3] {
+        return 0;
+    }
+    return 5;
+}
+
+int8 main() {
+    res_yes = test_infer_yes();
+    if res_yes != 0 {
+        return res_yes;
+    }
+    res_no = test_infer_no();
+    if res_no != 0 {
+        return res_no;
+    }
+    res_silence = test_infer_silence();
+    if res_silence != 0 {
+        return res_silence;
+    }
+    return 0;
+}

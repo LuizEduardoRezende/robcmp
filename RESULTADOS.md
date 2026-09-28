@@ -470,8 +470,8 @@ acerta", verificado à parte. Reproduzir: `make -C test/tflm check`.
 (`test/tflm/validate_wrapper.cpp`), chamando as funções `extern "C"` do wrapper
 diretamente. Ele prova que o wrapper está correto, mas **não** exercita o código
 que o robcmp gera para chamá-lo (passagem de vetores com tamanho injetado,
-conversões de tipo da RL, laços). O caminho RL completo foi validado só para o
-`hello_world_float`. Os demais modelos em RL dependem do item 2.7.
+conversões de tipo da RL, laços). O caminho RL é validado à parte, pelos testes do TCC portados
+(5.4.19).
 
 | Modelo | Diferencial | Resultado do modelo |
 |---|---|---|
@@ -607,6 +607,99 @@ a análise estática.
 handle aponta para a `TFLM_Instance`. Funcionava só porque `resolver` era o
 primeiro campo da struct. Reordená-la faria as 119 funções `tflm_add_*`
 escreverem no lugar errado, sem erro. Corrigido para `&instance->resolver`.
+
+### 5.4.17 Regressão introduzida no B6 e corrigida: `SetTensorFromIntArray`
+
+No wrapper do TCC, `SetTensorFromIntArray` era uma **cópia crua**: cada valor ia
+para o tipo do tensor por `static_cast`, sem quantizar. A unificação da
+conversão de tipos no B6 passou a rotear essa função por `tensor_write`, que
+quantiza. O teste de micro speech do TCC passa por ela códigos int8 já prontos,
+que seriam corrompidos.
+
+Não foi pego pela camada 1 porque essa função não era exercitada contra o
+comportamento original. Descoberto ao portar os testes do TCC (2.7), comparando
+tipo a tipo a semântica das funções de conversão do TCC com as do B6.
+
+Corrigido restaurando a cópia crua, e acrescentado a `validate_wrapper.cpp` o
+caso que teria pego a regressão: o valor 5 escrito num tensor int8 com scale
+0,0244801 precisa chegar como 5.
+
+As demais diferenças de semântica entre o TCC e o B6 só aparecem em casos que
+nenhum modelo de validação exercita, e foram mantidas por serem mais corretas:
+tensor `int32`/`int64` com parâmetros de quantização (o TCC os ignorava; o B6
+aplica) e `uint8` fora da faixa (o TCC deixava dar a volta; o B6 satura).
+
+### 5.4.18 O teste de person detection do TCC não entregava a imagem ao modelo
+
+**Achado que afeta o baseline.** No `lib-person-detection.rob` do TCC, a imagem
+é declarada em hexadecimal — a RL infere `int8[]` — e passada a
+`SetTensorFromIntArray`, cujo parâmetro é `int16[]`. Pelo buraco de tipagem da
+5.4.9, o ponteiro segue sem conversão, com o tamanho 9216. A função lê então
+9216 valores de 16 bits: **18432 bytes de um vetor de 9216**.
+
+Mecanismo medido, reproduzindo a chamada e lendo o tensor de volta com
+`GetTensorRawInt8`:
+
+| Imagem | Bytes do tensor ≠ imagem | `tensor[i] == imagem[2i]`, i < 4608 |
+|---|---|---|
+| com pessoa | 9158 / 9216 | 4608 / 4608 |
+| sem pessoa | 9177 / 9216 | 4608 / 4608 |
+
+A primeira metade do tensor recebe um pixel sim, um não, da imagem inteira; a
+segunda metade é **memória além do fim do vetor**.
+
+Reproduzindo o programa do TCC com fidelidade — mesma ordem de declaração dos
+globais, mesma chamada —, 16 execuções do mesmo binário:
+
+| | p(pessoa) no teste "com pessoa" | p(pessoa) no teste "sem pessoa" |
+|---|---|---|
+| entrada correta (`SetTensorRawInt8`) | 0,9414 | 0,2773 |
+| estilo TCC, 16 execuções | 0,6133 em todas | **de 0,246 a 0,508** |
+| estilo TCC, ASLR desligado | 0,6133 | 0,2500 em todas |
+
+- A imagem com pessoa é determinística porque a leitura além do fim cai no
+  vetor declarado em seguida — a imagem sem pessoa.
+- A imagem sem pessoa **varia a cada execução**: a leitura além do fim entra na
+  arena, que guarda ponteiros, e os endereços mudam com o ASLR. Numa das 16
+  execuções, p(pessoa) = 0,508 > 0,492 — a imagem **sem pessoa foi classificada
+  como pessoa** e o teste falharia.
+
+Conclusão: **o teste de person detection do TCC era intermitente**, e quando
+passava, passava por coincidência — o resultado dependia da disposição da
+memória, não da imagem.
+
+**Serve para:**
+- a 5.4, que precisa declarar que a validação de person detection do TCC não é
+  válida como baseline de corretude. Tamanho de binário e, provavelmente, tempo
+  de inferência não são afetados — uma CNN faz o mesmo número de operações
+  qualquer que seja o conteúdo da entrada —, mas isso deve ser dito com cuidado;
+- o argumento a favor da sintaxe nativa: o erro nasce de o usuário escolher à
+  mão a função de escrita e o tipo do vetor, e de a RL não verificar a
+  compatibilidade. Na sintaxe nativa, o compilador conhece o tipo do tensor e a
+  visão `.raw` rejeita a incompatibilidade em tempo de compilação (5.2.6);
+- o buraco de tipagem da 5.4.9 deixa de ser hipotético: tem uma vítima medida.
+
+### 5.4.19 Testes do TCC portados, em RL: todos passam
+
+Os cinco testes do TCC foram portados para a API atual (`test/tflm/rob/tcc_*.rob`)
+mantendo lógica, entradas, limiares e códigos de retorno. Compilados pelo robcmp
+para o host, linkados com o wrapper e o TFLM:
+
+| Teste | Resultado |
+|---|---|
+| `tcc_hello_world_float` | OK |
+| `tcc_hello_world_int8` | OK |
+| `tcc_spam` | OK — p(spam) 0,023690 e 0,916583, os mesmos da camada C++ |
+| `tcc_person_detect` | OK — com a imagem entregue corretamente (`SetTensorRawInt8`) |
+| `tcc_micro_speech` | OK |
+
+Os testes conseguem falhar: trocando as imagens entre si, `tcc_person_detect`
+falha com código 1; trocando as features de "yes" e "no", `tcc_micro_speech`
+falha com código 3.
+
+Os dados de teste ficam em `test/tflm/data/`, com a origem documentada
+(`data/README.md`); as imagens do TCC conferem byte a byte com as do TFLM.
+Reproduzir: `make -C test/tflm check`.
 
 ---
 
@@ -770,7 +863,7 @@ Resultado: 2355 → 1387 linhas (−41%), 99 → 119 kernels, heap zerado.
 
 ---
 
-### 🔶 Etapa 2 — Validação (EM ANDAMENTO)
+### ✅ Etapa 2 — Validação (concluída em 2026-09-28)
 
 **Situação crítica a registrar: nada foi executado até aqui.** Toda a
 verificação da Etapa 1 foi em nível de compilação e símbolos. A
@@ -786,7 +879,7 @@ Ordem sugerida, do menor risco para o maior:
 | 2.4 | Rodar `spam` | **feito** — idêntico ao TFLM puro (5.4.11) |
 | 2.5 | Rodar `person_detect` | **feito** — idêntico ao TFLM puro |
 | 2.6 | Rodar `micro_speech` + `audio_preprocessor` | **feito** — preprocessor 40/40; expôs a lacuna 5.4.13 |
-| 2.7 | Adaptar os 5 `.rob` de teste do TCC à API nova | base da comparação retroativa da 5.4 |
+| 2.7 | Adaptar os 5 `.rob` de teste do TCC à API nova | **feito** — 5/5 passam em RL (5.4.19); revelou 5.4.17 e 5.4.18 |
 | 2.8 | Acrescentar à API caminho para dados já quantizados | **feito** — `SetTensorRaw*`/`GetTensorRaw*` (5.4.13) |
 | 2.9 | Correção do `AllocatePOD` | **adiado** — ver abaixo |
 
@@ -818,7 +911,7 @@ alinhamento do `interpreter_storage`, conversão de handle.
 
 ---
 
-### ⬜ Etapa 3 — Compilador, seção 5.2
+### ⬜ Etapa 3 — Compilador, seção 5.2 (PRÓXIMA)
 
 | # | Tarefa |
 |---|---|

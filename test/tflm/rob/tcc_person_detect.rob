@@ -1,0 +1,105 @@
+/*
+ * Porte de test/tflm-tests/lib-person-detection.rob (branch tcc/tflm-front-end)
+ * para a API atual do wrapper.
+ *
+ * Mesma lógica, mesmas imagens (idênticas byte a byte às do teste oficial do
+ * TFLM) e mesmos códigos de retorno do TCC. Muda a API:
+ *   - required_kernels = {1, 3, 4, 22, 25}  -> tflm_add_average_pool_2d,
+ *     tflm_add_conv_2d, tflm_add_depthwise_conv_2d, tflm_add_reshape,
+ *     tflm_add_softmax
+ *   - DestroyInterpreter                    -> tflm_free_model
+ *   - SetTensorFromIntArray(in, imagem, 9216) -> SetTensorRawInt8(in, imagem)
+ *
+ * A última troca é CORREÇÃO, não só adaptação. A imagem é um vetor int8
+ * (literal em hexadecimal), e o TCC a passava a SetTensorFromIntArray, cujo
+ * parâmetro é int16[]. A RL entrega o ponteiro sem conversão nem aviso, e a
+ * função lia 9216 valores de 16 bits -- o dobro dos bytes da imagem. Ver
+ * RESULTADOS.md. A imagem já está na representação do modelo, então o caminho
+ * certo é a escrita crua.
+ *
+ * Devolve 0 se tudo passar, ou o código do teste que falhou.
+ */
+use ai.tflm;
+
+// @modelo@
+
+// @imagem_pessoa@
+
+// @imagem_sem_pessoa@
+
+arena = {0u:90000};
+
+uint64 cria_modelo() {
+    r = tflm_create_resolver();
+    if r == 0 {
+        return 0;
+    }
+    tflm_add_average_pool_2d(r);
+    tflm_add_conv_2d(r);
+    tflm_add_depthwise_conv_2d(r);
+    tflm_add_reshape(r);
+    tflm_add_softmax(r);
+    return tflm_create_model(r, modelo, arena);
+}
+
+int8 test_person() {
+    h = cria_modelo();
+    if h == 0 {
+        return 1;
+    }
+    in = GetInputTensor(h, 0);
+    out = GetOutputTensor(h, 0);
+    if in == 0 or out == 0 {
+        tflm_free_model(h);
+        return 2;
+    }
+    output = {0.0, 0.0};
+    if SetTensorRawInt8(in, imagem_pessoa) != 0 {
+        tflm_free_model(h);
+        return 2;
+    }
+    InvokeInterpreter(h);
+    GetTensorArray(out, output, 2);   // [sem pessoa, pessoa]
+    tflm_free_model(h);
+    if output[1] > output[0] {
+        return 0;
+    }
+    return 1;
+}
+
+int8 test_no_person() {
+    h = cria_modelo();
+    if h == 0 {
+        return 1;
+    }
+    in = GetInputTensor(h, 0);
+    out = GetOutputTensor(h, 0);
+    if in == 0 or out == 0 {
+        tflm_free_model(h);
+        return 2;
+    }
+    output = {0.0, 0.0};
+    if SetTensorRawInt8(in, imagem_sem_pessoa) != 0 {
+        tflm_free_model(h);
+        return 2;
+    }
+    InvokeInterpreter(h);
+    GetTensorArray(out, output, 2);   // [sem pessoa, pessoa]
+    tflm_free_model(h);
+    if output[0] > output[1] {
+        return 0;
+    }
+    return 3;
+}
+
+int8 main() {
+    res_person = test_person();
+    if res_person != 0 {
+        return res_person;
+    }
+    res_no_person = test_no_person();
+    if res_no_person != 0 {
+        return res_no_person;
+    }
+    return 0;
+}

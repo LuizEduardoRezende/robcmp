@@ -1,0 +1,122 @@
+/*
+ * Porte de test/tflm-tests/lib-hello-world-{float,int}.rob (branch
+ * tcc/tflm-front-end) para a API atual do wrapper.
+ *
+ * Mesma lógica, mesmas entradas, mesmos limiares e mesmos códigos de retorno
+ * do TCC -- é a base da comparação retroativa. Muda só a API:
+ *   - InitializeInterpreter(modelo, arena, {9})  -> tflm_create_resolver +
+ *     tflm_add_fully_connected + tflm_create_model
+ *   - DestroyInterpreter                         -> tflm_free_model
+ *
+ * No TCC eram dois arquivos idênticos exceto pelo modelo. Aqui é um template
+ * só: o build insere hello_world_float ou hello_world_int8 no marcador.
+ * Como a conversão float <-> quantizado é automática, as entradas e os
+ * limiares valem para os dois modelos.
+ *
+ * Devolve 0 se tudo passar, ou o número do último teste que falhou.
+ */
+use ai.tflm;
+
+// @modelo@
+
+arena = {0u:3000};
+
+uint64 cria_modelo() {
+    r = tflm_create_resolver();
+    if r == 0 {
+        return 0;
+    }
+    tflm_add_fully_connected(r);
+    return tflm_create_model(r, modelo, arena);
+}
+
+int8 test_init() {
+    h = cria_modelo();
+    if h == 0 {
+        return 1;
+    }
+    tflm_free_model(h);
+    return 0;
+}
+
+// Inferência para entrada 0.0: sin(0) = 0
+int8 test_infer_zero() {
+    h = cria_modelo();
+    if h == 0 {
+        return 1;
+    }
+    in = GetInputTensor(h, 0);
+    out = GetOutputTensor(h, 0);
+    if in == 0 or out == 0 {
+        tflm_free_model(h);
+        return 2;
+    }
+    SetTensorValue(in, 0, 0.0);
+    InvokeInterpreter(h);
+    r = GetTensorAsFloat(out, 0);
+    tflm_free_model(h);
+    if r < -0.5 or r > 0.5 {
+        return 3;
+    }
+    return 0;
+}
+
+// Inferência para entrada 1.57: sin(pi/2) = 1
+int8 test_infer_pi_2() {
+    h = cria_modelo();
+    if h == 0 {
+        return 1;
+    }
+    in = GetInputTensor(h, 0);
+    out = GetOutputTensor(h, 0);
+    if in == 0 or out == 0 {
+        tflm_free_model(h);
+        return 2;
+    }
+    SetTensorValue(in, 0, 1.57);
+    InvokeInterpreter(h);
+    r = GetTensorAsFloat(out, 0);
+    tflm_free_model(h);
+    if r < 0.5 or r > 1.5 {
+        return 3;
+    }
+    return 0;
+}
+
+// Índice de tensor de entrada inválido deve devolver 0
+int8 test_input_tensor_fail() {
+    h = cria_modelo();
+    if h == 0 {
+        return 1;
+    }
+    in = GetInputTensor(h, 99);
+    tflm_free_model(h);
+    if in != 0 {
+        return 2;
+    }
+    return 0;
+}
+
+// Índice de tensor de saída inválido deve devolver 0
+int8 test_output_tensor_fail() {
+    h = cria_modelo();
+    if h == 0 {
+        return 1;
+    }
+    out = GetOutputTensor(h, 99);
+    tflm_free_model(h);
+    if out != 0 {
+        return 2;
+    }
+    return 0;
+}
+
+int8 main() {
+    result = 0;
+    if test_init() != 0 { result = 1; }
+    if test_infer_zero() != 0 { result = 2; }
+    if test_infer_pi_2() != 0 { result = 3; }
+    if test_input_tensor_fail() != 0 { result = 4; }
+    if test_output_tensor_fail() != 0 { result = 5; }
+    return result;
+}
