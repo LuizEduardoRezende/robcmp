@@ -597,6 +597,10 @@ int16 usa_tipo_proprio() {
  *   de dados); aguarda confirmação do orientador. Não bloqueia o compilador:
  *   o nome aparece num único ponto da análise semântica.
  *
+ * - Resolução do caminho em ai_model("..."): relativo ao diretório do .rob
+ *   que contém a chamada, às pastas passadas com -I (como o `use`), ou os dois
+ *   em sequência, como o #include "..." do C? Necessária na tarefa 3.3.
+ *
  * Decididas nesta especificação: .count (seção 5), subgrafos (5b), arena (6),
  * status do invoke (1), visão .raw (4b), ausência de destruição (8b).
  * ========================================================================= */

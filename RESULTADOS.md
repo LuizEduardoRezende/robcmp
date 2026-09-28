@@ -1067,6 +1067,40 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 
 A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
 
+**Notas para retomar a 3.1** (levantadas em 2026-09-28, antes de começar):
+
+- **Onde:** um subdiretório novo, por exemplo `src/tinyml/`. O `CMakeLists.txt`
+  usa `file(GLOB ... "src/**/*.cpp")`, que no CMake NÃO é recursivo — pega só um
+  nível de subdiretório, como `src/semantic/`. Um nível basta.
+- **FlatBuffers:** o `schema_generated.h` exige a versão 25 do FlatBuffers
+  (`static_assert(FLATBUFFERS_VERSION_MAJOR == 25 ...)`), e o sistema não tem
+  FlatBuffers instalado. Usar o que o TFLM baixa em
+  `third-party/tflite-micro/tensorflow/lite/micro/tools/make/downloads/flatbuffers/include`.
+  Consequência: o build do robcmp passa a depender do `third_party_downloads`
+  do TFLM. O CMake precisa verificar e dar mensagem clara se faltar.
+- **`GetBuiltinCode`:** é uma linha,
+  `max(builtin_code, deprecated_builtin_code)`. Reimplementar no módulo em vez de
+  compilar o `schema_utils.cc` do TFLM dentro do compilador.
+- **Verificação estrutural:** usar o verificador do FlatBuffers
+  (`tflite::VerifyModelBuffer`). O `tflite_info` só confere o identificador
+  `TFL3`; um `.tflite` truncado ou corrompido não pode derrubar o compilador.
+- **Isolamento:** incluir os headers do TFLM só no `.cpp` do módulo. O header do
+  módulo expõe estruturas próprias, para o namespace `tflite` não vazar para as
+  outras unidades do robcmp.
+- **Fonte única:** o `test/tflm/tflite_info.cpp` passa a ser um executável fino
+  sobre o módulo, em vez de uma segunda implementação.
+- **Kernel → função do wrapper:** o módulo precisa da tabela que mapeia cada
+  kernel (builtin por nome do enum; custom por `custom_code`, ex.
+  `"SignalRfft"` → `tflm_add_rfft`) para a função `tflm_add_*`. Kernel sem
+  entrada na tabela = "kernel sem suporte" (3.7). Acrescentar ao `make check`
+  uma verificação de que a tabela cobre exatamente as funções do header.
+- **Mensagens de erro em inglês**, como as demais do robcmp
+  (`semantic error: Symbol ... not found`).
+- **Fora do escopo da 3.1:** como resolver o caminho de `ai_model("...")`
+  (relativo ao `.rob` ou às pastas `-I`) é decisão de sintaxe, em aberto na
+  seção 9 de `native-syntax.rob`; só é necessária na 3.3. O módulo recebe o
+  caminho já resolvido.
+
 ---
 
 ### ⬜ Etapa 4 — Build unificado, seção 5.3
