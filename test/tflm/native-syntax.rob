@@ -89,7 +89,7 @@ int16 exemplo_minimo() {
     // consegue abrir o arquivo em tempo de compilação, e sem isso nada mais
     // aqui funciona: nem a tipagem, nem a escolha de kernels, nem a validação.
     // Caminho não-literal é erro de compilação.
-    classifier = ai_model("models/hello_world_float.tflite");
+    classifier = ai_model("models/hello_world_float.tflite", 3000);
 
     // Primeiro índice é SEMPRE o tensor. Nunca o elemento.
     // Aqui: tensor de entrada 0 recebe o vetor inteiro.
@@ -119,7 +119,7 @@ int16 exemplo_minimo() {
  * ========================================================================= */
 
 int16 exemplo_quantizado() {
-    classifier = ai_model("models/hello_world_int8.tflite");
+    classifier = ai_model("models/hello_world_int8.tflite", 3000);
 
     // O usuário escreve float. O compilador conhece scale e zero_point em
     // tempo de compilação, então emite a conversão q = round(f/scale + zp)
@@ -152,11 +152,12 @@ int16 exemplo_quantizado() {
  * ========================================================================= */
 
 int16 exemplo_propriedades() {
-    classifier = ai_model("models/hello_world_int8.tflite");
+    classifier = ai_model("models/hello_world_int8.tflite", 3000);
 
     s  = classifier.input[0].scale;        // 0.0244801  -- constante
     zp = classifier.input[0].zero_point;   // -128       -- constante
     n  = classifier.input[0].size;         // 1          -- constante
+    ne = classifier.input.count;           // 1          -- constante (seção 5)
 
     // Nenhuma dessas leituras gera código: todas viram literais no IR.
 
@@ -178,7 +179,7 @@ int16 exemplo_propriedades() {
  * ========================================================================= */
 
 int16 exemplo_elemento_e_vetor() {
-    classifier = ai_model("models/micro_speech_quantized.tflite");
+    classifier = ai_model("models/micro_speech_quantized.tflite", 12288);
 
     // Vetor inteiro: tensor 0 recebe tudo de uma vez.
     features = {0.0:1960};
@@ -249,7 +250,7 @@ int16 exemplo_elemento_e_vetor() {
 //   input [0] int8[1,96,96,1]  scale=0.00784314  zero_point=-1
 //   output[0] int8[1,2]        scale=0.00390625  zero_point=-128
 int16 exemplo_raw_imagem() {
-    detector = ai_model("models/person_detect.tflite", 136000);
+    detector = ai_model("models/person_detect.tflite", 90000);
 
     imagem = {0x0b:9216};                // viria da câmera, já em int8
     detector.input[0].raw = imagem;      // códigos entram como estão
@@ -279,8 +280,8 @@ int16 exemplo_raw_imagem() {
 // classificador as espera como códigos int8 com escala. Pela visão padrão,
 // seriam requantizadas e corrompidas. Pela .raw, passam como estão.
 int16 exemplo_raw_pipeline() {
-    pre = ai_model("models/audio_preprocessor_int8.tflite");
-    cls = ai_model("models/micro_speech_quantized.tflite");
+    pre = ai_model("models/audio_preprocessor_int8.tflite", 12288);
+    cls = ai_model("models/micro_speech_quantized.tflite", 12288);
 
     audio = {int16(0):16000};            // 1 s de áudio, viria do microfone
     janela = {int16(0):480};
@@ -346,7 +347,7 @@ int16 exemplo_raw_pipeline() {
  * ========================================================================= */
 
 int16 exemplo_multiplos_tensores() {
-    detector = ai_model("models/algum_modelo_multi_entrada.tflite");
+    detector = ai_model("models/algum_modelo_multi_entrada.tflite", 8192);
 
     detector.input[0] = {1.0, 2.0};   // primeira entrada
     detector.input[1] = {3.0};        // segunda entrada, tipo possivelmente
@@ -359,39 +360,91 @@ int16 exemplo_multiplos_tensores() {
     scores    = detector.output[2];
     contagem  = detector.output[3][0];
 
-    // EM ABERTO: expor a contagem de tensores? Ex.: detector.input.count
-    // Mapeia direto em tflm_input_count/tflm_output_count, que o wrapper
-    // já tem. Útil sobretudo para código genérico.
+    // DECISÃO: .count existe, em input e em output. É constante de compilação,
+    // lida do .tflite como o .size -- não gera chamada ao wrapper. Serve para
+    // código genérico, que funciona com modelos de uma ou de várias entradas.
+    // (tflm_input_count/tflm_output_count são o equivalente no modo biblioteca.)
+    // Sintaticamente `detector.input.count` já é aceito hoje: é um único
+    // identificador pontilhado, como `obj.campo.size`.
+    n_entradas = detector.input.count;    // 2
+    n_saidas   = detector.output.count;   // 4
 
     return 0;
 }
 
 
 /* =========================================================================
+ * 5b. Modelos com mais de um subgrafo
+ *
+ * DECISÃO: aceitos. A interface do modelo -- input, output, count -- é a do
+ * subgrafo 0. Os demais não são expostos.
+ *
+ * Um subgrafo é um grafo de computação completo: tensores, operadores, entradas
+ * e saídas. Quase todo modelo tem um só. Os subgrafos extras aparecem com
+ * controle de fluxo -- são os CORPOS dos operadores IF, WHILE e CALL_ONCE, que
+ * o TFLM executa internamente. Estrutura dos modelos de teste do próprio TFLM
+ * (tflite::testing::GetSimpleModelWithSubgraphsAndIf / ...AndWhile):
+ *
+ *   modelo com IF:     subgrafo 0: IF(então = subgrafo 1, senão = subgrafo 2)
+ *                      subgrafo 1: ADD
+ *                      subgrafo 2: MUL
+ *
+ *   modelo com WHILE:  subgrafo 0: WHILE(condição = subgrafo 1, corpo = subgrafo 2)
+ *                      subgrafo 1: LESS
+ *                      subgrafo 2: ADD
+ *
+ * Recusar esses modelos rejeitaria modelos válidos. Ignorar os subgrafos extras
+ * na INTERFACE é o correto: o schema define que "the 0th is assumed to be the
+ * main model" (schema.fbs), e é o subgrafo 0 que recebe as entradas e produz
+ * as saídas. Os kernels, por outro lado, vêm de Model.operator_codes, que fica
+ * no nível do modelo e já cobre todos os subgrafos -- a análise estática
+ * registra IF/WHILE e os kernels dos corpos sem tratamento especial.
+ *
+ * Levantamento: nenhum dos 144 arquivos .tflite do repositório do TFLM tem mais
+ * de um subgrafo. O TFLM testa o caso com modelos montados em código.
+ * ========================================================================= */
+
+
+/* =========================================================================
  * 6. Tamanho da arena
  *
- * PROPOSTA: segundo argumento OPCIONAL de ai_model(), não propriedade.
+ * DECISÃO: segundo argumento de ai_model(), não propriedade. Em duas fases:
  *
- * O motivo é de ordem, não de gosto: ai_model() constrói o intérprete e aloca a
- * arena na hora. Uma propriedade atribuída depois (classifier.arena = N)
+ *   FASE 1 (primeira versão do compilador): OBRIGATÓRIO. ai_model() sem arena
+ *   é erro de compilação.
+ *
+ *   FASE 2 (quando existir o cálculo): OPCIONAL. Sem ele, o compilador usa a
+ *   arena calculada a partir do .tflite; com ele, vale o valor informado.
+ *
+ * Argumento e não propriedade por ordem: ai_model() constrói o intérprete e
+ * aloca a arena na hora. Uma propriedade atribuída depois (m.arena = N)
  * chegaria tarde demais -- ou obrigaria a construção preguiçosa, cuja
  * semântica fica sutil demais para o ganho.
  *
- * O default é derivado pelo compilador. Derivar exige reproduzir estaticamente
- * o memory planner do TFLM, que hoje só responde em runtime via
- * arena_used_bytes() depois do AllocateTensors. Isso é trabalho de pesquisa
- * por si só; até estar pronto, o argumento explícito é a saída.
+ * Por que em duas fases: calcular a arena exige reproduzir estaticamente o
+ * memory planner do TFLM, e isso é trabalho de pesquisa por si só. A fase 1
+ * não depende dele. O cálculo é SEGURANÇA, não conveniência: uma arena mal
+ * dimensionada pode derrubar o próprio TFLM em vez de dar erro (RESULTADOS.md,
+ * 5.4.12).
  *
- * Comparação: o TCC usava 262144 (256 KB) fixos para o sine predictor.
+ * Arenas medidas em x86_64 (bytes). "Mínima viável" é a menor com a qual o
+ * AllocateTensors passa; nos modelos pequenos ela supera o arena_used_bytes,
+ * por causa da memória temporária do planejamento. Os valores usados nos
+ * exemplos deste arquivo têm margem e são os validados nos testes.
+ *
+ *   modelo                  usada   mínima viável   nos exemplos
+ *   hello_world              1216        1616              3000
+ *   person_detect           85024       85024             90000
+ *   micro_speech_quantized   7312        7312             12288
+ *   audio_preprocessor_int8  9952        9952             12288
  * ========================================================================= */
 
 int16 exemplo_arena() {
-    // Forma normal: compilador deriva o tamanho.
-    a = ai_model("models/hello_world_float.tflite");
+    // Fase 1: a arena é informada.
+    a = ai_model("models/hello_world_float.tflite", 3000);
 
-    // Forma com override, para quando o desenvolvedor sabe mais que o
-    // compilador, ou enquanto a derivação automática não existir.
-    b = ai_model("models/person_detect.tflite", 136000);
+    // Fase 2: o compilador calcula. Na fase 1, esta linha é erro de compilação.
+    // b = ai_model("models/hello_world_float.tflite");
 
     return 0;
 }
@@ -461,16 +514,19 @@ int16 usa_tipo_proprio() {
  * ========================================================================= */
 
 // caminho = "models/hello_world_float.tflite";
-// a = ai_model(caminho);
+// a = ai_model(caminho, 3000);
 //     -> erro: o caminho do modelo deve ser um literal string
 
-// b = ai_model("models/nao_existe.tflite");
+// g = ai_model("models/hello_world_float.tflite");
+//     -> erro (fase 1): tamanho da arena não informado
+
+// b = ai_model("models/nao_existe.tflite", 3000);
 //     -> erro: arquivo não encontrado
 
-// c = ai_model("Makefile");
+// c = ai_model("Makefile", 3000);
 //     -> erro: não é um .tflite válido (identificador TFL3 ausente)
 
-// d = ai_model("models/hello_world_float.tflite");
+// d = ai_model("models/hello_world_float.tflite", 3000);
 // d.input[0] = {1.0, 2.0};
 //     -> erro: tensor de entrada 0 tem 1 elemento, recebeu 2
 
@@ -487,19 +543,19 @@ int16 usa_tipo_proprio() {
 // e.input[0].scale = 0.5;
 //     -> erro: scale é somente leitura
 
-// q = ai_model("models/hello_world_int8.tflite");
+// q = ai_model("models/hello_world_int8.tflite", 3000);
 // q.input[0].raw = {int16(0):1};
 //     -> erro: visão .raw de tensor int8 recebeu vetor int16
 
 // q.input[0].raw = {0, 0};
 //     -> erro: tensor de entrada 0 tem 1 elemento, vetor .raw tem 2
 
-// fl = ai_model("models/hello_world_float.tflite");
+// fl = ai_model("models/hello_world_float.tflite", 3000);
 // fl.input[0].raw = {1};
 //     -> erro: visão .raw de tensor float32 recebeu vetor int8
 //        (para tensor float, use a visão padrão)
 
-// f = ai_model("models/audio_preprocessor_int8.tflite");
+// f = ai_model("models/audio_preprocessor_int8.tflite", 12288);
 //     -> DEPENDE: este modelo exige 9 custom ops (SignalRfft, SignalWindow,
 //        SignalFilterBank, SignalPCAN, SignalEnergy, SignalFftAutoScale,
 //        SignalFilterBankLog, SignalFilterBankSquareRoot,
@@ -537,8 +593,10 @@ int16 usa_tipo_proprio() {
 /* =========================================================================
  * 9. Decisões ainda em aberto
  *
- * - input.count / output.count existem?
+ * - O nome `ai_model`. Substituiu `model`, genérico demais (modelo 3D, modelo
+ *   de dados); aguarda confirmação do orientador. Não bloqueia o compilador:
+ *   o nome aparece num único ponto da análise semântica.
  *
- * - Modelos com mais de um subgrafo: todos os 7 em models/ têm apenas um.
- *   Ignorar os demais, ou recusar o modelo com erro claro?
+ * Decididas nesta especificação: .count (seção 5), subgrafos (5b), arena (6),
+ * status do invoke (1), visão .raw (4b), ausência de destruição (8b).
  * ========================================================================= */

@@ -363,6 +363,42 @@ A causa é do compilador, não do wrapper: o `int8` da RL é com sinal e deveria
 gerar `signext`. **Para a Etapa 3**: corrigir a escolha do atributo por
 sinalização do tipo. O `check_abi.py` reporta a divergência como aviso.
 
+### 5.2.8 Arena: quanto cada modelo precisa, e quanto o TCC reservava
+
+Medido em x86_64 com o TFLM puro. "Usada" é o `arena_used_bytes()` depois do
+`AllocateTensors`; "mínima viável" é a menor arena com a qual o
+`AllocateTensors` passa, obtida por busca binária com cada tentativa num
+processo isolado (por causa das janelas de crash da 5.4.12).
+
+| Modelo | Usada | Mínima viável | Arena do TCC | Sobra no TCC |
+|---|---|---|---|---|
+| hello_world (float e int8) | 1216 | 1616 | 3000 | 86% |
+| spam | 2000 | 2208 | 4096 | 86% |
+| person_detect | 85024 | 85024 | 90000 | 6% |
+| micro_speech_quantized | 7312 | 7312 | 12288 | 68% |
+| audio_preprocessor_int8 | 9952 | 9952 | — | — |
+
+Dois fatos:
+
+1. **`arena_used_bytes()` não é o mínimo.** Nos modelos pequenos, o planejamento
+   de memória precisa de espaço temporário que é devolvido ao final: o
+   hello_world usa 1216 bytes mas só aloca com 1616. Nos modelos maiores, o
+   temporário cabe dentro do que é usado e os dois números coincidem. Um cálculo
+   estático da arena que reproduza só o `arena_used_bytes` subdimensionaria os
+   modelos pequenos — e cairia na faixa de falha, ou de crash.
+2. **As arenas do TCC eram superdimensionadas em até 86%.** Num STM32F407, com
+   192 KB de RAM, reservar arena por tentativa desperdiça memória que o
+   firmware poderia usar para outra coisa.
+
+**Serve para:** a motivação do cálculo automático da arena (decisão da seção 6
+de `native-syntax.rob`: obrigatória na primeira versão, calculada depois), e
+para definir o critério de corretude desse cálculo — ele precisa prever a
+mínima viável, não a usada.
+
+Ressalva: medido em x86_64. No Cortex-M, com ponteiros de 32 bits, as
+estruturas internas do TFLM são menores, e os números devem cair um pouco.
+Não medido.
+
 ---
 
 ## Seção 5.4 — Validação e métricas
@@ -1012,15 +1048,22 @@ alinhamento do `interpreter_storage`, conversão de handle.
 
 ### ⬜ Etapa 3 — Compilador, seção 5.2 (PRÓXIMA)
 
+Pela regra "sintaxe antes da implementação" (`CLAUDE.md`, seção 6), a primeira
+tarefa é fechar a especificação. As demais seguem a ordem das fases do
+compilador: elaboração prévia, gramática, semântica, geração de código.
+
 | # | Tarefa |
 |---|---|
-| 3.1 | Migrar `test/tflm/tflite_info.cpp` para módulo em `src/` (fase de elaboração prévia) |
-| 3.2 | Acrescentar as produções P1 e P2 à gramática (ver 5.2.1: zero conflitos medidos) |
-| 3.3 | Tipo `ai_model` na semântica, com a regra de precedência que preserva função do usuário |
-| 3.4 | Tipagem de `output[i]` derivada do `.tflite` |
-| 3.5 | Emitir as chamadas `tflm_add_*` conforme os kernels detectados |
-| 3.6 | Erros de compilação: shape incompatível, kernel ausente, caminho não-literal, índice não-constante |
-| 3.7 | Fechar as decisões em aberto de `test/tflm/native-syntax.rob` (seção 9) |
+| 3.0 | Fechar as decisões em aberto de `test/tflm/native-syntax.rob` | **feito**, exceto o nome `ai_model` (aguarda o orientador) |
+| 3.1 | Migrar a leitura do `.tflite` de `test/tflm/tflite_info.cpp` para um módulo em `src/`, como fase de elaboração prévia |
+| 3.2 | Acrescentar à gramática as produções P1, P2 e P3 (5.2.1 e 5.2.6: zero conflitos medidos) |
+| 3.3 | Tipo `ai_model` na semântica, com a regra de precedência que preserva a função do usuário |
+| 3.4 | Tipagem de `input[i]`/`output[i]` e das propriedades (`.size`, `.scale`, `.zero_point`) derivada do `.tflite` |
+| 3.5 | Visão `.raw`: verificação de tipo e tamanho em tempo de compilação |
+| 3.6 | Geração de código: emitir as chamadas da API `tflm_` (mapeamento em 5.1.7), incluindo um `tflm_add_*` por kernel detectado |
+| 3.7 | Erros de compilação: shape incompatível, kernel sem suporte, caminho não-literal, índice de tensor não-constante |
+| 3.8 | Retornos inteiros com sinal: `signext` em vez de `zeroext` (5.2.7) |
+| 3.9 | Fazer `test/tflm/native-syntax.rob` compilar e rodar, com o mesmo resultado do modo biblioteca |
 
 A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
 
