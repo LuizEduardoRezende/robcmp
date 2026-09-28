@@ -22,13 +22,13 @@
  *   x.size              constante nomeada anexada ao valor (src/Array.cpp:11)
  *   x.campo = {1.0}     literal de array atribuído a campo SEM índice
  *
- * O trabalho é quase todo semântico. A gramática muda em dois pontos, descritos
+ * O trabalho é quase todo semântico. A gramática muda em três pontos, descritos
  * na seção 0.
  */
 
 
 /* =========================================================================
- * 0. Os dois acréscimos de gramática necessários
+ * 0. Os três acréscimos de gramática necessários
  *
  * Levantados empiricamente, compilando cada forma contra o robcmp atual.
  *
@@ -42,6 +42,8 @@
  *
  *   (P1)  obj.campo[0] = {1.0};       literal de array à direita de campo indexado
  *   (P2)  x = obj.campo[0].prop;      propriedade lida depois de um índice
+ *   (P3)  obj.campo[0].prop = v;      atribuição a propriedade depois de um índice
+ *         obj.campo[0].prop = {1};    (e a mesma forma com literal de array)
  *
  * P1 é a forma central: atribuir um vetor a um tensor identificado por índice.
  * Foi por causa dela que o arquivo do TCC 1 escrevia em duas linhas
@@ -52,13 +54,23 @@
  * Note que `obj.campo.size` (sem índice) já funciona; o que falta é a
  * composição índice-depois-propriedade.
  *
+ * P3 é a escrita na visão .raw de um tensor (seção 4b): `modelo.input[0].raw =
+ * imagem`. Tem as duas formas, com expressão e com literal de array, pelo mesmo
+ * motivo de P1 -- sem a segunda, a visão padrão aceitaria literal e a .raw não.
+ *
+ * Custo medido: aplicando P1, P2 e P3 (as duas formas) a uma cópia da gramática,
+ * o Bison continua reportando o mesmo 1 conflito shift/reduce do baseline.
+ * Zero conflitos novos. O motivo é o léxico: `{ID}(\.{ID})+` faz maximal munch,
+ * então `a.b` é sempre um único TOK_XIDENTIFIER, e um `.` depois de `]` só pode
+ * ser uma das regras novas.
+ *
  * ALTERNATIVA sem mexer na gramática: exigir variável intermediária no lugar
  * de P1, e desistir das propriedades por tensor no lugar de P2. Custa uma
  * linha extra em todo uso e remove informação útil da linguagem.
  *
- * RECOMENDAÇÃO: acrescentar as duas. Ambas são puramente ADITIVAS -- hoje as
- * duas formas são erro de sintaxe, então nenhum programa que compila hoje muda
- * de significado. Duas produções continuam dentro do se admite como
+ * RECOMENDAÇÃO: acrescentar as três. Todas são puramente ADITIVAS -- hoje as
+ * três formas são erro de sintaxe, então nenhum programa que compila hoje muda
+ * de significado. Três produções continuam dentro do que se admite como
  * extensão mínima, e o restante do trabalho segue sendo semântico.
  * ========================================================================= */
 
@@ -174,6 +186,128 @@ int16 exemplo_elemento_e_vetor() {
 
     melhor = classifier.output[0][0];   // elemento 0 do tensor de saída 0
     todas  = classifier.output[0];      // as 4 classes de uma vez
+
+    return 0;
+}
+
+
+/* =========================================================================
+ * 4b. Visão .raw -- dados que já estão na representação do modelo
+ *
+ * Cada tensor tem duas visões:
+ *
+ *   modelo.input[0]        VALORES REAIS. Conversão automática na escrita
+ *                          (q = round(v/scale) + zero_point) e na leitura
+ *                          (v = scale * (q - zero_point)). É o padrão.
+ *
+ *   modelo.input[0].raw    CÓDIGOS, exatamente como o tensor os guarda. Sem
+ *                          conversão nenhuma.
+ *
+ * A visão .raw existe porque há dados que JÁ SÃO códigos do modelo: a saída de
+ * um modelo que alimenta outro, ou uma imagem de sensor já em int8. Passá-los
+ * pela visão padrão os requantiza. Medido no micro speech: a requantização das
+ * features corrompeu 39% da entrada do classificador (767 de 1960 bytes), com
+ * quase tudo saturado em ±127/−128 -- e o rótulo ainda saiu certo, escondendo a
+ * corrupção (ver RESULTADOS.md, 5.4.13).
+ *
+ * DECISÃO: a escolha é EXPLÍCITA, por quem escreve o código. O compilador NÃO
+ * decide pela visão a partir do tipo do valor atribuído. Se decidisse, no
+ * hello_world_int8 (scale 0,0244801, zero_point −128):
+ *
+ *     modelo.input[0] = {1.0};   // valor real 1,0 -> código −87
+ *     modelo.input[0] = {1};     // literal int8 -> seria lido como CÓDIGO 1
+ *
+ * Uma diferença de digitação mudaria o significado sem aviso. Com o marcador,
+ * a visão padrão SEMPRE significa valor real, qualquer que seja o tipo do
+ * literal, e .raw SEMPRE significa código.
+ *
+ * Regras da visão .raw, verificadas em tempo de compilação -- o compilador
+ * conhece tipo e tamanho de cada tensor pelo .tflite:
+ *
+ *   - o tipo do elemento do vetor precisa ser o do tensor
+ *     (int8[] para tensor int8, int16[] para tensor int16);
+ *   - quando o vetor tem tamanho fixo, precisa ter exatamente o número de
+ *     elementos do tensor;
+ *   - na leitura, a variável recebe o tipo do tensor.
+ *
+ * Mapeamento para o wrapper: escrita em .raw -> SetTensorRawInt8/Int16, leitura
+ * -> GetTensorRawInt8/Int16, escolhidas pelo tipo do tensor.
+ *
+ * O nome .raw não colide com código existente: membros são resolvidos por
+ * valor, como .rows e .cols, então um tipo do usuário com campo `raw` segue
+ * resolvendo o seu próprio.
+ * ========================================================================= */
+
+// Imagem de sensor já em int8, direto para o modelo.
+//
+// models/person_detect.tflite
+//   input [0] int8[1,96,96,1]  scale=0.00784314  zero_point=-1
+//   output[0] int8[1,2]        scale=0.00390625  zero_point=-128
+int16 exemplo_raw_imagem() {
+    detector = ai_model("models/person_detect.tflite", 136000);
+
+    imagem = {0x0b:9216};                // viria da câmera, já em int8
+    detector.input[0].raw = imagem;      // códigos entram como estão
+
+    detector.invoke();
+
+    // Leitura na visão padrão: probabilidades como valores reais.
+    p_sem_pessoa = detector.output[0][0];
+    p_pessoa     = detector.output[0][1];
+
+    // Leitura na visão .raw: os códigos int8 que o modelo produziu.
+    codigos = detector.output[0].raw;    // int8[2]
+
+    return 0;
+}
+
+// Pipeline: a saída de um modelo alimenta outro. É o micro speech completo.
+//
+// models/audio_preprocessor_int8.tflite
+//   input [0] int16[1,480]     30 ms de áudio a 16 kHz
+//   output[0] int8[40]         SEM parâmetros de quantização
+// models/micro_speech_quantized.tflite
+//   input [0] int8[1,1960]     scale=0.101716  zero_point=-128
+//   output[0] int8[1,4]        silence, unknown, yes, no
+//
+// As features saem do preprocessor como códigos int8 sem escala, e o
+// classificador as espera como códigos int8 com escala. Pela visão padrão,
+// seriam requantizadas e corrompidas. Pela .raw, passam como estão.
+int16 exemplo_raw_pipeline() {
+    pre = ai_model("models/audio_preprocessor_int8.tflite");
+    cls = ai_model("models/micro_speech_quantized.tflite");
+
+    audio = {int16(0):16000};            // 1 s de áudio, viria do microfone
+    janela = {int16(0):480};
+    features = {0:1960};                 // 49 janelas x 40 features, int8
+
+    k = 0;
+    while k < 49 {
+        // janela de 30 ms, avançando 20 ms (320 amostras) por iteração
+        i = 0;
+        while i < 480 {
+            janela[i] = audio[k * 320 + i];
+            i = i + 1;
+        }
+
+        pre.input[0].raw = janela;       // amostras int16 entram como estão
+        pre.invoke();
+        f = pre.output[0].raw;           // int8[40], sem conversão
+
+        i = 0;
+        while i < 40 {
+            features[k * 40 + i] = f[i];
+            i = i + 1;
+        }
+        k = k + 1;
+    }
+
+    cls.input[0].raw = features;         // códigos passam direto
+    cls.invoke();
+
+    // O resultado sim é lido como valor real: probabilidade de cada classe.
+    p_yes = cls.output[0][2];
+    p_no  = cls.output[0][3];
 
     return 0;
 }
@@ -347,6 +481,18 @@ int16 usa_tipo_proprio() {
 
 // e.input[0].scale = 0.5;
 //     -> erro: scale é somente leitura
+
+// q = ai_model("models/hello_world_int8.tflite");
+// q.input[0].raw = {int16(0):1};
+//     -> erro: visão .raw de tensor int8 recebeu vetor int16
+
+// q.input[0].raw = {0, 0};
+//     -> erro: tensor de entrada 0 tem 1 elemento, vetor .raw tem 2
+
+// fl = ai_model("models/hello_world_float.tflite");
+// fl.input[0].raw = {1};
+//     -> erro: visão .raw de tensor float32 recebeu vetor int8
+//        (para tensor float, use a visão padrão)
 
 // f = ai_model("models/audio_preprocessor_int8.tflite");
 //     -> DEPENDE: este modelo exige 9 custom ops (SignalRfft, SignalWindow,

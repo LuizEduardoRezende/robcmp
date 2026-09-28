@@ -166,7 +166,7 @@ compara contra um baseline **adaptado**, não idêntico.
 
 ## Seção 5.2 — Frontend e análise estática
 
-### 5.2.1 A sintaxe nativa exige apenas duas produções novas de gramática
+### 5.2.1 A sintaxe nativa exige apenas três produções novas de gramática
 
 Levantamento empírico, compilando cada forma contra o robcmp:
 
@@ -186,6 +186,10 @@ baseline       1 conflito shift/reduce
 + P1           1 conflito shift/reduce
 + P1 + P2      1 conflito shift/reduce
 ```
+
+Com a visão `.raw` (5.2.6), entra uma terceira produção, P3 — atribuição a
+propriedade depois de um índice, `obj.campo[0].prop = v`, com expressão ou
+literal de array. Medida da mesma forma: continua 1 conflito, o do baseline.
 
 **Zero conflitos novos.** O motivo é o léxico: `{ID}(\.{ID})+` faz maximal munch
 (`src/Language.l:111`), então `a.b` é sempre um único `TOK_XIDENTIFIER` e o
@@ -243,6 +247,35 @@ e aparecem no `.tflite` em `OperatorCode.custom_code`, nunca em `builtin_code`.
 **Serve para:** a análise estática precisa casar **os dois campos**. Um
 analisador que só lê `builtin_code` não enxerga o pipeline de áudio do Micro
 Speech.
+
+### 5.2.6 Visão `.raw`: a escolha entre valor real e código é explícita
+
+Resposta de sintaxe à lacuna 5.4.13. Cada tensor tem duas visões:
+`modelo.input[0]` (valores reais, com conversão automática) e
+`modelo.input[0].raw` (os códigos como o tensor os guarda, sem conversão).
+Especificado em `test/tflm/native-syntax.rob`, seção 4b, com o pipeline do
+micro speech escrito na sintaxe nativa.
+
+A alternativa descartada foi o compilador escolher a visão pelo tipo do valor
+atribuído. Ela cria uma armadilha: no `hello_world_int8`,
+`modelo.input[0] = {1.0}` seria o valor real 1,0 (código −87), mas
+`modelo.input[0] = {1}` — literal inferido como int8 — seria lido como o código
+1. Uma diferença de digitação mudaria o significado sem aviso.
+
+Com o marcador explícito, e como o compilador conhece tipo e tamanho de cada
+tensor pelo `.tflite`, a `.raw` ganha verificação em tempo de compilação: tipo
+do vetor diferente do tensor e tamanho diferente do número de elementos viram
+erro de compilação — no wrapper, esses mesmos casos só são detectados em
+runtime (devolvem −1).
+
+**Serve para:** a discussão da 5.2 sobre mover verificações para tempo de
+compilação, e como exemplo de decisão de sintaxe tomada para eliminar
+ambiguidade silenciosa.
+
+**Nota de processo:** a API crua do wrapper (`SetTensorRaw*`) foi implementada
+antes desta especificação — ordem invertida. A especificação confirmou que as
+funções existentes bastam. A regra "sintaxe antes da implementação" foi
+registrada no `CLAUDE.md` (seção 6).
 
 ---
 
