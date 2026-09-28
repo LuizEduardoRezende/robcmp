@@ -4,20 +4,28 @@
 #include "third-party/tflite-micro/tensorflow/lite/c/common.h"
 #include "third-party/tflite-micro/tensorflow/lite/micro/micro_log.h"
 #include "third-party/tflite-micro/tensorflow/lite/micro/micro_utils.h"
+#include "third-party/tflite-micro/tensorflow/lite/micro/arena_allocator/single_arena_buffer_allocator.h"
+#include "third-party/tflite-micro/tensorflow/lite/micro/memory_planner/greedy_memory_planner.h"
+#include "third-party/tflite-micro/tensorflow/lite/micro/micro_arena_constants.h"
 #include <cstring>
 #include <cstdint>
 #include <new>
 
 extern "C" {
 
-// Logging. Controlado pela build (-DTFLM_DEBUG_LOGS=1), nao por edicao de
-// arquivo. Desligado, MicroPrintf vira no-op e o compilador descarta os
+// Logging de diagnostico. Controlado pela build (-DTFLM_DEBUG_LOGS=1), nao por
+// edicao de arquivo. Desligado, TFLM_LOG vira no-op e o compilador descarta os
 // argumentos junto.
 #ifndef TFLM_DEBUG_LOGS
 #define TFLM_DEBUG_LOGS 0
 #endif
-#if !TFLM_DEBUG_LOGS
-#define MicroPrintf(...) ((void)0)
+// Logs de diagnostico usam TFLM_LOG, nunca MicroPrintf diretamente. Antes, o
+// no-op era aplicado redefinindo o proprio MicroPrintf, o que desligava junto
+// o PrintFloat -- uma funcao do usuario, nao um log de diagnostico.
+#if TFLM_DEBUG_LOGS
+#define TFLM_LOG(...) MicroPrintf(__VA_ARGS__)
+#else
+#define TFLM_LOG(...) ((void)0)
 #endif
 
 // Capacidade do resolver. E parametro de template, logo fixado quando o
@@ -46,6 +54,18 @@ struct TFLM_Instance {
 
 static TFLM_Instance g_instances[TFLM_MAX_MODELS];
 
+// Menor arena em que o TFLM consegue ao menos montar suas estruturas de
+// controle: SingleArenaBufferAllocator, GreedyMemoryPlanner (o planejador
+// padrao) e MicroAllocator, cada um com folga de alinhamento, mais o
+// alinhamento inicial da arena a 16 bytes. Abaixo disso o TFLM cai em vez de
+// devolver erro. Acima, falta de memoria vira falha controlada no
+// AllocateTensors.
+static constexpr size_t kArenaMinima =
+    sizeof(tflite::SingleArenaBufferAllocator) + alignof(tflite::SingleArenaBufferAllocator) +
+    sizeof(tflite::GreedyMemoryPlanner) + alignof(tflite::GreedyMemoryPlanner) +
+    sizeof(tflite::MicroAllocator) + alignof(tflite::MicroAllocator) +
+    tflite::MicroArenaBufferAlignment();
+
 static TFLM_Instance *instance_from_handle(uintptr_t h) {
     return reinterpret_cast<TFLM_Instance*>(h);
 }
@@ -61,8 +81,10 @@ static TFLM_Instance *instance_from_handle(uintptr_t h) {
  * Retorno: 0 = registrado, -1 = falha (handle invalido ou resolver cheio).
  * -------------------------------------------------------------------------*/
 
+// O handle aponta para a TFLM_Instance, nao para o resolver. Acessar o campo
+// explicitamente evita depender de `resolver` ser o primeiro membro da struct.
 static MutableResolver *resolver_from_handle(uintptr_t h) {
-    return reinterpret_cast<MutableResolver*>(h);
+    return h ? &instance_from_handle(h)->resolver : nullptr;
 }
 
 int8_t tflm_add_add(uintptr_t resolver_handle) {
@@ -845,7 +867,7 @@ uintptr_t tflm_create_resolver(void) {
             return reinterpret_cast<uintptr_t>(inst);
         }
     }
-    MicroPrintf("ERRO: limite de %d modelos simultaneos atingido", TFLM_MAX_MODELS);
+    TFLM_LOG("ERRO: limite de %d modelos simultaneos atingido", TFLM_MAX_MODELS);
     return 0;
 }
 
@@ -855,7 +877,7 @@ uintptr_t tflm_create_model(uintptr_t resolver_handle,
     (void)model_size;  // o tamanho do modelo vem do proprio FlatBuffer
 
     if (resolver_handle == 0 || model_data == nullptr || tensor_arena == nullptr) {
-        MicroPrintf("ERRO: argumento nulo em tflm_create_model");
+        TFLM_LOG("ERRO: argumento nulo em tflm_create_model");
         return 0;
     }
 
@@ -863,15 +885,27 @@ uintptr_t tflm_create_model(uintptr_t resolver_handle,
 
     const tflite::Model *model = tflite::GetModel(model_data);
     if (model->version() != TFLITE_SCHEMA_VERSION) {
-        MicroPrintf("ERRO: schema incompativel. Versao %d, esperada %d",
+        TFLM_LOG("ERRO: schema incompativel. Versao %d, esperada %d",
                     model->version(), TFLITE_SCHEMA_VERSION);
+        return 0;
+    }
+
+    // O TFLM coloca tres estruturas de controle dentro da propria arena, em
+    // alocacoes seguidas cujo resultado ele NAO verifica (so ha TFLITE_DCHECK,
+    // desligado em release): se a arena nao comporta as tres, o MicroAllocator
+    // e construido sobre nullptr e o programa cai. Por isso a verificacao
+    // "if (!allocator)" logo abaixo nunca disparava -- o crash vem antes.
+    // Recusamos a arena aqui, antes de chamar o TFLM.
+    if ((size_t)arena_size < kArenaMinima) {
+        TFLM_LOG("ERRO: arena de %d bytes abaixo do minimo de %u",
+                 arena_size, (unsigned)kArenaMinima);
         return 0;
     }
 
     // MicroAllocator aloca dentro da propria arena: nao usa heap.
     inst->allocator = tflite::MicroAllocator::Create(tensor_arena, arena_size);
     if (!inst->allocator) {
-        MicroPrintf("ERRO: falha ao criar MicroAllocator");
+        TFLM_LOG("ERRO: falha ao criar MicroAllocator");
         return 0;
     }
 
@@ -880,14 +914,14 @@ uintptr_t tflm_create_model(uintptr_t resolver_handle,
 
     TfLiteStatus status = inst->interpreter->AllocateTensors();
     if (status != kTfLiteOk) {
-        MicroPrintf("ERRO: AllocateTensors falhou (status %d). Arena: %d bytes, usada: %zu",
+        TFLM_LOG("ERRO: AllocateTensors falhou (status %d). Arena: %d bytes, usada: %zu",
                     status, arena_size, inst->interpreter->arena_used_bytes());
         inst->interpreter->~MicroInterpreter();
         inst->interpreter = nullptr;
         return 0;
     }
 
-    MicroPrintf("Modelo pronto. Arena: %d bytes, usada: %zu",
+    TFLM_LOG("Modelo pronto. Arena: %d bytes, usada: %zu",
                 arena_size, inst->interpreter->arena_used_bytes());
     return resolver_handle;
 }
@@ -905,29 +939,29 @@ void tflm_free_model(uintptr_t handle) {
 
 uintptr_t GetInputTensor(uintptr_t instance_handle, size_t index) {
     if (instance_handle == 0) {
-        MicroPrintf("ERRO: instance_handle nulo");
+        TFLM_LOG("ERRO: instance_handle nulo");
         return 0;
     }
     
     TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
     if (instance == nullptr || instance->interpreter == nullptr) {
-        MicroPrintf("ERRO: instance ou interpreter nulo");
+        TFLM_LOG("ERRO: instance ou interpreter nulo");
         return 0;
     }
     
     if (index >= instance->interpreter->inputs_size()) {
-        MicroPrintf("ERRO: índice %zu >= %zu", index, instance->interpreter->inputs_size());
+        TFLM_LOG("ERRO: índice %zu >= %zu", index, instance->interpreter->inputs_size());
         return 0;
     }
     
     TfLiteTensor* tensor = instance->interpreter->input(index);
     if (tensor == nullptr) {
-        MicroPrintf("ERRO: tensor nulo");
+        TFLM_LOG("ERRO: tensor nulo");
         return 0;
     }
     
     if (tensor->bytes == 0) {
-        MicroPrintf("ERRO: tensor sem dados alocados");
+        TFLM_LOG("ERRO: tensor sem dados alocados");
         return 0;
     }
     
@@ -936,24 +970,24 @@ uintptr_t GetInputTensor(uintptr_t instance_handle, size_t index) {
 
 uintptr_t GetOutputTensor(uintptr_t instance_handle, size_t index) {
     if (instance_handle == 0) {
-        MicroPrintf("ERRO: instance_handle nulo");
+        TFLM_LOG("ERRO: instance_handle nulo");
         return 0;
     }
     
     TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
     if (instance == nullptr || instance->interpreter == nullptr) {
-        MicroPrintf("ERRO: instance ou interpreter nulo");
+        TFLM_LOG("ERRO: instance ou interpreter nulo");
         return 0;
     }
     
     if (index >= instance->interpreter->outputs_size()) {
-        MicroPrintf("ERRO: índice %zu fora dos limites", index);
+        TFLM_LOG("ERRO: índice %zu fora dos limites", index);
         return 0;
     }
     
     TfLiteTensor* tensor = const_cast<TfLiteTensor*>(instance->interpreter->output(index));
     if (tensor == nullptr) {
-        MicroPrintf("ERRO: tensor de saída nulo");
+        TFLM_LOG("ERRO: tensor de saída nulo");
         return 0;
     }
     
@@ -1035,7 +1069,7 @@ static int8_t tensor_write(TfLiteTensor *t, size_t index, float value) {
             t->data.i64[index] = to_storage(t, value);
             return 0;
         default:
-            MicroPrintf("ERRO: tipo de tensor nao suportado na escrita: %d", t->type);
+            TFLM_LOG("ERRO: tipo de tensor nao suportado na escrita: %d", t->type);
             return -1;
     }
 }
@@ -1051,7 +1085,7 @@ static float tensor_read(const TfLiteTensor *t, size_t index) {
         case kTfLiteInt32:   return from_storage(t, t->data.i32[index]);
         case kTfLiteInt64:   return from_storage(t, t->data.i64[index]);
         default:
-            MicroPrintf("ERRO: tipo de tensor nao suportado na leitura: %d", t->type);
+            TFLM_LOG("ERRO: tipo de tensor nao suportado na leitura: %d", t->type);
             return 0.0f;
     }
 }
@@ -1099,6 +1133,69 @@ void GetTensorArray(uintptr_t tensor_handle, float* values, size_t max_count, in
         values[i] = tensor_read(t, i);
 }
 
+/* ---------------------------------------------------------------------------
+ * Acesso cru -- dados que ja estao na representacao do modelo.
+ *
+ * As funcoes acima convertem float <-> quantizado. Isso esta errado quando os
+ * dados ja sao os codigos que o tensor espera: saida de um modelo que alimenta
+ * outro (o pipeline do micro speech) ou dados de sensor ja em int8. Passar
+ * esses codigos pela API float os requantiza -- no micro speech, 39% da
+ * entrada do classificador era corrompida.
+ *
+ * Aqui nao ha conversao: os elementos sao copiados como estao. Por isso as
+ * funcoes sao exigentes -- o tipo do tensor precisa ser o do vetor, e o vetor
+ * precisa ter exatamente o numero de elementos do tensor. Qualquer divergencia
+ * devolve -1 sem copiar nada.
+ *
+ * Sao separadas por tipo, e nao genericas por bytes, porque a RL injeta a
+ * contagem de ELEMENTOS do vetor: uma versao por bytes, recebendo um int16[],
+ * copiaria so metade dos dados.
+ * -------------------------------------------------------------------------*/
+
+static TfLiteTensor *tensor_cru(uintptr_t handle, TfLiteType tipo, int32_t len) {
+    if (handle == 0) return nullptr;
+    TfLiteTensor *t = reinterpret_cast<TfLiteTensor*>(handle);
+    if (!t->data.data || !t->dims) return nullptr;
+    if (t->type != tipo) {
+        TFLM_LOG("ERRO: tensor de tipo %d, acesso cru pediu tipo %d", t->type, tipo);
+        return nullptr;
+    }
+    if (len != tflite::ElementCount(*t->dims)) {
+        TFLM_LOG("ERRO: vetor de %d elementos, tensor tem %d",
+                 len, tflite::ElementCount(*t->dims));
+        return nullptr;
+    }
+    return t;
+}
+
+int8_t SetTensorRawInt8(uintptr_t tensor_handle, const int8_t *values, int32_t values_len) {
+    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt8, values_len);
+    if (!t || !values) return -1;
+    memcpy(t->data.int8, values, (size_t)values_len * sizeof(int8_t));
+    return 0;
+}
+
+int8_t GetTensorRawInt8(uintptr_t tensor_handle, int8_t *values, int32_t values_len) {
+    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt8, values_len);
+    if (!t || !values) return -1;
+    memcpy(values, t->data.int8, (size_t)values_len * sizeof(int8_t));
+    return 0;
+}
+
+int8_t SetTensorRawInt16(uintptr_t tensor_handle, const int16_t *values, int32_t values_len) {
+    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt16, values_len);
+    if (!t || !values) return -1;
+    memcpy(t->data.i16, values, (size_t)values_len * sizeof(int16_t));
+    return 0;
+}
+
+int8_t GetTensorRawInt16(uintptr_t tensor_handle, int16_t *values, int32_t values_len) {
+    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt16, values_len);
+    if (!t || !values) return -1;
+    memcpy(values, t->data.i16, (size_t)values_len * sizeof(int16_t));
+    return 0;
+}
+
 // Função para alocar e retornar um array preenchido com os valores do tensor
 
 size_t GetInputTensorCount(uintptr_t instance_handle) {
@@ -1115,19 +1212,19 @@ size_t GetOutputTensorCount(uintptr_t instance_handle) {
 
 int8_t InvokeInterpreter(uintptr_t instance_handle) {
     if (instance_handle == 0) {
-        MicroPrintf("ERRO: instance_handle nulo");
+        TFLM_LOG("ERRO: instance_handle nulo");
         return -1;
     }
 
     TFLM_Instance *instance = instance_from_handle(instance_handle);
     if (instance->interpreter == nullptr) {
-        MicroPrintf("ERRO: modelo nao inicializado");
+        TFLM_LOG("ERRO: modelo nao inicializado");
         return -1;
     }
 
     TfLiteStatus status = instance->interpreter->Invoke();
     if (status != kTfLiteOk) {
-        MicroPrintf("ERRO na inferencia: status %d", status);
+        TFLM_LOG("ERRO na inferencia: status %d", status);
         return -1;
     }
     return 0;
@@ -1135,7 +1232,7 @@ int8_t InvokeInterpreter(uintptr_t instance_handle) {
 
 // Função simples para imprimir float com quebras de linha
 void PrintFloat(float value) {
-    MicroPrintf("\n%.6f\n", value);
+    MicroPrintf("%f", value);
 }
 
 } // extern "C"

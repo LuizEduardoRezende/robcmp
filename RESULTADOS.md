@@ -345,6 +345,236 @@ do `.o` do wrapper **induz a conclusão oposta à verdadeira**. A métrica váli
 o firmware linkado. Vale declarar isso explicitamente no protocolo experimental,
 porque um revisor pode questionar por que a biblioteca ficou maior.
 
+### 5.4.6 Primeira execução real — a refatoração funciona
+
+Até 2026-09-28 nada havia sido executado. Validação em duas camadas, para
+isolar a origem de uma falha:
+
+**Camada 1 — teste C++ direto contra o wrapper** (sem o robcmp no meio). Varre
+x em [0, 2π] em 41 pontos e compara a predição com `sin(x)`:
+
+| Modelo | Erro máximo contra `sin(x)` |
+|---|---|
+| `hello_world_float` | 0,0394 |
+| `hello_world_int8` | 0,1161 (passa pela quantização unificada no B6) |
+
+Também exercitados e aprovados: 10 ciclos create/free (slots são reciclados),
+limite de 4 modelos simultâneos com falha controlada no 5º, e handles nulos em
+todas as funções sem crash. Os três suspeitos listados no roteiro — `in_use`
+não resetado, alinhamento do `interpreter_storage`, conversão de handle —
+ficam descartados.
+
+**Camada 2 — programa RL com `use ai.tflm`**, compilado pelo robcmp para o
+host (sem `-a`, como o TCC fazia), linkado com o wrapper e a
+`libtensorflow-microlite.a`. Saída: `sin(1,57)` → 0,995514, `sin(0)` → 0,026405.
+
+### 5.4.7 `TF_LITE_STATIC_MEMORY` altera o layout de structs
+
+O TFLM compila com `-DTF_LITE_STATIC_MEMORY`, e isso muda o tamanho de
+`TfLiteTensor`:
+
+```
+sizeof(TfLiteTensor) sem o define = 112 bytes
+sizeof(TfLiteTensor) com o define =  64 bytes
+```
+
+Um wrapper compilado sem o define lê `data`, `type` e `params` em offsets
+errados: lixo silencioso, sem erro de compilação ou de linkedição. O Makefile do
+TCC já passava a flag; **o Makefile da Etapa 4 precisa herdá-la**. Flags do
+wrapper usadas na validação:
+`-std=c++17 -DTF_LITE_STATIC_MEMORY -fno-rtti -fno-exceptions -ffunction-sections -fdata-sections`.
+
+### 5.4.8 `PrintFloat` não imprimia nada — corrigido
+
+O wrapper desligava os logs redefinindo o próprio `MicroPrintf` como no-op, e o
+`PrintFloat` — função do usuário, não log de diagnóstico — era implementado com
+`MicroPrintf`. Com logs desligados, `PrintFloat` sumia. No TCC era igual (o
+`kernel_config.h` vinha com logs desligados); os testes de lá dependiam só do
+código de saída, e por isso ninguém notou.
+
+Correção: logs de diagnóstico passaram a usar um macro próprio, `TFLM_LOG`, e
+`MicroPrintf` ficou intacto.
+
+### 5.4.9 Literal decimal corrompe o modelo embutido no modo `ai.tflm`
+
+Buraco de tipagem na RL, fora do escopo de TinyML mas com efeito direto sobre
+ele. Um literal com valor acima de 127 em decimal é inferido como `int16`:
+
+```
+{0x1c, 0x0, 0xff}  ->  [3 x i8]
+{28, 0, 255}       ->  [3 x i16]
+```
+
+e o vetor `int16` é passado a um parâmetro `uint8[]` **sem conversão e sem
+aviso** — a função recebe o ponteiro cru e lê os bytes intercalados com zeros.
+Quem embutir os bytes de um `.tflite` em decimal obtém um modelo corrompido em
+silêncio. Em hexadecimal, como o TCC fazia, funciona.
+
+**Serve para:** um argumento a favor da sintaxe nativa (5.2) — nela o compilador
+lê o `.tflite` pelo caminho, e o usuário nunca escreve esses bytes. Registrar
+como limitação do modo biblioteca. Não corrigido: é o verificador de tipos do
+compilador base.
+
+### 5.4.10 Alinhamento do modelo e da arena depende de heurística do backend
+
+O TFLM exige arena alinhada a 16 bytes (`MicroArenaBufferAlignment()`), e lê
+pesos `float` direto do buffer do modelo. Os globais que a RL emite para o
+modelo e a arena **não têm atributo `align`** no IR. Medido nos objetos, ambos
+saem alinhados a 16 em x86_64 e em stm32f1 — porque o backend LLVM aplica esse
+alinhamento a arrays grandes por conta própria, não por garantia da linguagem.
+
+**Serve para:** risco a verificar na Etapa 4. No Cortex-M4, carga `float`
+desalinhada (VLDR) gera falha de barramento; se algum dia o backend deixar de
+alinhar, o sintoma aparece só no hardware.
+
+### 5.4.11 Teste diferencial: wrapper idêntico ao TFLM puro nos cinco modelos
+
+Critério: para a mesma entrada, o wrapper e o TFLM usado diretamente produzem
+**os mesmos bytes** de saída. Separa "o wrapper está correto" de "o modelo
+acerta", verificado à parte. Reproduzir: `make -C test/tflm check`.
+
+**Escopo — importante:** o teste diferencial é feito em C++
+(`test/tflm/validate_wrapper.cpp`), chamando as funções `extern "C"` do wrapper
+diretamente. Ele prova que o wrapper está correto, mas **não** exercita o código
+que o robcmp gera para chamá-lo (passagem de vetores com tamanho injetado,
+conversões de tipo da RL, laços). O caminho RL completo foi validado só para o
+`hello_world_float`. Os demais modelos em RL dependem do item 2.7.
+
+| Modelo | Diferencial | Resultado do modelo |
+|---|---|---|
+| hello_world_float | — | erro máximo 0,0394 contra `sin(x)`, 41 pontos |
+| hello_world_int8 | — | erro máximo 0,1161 |
+| spam | idêntico | frase legítima: 97,6% legítima; spam: 91,7% spam |
+| person_detect | idêntico | com pessoa: 94,1%; sem pessoa: 72,3% |
+| micro_speech (preprocessor) | **40/40 features idênticas ao teste oficial** | valida os 9 custom ops |
+| micro_speech (pipeline) | — | "yes" → yes; "no" → no |
+
+No person_detect, a imagem de entrada (já em int8 quantizado) passa pela API
+float — desquantizada no teste e requantizada no wrapper — e a ida e volta
+reconstrói os 9216 bytes exatos.
+
+### 5.4.12 Arena subdimensionada derruba o TFLM — janelas de crash
+
+O TFLM não trata falta de memória em dois pontos, e cai em vez de devolver erro:
+
+1. **`MicroAllocator::Create`**: coloca três estruturas de controle na arena
+   (`SingleArenaBufferAllocator`, `GreedyMemoryPlanner`, `MicroAllocator`) em
+   alocações seguidas, sem verificar o resultado — só há `TFLITE_DCHECK`,
+   desligado em release. Arena pequena demais: objeto construído sobre `nullptr`.
+2. **`AllocatePOD`** (`tensorflow/lite/core/api/flatbuffer_conversions.h:47`),
+   usado por **todo parser de operador**:
+   ```cpp
+   void* allocated_memory = this->Allocate(sizeof(T), alignof(T));
+   return new (allocated_memory) T();   // T() zera a struct no endereco 0
+   ```
+   O parser até verifica `TF_LITE_ENSURE(params != nullptr)`, mas depois do
+   `T()` já ter escrito no endereço nulo.
+
+Mapa medido no `hello_world`, cada tamanho num processo isolado:
+
+| Arena | Resultado |
+|---|---|
+| 0 – 864 B | falha controlada |
+| **872 – 976 B** | **crash dentro do TFLM** |
+| 984 – 1600 B | falha controlada |
+| 1608 B + | funciona |
+
+O wrapper passou a recusar arenas abaixo do mínimo das estruturas de controle
+(`kArenaMinima`, calculado a partir dos `sizeof` reais), o que cobre o ponto 1.
+O ponto 2 não é interceptável de fora: a janela de 872–976 B continua derrubando
+o programa. A correção é uma linha no `AllocatePOD`
+(`if (!allocated_memory) return nullptr;`), candidata a PR no TFLM. O submódulo
+não foi alterado.
+
+O wrapper do TCC tinha o mesmo problema: sua verificação `if (!allocator)`
+nunca disparava, porque o crash acontece antes dela.
+
+**Serve para:** o argumento mais forte a favor de derivar a arena em tempo de
+compilação (5.2). Arena mal dimensionada é o erro de configuração mais comum em
+TinyML, e o TFLM não o reporta de forma confiável — em certas faixas, o programa
+simplesmente cai. Deixa de ser conveniência e passa a ser **segurança**.
+
+### 5.4.13 Lacuna na API: não há caminho para dados já quantizados
+
+A API do wrapper só aceita e devolve `float`, e quantiza na escrita. No pipeline
+do micro speech, as features saem do preprocessor como códigos `int8` **sem**
+parâmetros de quantização, e o classificador as espera como `int8` **com** scale
+0,101716. O exemplo oficial copia os bytes crus. Pela API float, as features são
+requantizadas:
+
+| Áudio | Bytes da entrada alterados | Saturados em ±127/−128 |
+|---|---|---|
+| "yes" | 767 de 1960 (39%) | 1893 |
+| "no" | 152 de 1960 | 1946 |
+
+O rótulo ainda saiu certo — um espectrograma "binarizado" basta para distinguir
+yes de no —, o que **escondia** a corrupção até a medição direta. Com outro
+áudio ou outro modelo, erraria.
+
+Casos afetados: pipeline entre modelos (saída de um é entrada do outro) e dados
+de sensor já na representação do modelo (imagem int8).
+
+**Resolvido** com acesso cru por tipo, sem conversão:
+
+```c
+int8_t SetTensorRawInt8 (uintptr_t, const int8_t*,  int32_t len);
+int8_t GetTensorRawInt8 (uintptr_t,       int8_t*,  int32_t len);
+int8_t SetTensorRawInt16(uintptr_t, const int16_t*, int32_t len);
+int8_t GetTensorRawInt16(uintptr_t,       int16_t*, int32_t len);
+```
+
+Exigem tipo do tensor igual ao do vetor e tamanho igual ao número de elementos
+do tensor; senão devolvem −1 **sem copiar nada** (testado). Com elas, o pipeline
+do micro speech roda como o exemplo oficial, e a imagem do person_detect entra
+direto, sem a ida e volta pelo float.
+
+Duas decisões de desenho, ambas por evidência:
+
+- **Uma cópia crua tensor-a-tensor não resolveria o micro speech**: o
+  preprocessor produz 40 features por chamada, que vão para posições diferentes
+  dos 1960 da entrada do classificador. Os tamanhos diferem. O que resolve é
+  leitura/escrita crua por vetor, com o programa montando o buffer.
+- **Separadas por tipo, não genéricas por bytes**: a RL injeta a contagem de
+  *elementos* do vetor, não de bytes. Uma versão por bytes recebendo `int16[]`
+  copiaria só metade dos dados — e o buraco de tipagem (5.4.9) deixaria passar
+  sem aviso.
+
+Na RL, um vetor `int16` se declara por conversão explícita: `{int16(0):480}`.
+Literais inteiros pequenos inferem `int8`.
+
+**Serve para:** a 5.2 — `classifier.input[0] = pre.output[0]` na sintaxe nativa
+precisa copiar crus quando os tipos batem. Com os tipos conhecidos em tempo de
+compilação, o compilador sabe escolher entre cópia crua e conversão.
+
+### 5.4.14 `use` não exporta variáveis globais nesta branch
+
+Um arquivo incluído por `use` tem suas declarações de função visíveis — é o que
+faz `use ai.tflm` funcionar —, mas **não** suas variáveis globais:
+`Symbol dados_modelo not found`. Mesmo sintoma do `use math.float` quebrado
+visto no início (constante `NAN` não encontrada). Consequência prática: os
+bytes de um modelo não podem ficar num módulo separado; o gerador
+`test/tflm/tflite_to_rob.py` insere o vetor no próprio programa. Não
+investigado: é comportamento da base `cola2025`.
+
+### 5.4.15 Kernels especializados reduziriam o binário
+
+O teste oficial do person_detect registra variantes int8 dos kernels
+(`Register_CONV_2D_INT8()`, `Register_SOFTMAX_INT8()`,
+`Register_AVERAGE_POOL_2D_INT8()`). O wrapper usa o registro genérico
+(`AddConv2D()`), que inclui também o caminho float. Mesmo resultado numérico,
+binário maior. Com o tipo dos tensores conhecido em tempo de compilação (5.2),
+o compilador pode escolher a variante especializada.
+
+**Serve para:** medição de tamanho de binário na 5.4 e argumento adicional para
+a análise estática.
+
+### 5.4.16 Defeito latente corrigido: acesso ao resolver pelo handle
+
+`resolver_from_handle` fazia `reinterpret_cast<MutableResolver*>(h)`, mas o
+handle aponta para a `TFLM_Instance`. Funcionava só porque `resolver` era o
+primeiro campo da struct. Reordená-la faria as 119 funções `tflm_add_*`
+escreverem no lugar errado, sem erro. Corrigido para `&instance->resolver`.
+
 ---
 
 ## Registro de modificações
@@ -507,7 +737,7 @@ Resultado: 2355 → 1387 linhas (−41%), 99 → 119 kernels, heap zerado.
 
 ---
 
-### ⬜ Etapa 2 — Validação (PRÓXIMA)
+### 🔶 Etapa 2 — Validação (EM ANDAMENTO)
 
 **Situação crítica a registrar: nada foi executado até aqui.** Toda a
 verificação da Etapa 1 foi em nível de compilação e símbolos. A
@@ -517,13 +747,30 @@ Ordem sugerida, do menor risco para o maior:
 
 | # | Tarefa | Por quê nesta ordem |
 |---|---|---|
-| 2.1 | Compilar `libtensorflow-microlite.a` (x86_64) | pré-requisito de tudo |
-| 2.2 | Linkar e rodar `hello_world_float` | menor modelo: 1 kernel, 1 elemento de entrada e saída, sem quantização |
-| 2.3 | Rodar `hello_world_int8` | primeiro a exercitar a quantização unificada no B6 |
-| 2.4 | Rodar `spam` | entrada `int32`, saída `float32` — tipos diferentes nas duas pontas |
-| 2.5 | Rodar `person_detect` | 5 kernels, entrada de 9216 elementos |
-| 2.6 | Rodar `micro_speech` + `audio_preprocessor` | exercita os 9 custom ops novos e o pipeline de dois estágios |
+| 2.1 | Compilar `libtensorflow-microlite.a` (x86_64) | **feito** — 2,3 MB, `gen/linux_x86_64_default_gcc/lib/` |
+| 2.2 | Linkar e rodar `hello_world_float` | **feito** — camadas 1 e 2 passam (ver 5.4.6) |
+| 2.3 | Rodar `hello_world_int8` | **feito** — erro máximo 0,1161 |
+| 2.4 | Rodar `spam` | **feito** — idêntico ao TFLM puro (5.4.11) |
+| 2.5 | Rodar `person_detect` | **feito** — idêntico ao TFLM puro |
+| 2.6 | Rodar `micro_speech` + `audio_preprocessor` | **feito** — preprocessor 40/40; expôs a lacuna 5.4.13 |
 | 2.7 | Adaptar os 5 `.rob` de teste do TCC à API nova | base da comparação retroativa da 5.4 |
+| 2.8 | Acrescentar à API caminho para dados já quantizados | **feito** — `SetTensorRaw*`/`GetTensorRaw*` (5.4.13) |
+| 2.9 | Correção do `AllocatePOD` | **adiado** — ver abaixo |
+
+Sobre o 2.9: o `flatbuffer_conversions.h` é copiado pelo TFLM do repositório
+principal do TensorFlow (`ci/tflite_files.txt`), então a correção teria de ir
+para `tensorflow/tensorflow`, não para o TFLM — um PR no TFLM seria sobrescrito
+na próxima sincronização. O bug segue presente no `master` do TensorFlow. É
+comportamento indefinido pelo padrão C++ (CWG 1748: *placement new* sobre nulo),
+e a correção é uma linha. Não bloqueia nada: só ocorre com arena mal
+dimensionada numa faixa estreita. Adiado por custo (CLA, revisão lenta num
+repositório enorme); o valor para a dissertação — o argumento de segurança —
+já está medido.
+
+**Prioridade do 2.7:** é o único item que valida o caminho RL dos modelos além
+do `hello_world`. Não é detalhe.
+
+Tudo roda com `make -C test/tflm check` (camadas 1 e 2).
 
 Comando para 2.1:
 

@@ -208,6 +208,17 @@ int8_t tflm_add_window(uintptr_t resolver_handle);
 // Função para obter um tensor completo como array
 void GetTensorArray(uintptr_t tensor_handle, float* values, size_t max_count, int32_t values_len);
 
+/* Acesso cru, sem conversao float <-> quantizado. Para dados que ja estao na
+ * representacao do modelo: saida de um modelo que alimenta outro, ou dados de
+ * sensor ja em int8. O tipo do tensor precisa ser o do vetor e o vetor precisa
+ * ter exatamente o numero de elementos do tensor; senao devolve -1 sem copiar.
+ * Retorno: 0 = copiado, -1 = recusado.
+ */
+int8_t SetTensorRawInt8(uintptr_t tensor_handle, const int8_t* values, int32_t values_len);
+int8_t GetTensorRawInt8(uintptr_t tensor_handle, int8_t* values, int32_t values_len);
+int8_t SetTensorRawInt16(uintptr_t tensor_handle, const int16_t* values, int32_t values_len);
+int8_t GetTensorRawInt16(uintptr_t tensor_handle, int16_t* values, int32_t values_len);
+
 // Função para definir um tensor completo a partir de um array
 void SetTensorArray(uintptr_t tensor_handle, const float* values, size_t count, int32_t values_len);
 

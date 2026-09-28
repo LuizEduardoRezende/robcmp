@@ -238,6 +238,24 @@ void GetTensorArray(uint64 tensor_handle, float[] values, uint64 max_count);
 
 
 // ---------------------------------------------------------------------------
+// Acesso cru -- sem conversão float <-> quantizado
+//
+// Para dados que já estão na representação do modelo: a saída de um modelo que
+// alimenta outro (pipeline), ou dados de sensor já em int8. Pela API float
+// acima, esses códigos seriam requantizados e corrompidos.
+//
+// O vetor precisa ter exatamente o número de elementos do tensor, e o tipo
+// precisa bater (int8[] para tensor int8, int16[] para tensor int16).
+// Retorno: 0 = copiado, -1 = recusado, sem copiar nada.
+// ---------------------------------------------------------------------------
+
+int8 SetTensorRawInt8(uint64 tensor_handle, int8[] values);
+int8 GetTensorRawInt8(uint64 tensor_handle, int8[] values);
+int8 SetTensorRawInt16(uint64 tensor_handle, int16[] values);
+int8 GetTensorRawInt16(uint64 tensor_handle, int16[] values);
+
+
+// ---------------------------------------------------------------------------
 // Utilitário
 // ---------------------------------------------------------------------------
 
