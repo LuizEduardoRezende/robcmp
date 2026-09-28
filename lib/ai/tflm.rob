@@ -56,7 +56,7 @@ void tflm_free_model(uint64 handle);
 // ---------------------------------------------------------------------------
 
 // Executa a inferência. Devolve 0 em caso de sucesso, -1 em caso de falha.
-int8 InvokeInterpreter(uint64 instance_handle);
+int8 tflm_invoke(uint64 model_handle);
 
 
 // ---------------------------------------------------------------------------
@@ -204,62 +204,68 @@ int8 tflm_add_ethos_u(uint64 resolver_handle);
 
 // ---------------------------------------------------------------------------
 // Acesso aos tensores
-// ---------------------------------------------------------------------------
-
-uint64 GetInputTensor(uint64 instance_handle, uint64 index);
-uint64 GetOutputTensor(uint64 instance_handle, uint64 index);
-
-uint64 GetInputTensorCount(uint64 instance_handle);
-uint64 GetOutputTensorCount(uint64 instance_handle);
-
-uint64 GetTensorSize(uint64 tensor_handle);
-
-
-// ---------------------------------------------------------------------------
-// Escrita nos tensores de entrada
 //
-// A conversão float -> quantizado é automática, usando o scale e o zero_point
-// do próprio modelo:  q = round(f/scale) + zero_point
-// ---------------------------------------------------------------------------
-
-void SetTensorValue(uint64 tensor_handle, uint64 index, float value);
-void SetTensorArray(uint64 tensor_handle, float[] values, uint64 count);
-void SetTensorFromIntArray(uint64 tensor_handle, int16[] values, uint64 count);
-
-
-// ---------------------------------------------------------------------------
-// Leitura dos tensores de saída
+// Cada tensor tem duas visões, como na sintaxe nativa:
 //
-// Desquantização automática:  f = scale * (q - zero_point)
+//   valores reais  tflm_set_value/values, tflm_get_value/values
+//                  conversão automática com o scale e o zero_point do modelo:
+//                  q = round(v/scale) + zero_point  e  v = scale * (q - zero_point)
+//
+//   códigos crus   tflm_set_raw_*, tflm_get_raw_*
+//                  sem conversão, para dados que já estão na representação do
+//                  modelo: a saída de um modelo que alimenta outro, ou dados de
+//                  sensor já em int8
+//
+// Correspondência com a sintaxe nativa:
+//   tflm_input(m, i)            m.input[i]
+//   tflm_set_values(t, v)       m.input[i] = v
+//   tflm_get_values(t, v)       v = m.output[i]
+//   tflm_set_value(t, j, x)     m.input[i][j] = x
+//   tflm_get_value(t, j)        x = m.output[i][j]
+//   tflm_set_raw_int8(t, v)     m.input[i].raw = v
+//   tflm_get_raw_int8(t, v)     v = m.output[i].raw
+//   tflm_tensor_size(t)         m.input[i].size
 // ---------------------------------------------------------------------------
 
-float GetTensorAsFloat(uint64 tensor_handle, uint64 index);
-void GetTensorArray(uint64 tensor_handle, float[] values, uint64 max_count);
+// Tensor de entrada ou de saída de índice `index`. Devolve 0 se o índice não
+// existir no modelo.
+uint64 tflm_input(uint64 model_handle, uint64 index);
+uint64 tflm_output(uint64 model_handle, uint64 index);
+
+// Quantidade de tensores de entrada e de saída do modelo.
+uint64 tflm_input_count(uint64 model_handle);
+uint64 tflm_output_count(uint64 model_handle);
+
+// Número de elementos do tensor.
+uint64 tflm_tensor_size(uint64 tensor_handle);
 
 
-// ---------------------------------------------------------------------------
-// Acesso cru -- sem conversão float <-> quantizado
-//
-// Para dados que já estão na representação do modelo: a saída de um modelo que
-// alimenta outro (pipeline), ou dados de sensor já em int8. Pela API float
-// acima, esses códigos seriam requantizados e corrompidos.
-//
-// O vetor precisa ter exatamente o número de elementos do tensor, e o tipo
-// precisa bater (int8[] para tensor int8, int16[] para tensor int16).
+// Valores reais, um elemento. Índice fora do tensor: a escrita é ignorada e a
+// leitura devolve 0.
+void tflm_set_value(uint64 tensor_handle, uint64 index, float value);
+float tflm_get_value(uint64 tensor_handle, uint64 index);
+
+// Valores reais, o tensor inteiro. O vetor precisa ter exatamente o número de
+// elementos do tensor. Retorno: 0 = copiado, -1 = recusado, sem copiar nada.
+int8 tflm_set_values(uint64 tensor_handle, float[] values);
+int8 tflm_get_values(uint64 tensor_handle, float[] values);
+
+
+// Códigos crus, o tensor inteiro. O tipo do vetor precisa ser o do tensor
+// (int8[] para tensor int8, int16[] para tensor int16) e o vetor precisa ter
+// exatamente o número de elementos do tensor.
 // Retorno: 0 = copiado, -1 = recusado, sem copiar nada.
-// ---------------------------------------------------------------------------
-
-int8 SetTensorRawInt8(uint64 tensor_handle, int8[] values);
-int8 GetTensorRawInt8(uint64 tensor_handle, int8[] values);
-int8 SetTensorRawInt16(uint64 tensor_handle, int16[] values);
-int8 GetTensorRawInt16(uint64 tensor_handle, int16[] values);
+int8 tflm_set_raw_int8(uint64 tensor_handle, int8[] values);
+int8 tflm_get_raw_int8(uint64 tensor_handle, int8[] values);
+int8 tflm_set_raw_int16(uint64 tensor_handle, int16[] values);
+int8 tflm_get_raw_int16(uint64 tensor_handle, int16[] values);
 
 
 // ---------------------------------------------------------------------------
 // Utilitário
 // ---------------------------------------------------------------------------
 
-void PrintFloat(float value);
+void tflm_print_float(float value);
 
 int8 main(){
     return 0;

@@ -95,7 +95,12 @@ int16 exemplo_minimo() {
     // Aqui: tensor de entrada 0 recebe o vetor inteiro.
     classifier.input[0] = {1.57};
 
-    classifier.invoke();
+    // DECISÃO: invoke() devolve status, int8 -- 0 = sucesso, -1 = falha. A
+    // inferência pode falhar, e antes a falha era capturada pelo wrapper e
+    // descartada num log. Mapeia em tflm_invoke.
+    if classifier.invoke() != 0 {
+        return 1;
+    }
 
     // O tipo de `saida` vem do .tflite: float32. O compilador só sabe isso
     // porque leu o modelo na fase de elaboração prévia.
@@ -230,8 +235,8 @@ int16 exemplo_elemento_e_vetor() {
  *     elementos do tensor;
  *   - na leitura, a variável recebe o tipo do tensor.
  *
- * Mapeamento para o wrapper: escrita em .raw -> SetTensorRawInt8/Int16, leitura
- * -> GetTensorRawInt8/Int16, escolhidas pelo tipo do tensor.
+ * Mapeamento para o wrapper: escrita em .raw -> tflm_set_raw_int8/int16, leitura
+ * -> tflm_get_raw_int8/int16, escolhidas pelo tipo do tensor.
  *
  * O nome .raw não colide com código existente: membros são resolvidos por
  * valor, como .rows e .cols, então um tipo do usuário com campo `raw` segue
@@ -355,7 +360,7 @@ int16 exemplo_multiplos_tensores() {
     contagem  = detector.output[3][0];
 
     // EM ABERTO: expor a contagem de tensores? Ex.: detector.input.count
-    // Mapeia direto em GetInputTensorCount/GetOutputTensorCount, que o wrapper
+    // Mapeia direto em tflm_input_count/tflm_output_count, que o wrapper
     // já tem. Útil sobretudo para código genérico.
 
     return 0;
@@ -443,7 +448,7 @@ int16 usa_tipo_proprio() {
 // 7c. Modo biblioteca padrão (ai.tflm) continua funcionando.
 //
 // As duas formas coexistem, conforme a seção 6. O modo biblioteca usa
-// InitializeInterpreter/GetInputTensor/... diretamente, com o modelo embutido
+// InitializeInterpreter/tflm_input/... diretamente, com o modelo embutido
 // como array de bytes. Não é substituído pela sintaxe nativa.
 
 
@@ -531,10 +536,6 @@ int16 usa_tipo_proprio() {
 
 /* =========================================================================
  * 9. Decisões ainda em aberto
- *
- * - invoke() devolve status? A inferência pode falhar (arena insuficiente,
- *   tensor não alocado). Hoje InvokeInterpreter é void e a falha passa
- *   despercebida. Sugestão: devolver código de erro ou bool.
  *
  * - input.count / output.count existem?
  *

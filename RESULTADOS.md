@@ -162,6 +162,76 @@ Ganho adicional de legibilidade: o modo biblioteca escrevia
 compara contra um baseline **adaptado**, não idêntico.
 
 
+### 5.1.7 API final: legado removido, nomes que espelham a sintaxe nativa
+
+Com a compatibilidade com a API do TCC já abandonada (5.1.6), o legado foi
+removido por completo:
+
+- `SetTensorFromIntArray`: obsoleta. A escrita crua a substitui, com verificação
+  de tipo e tamanho — a ausência dessas verificações é o que produziu o bug do
+  person detection do TCC (5.4.18).
+- O `count` explícito de `SetTensorArray`/`GetTensorArray`: o usuário escrevia
+  o tamanho e a RL injetava o tamanho real ao lado. Se divergissem, a cópia saía
+  do vetor. Agora vale só o tamanho injetado, que precisa ser exatamente o
+  número de elementos do tensor.
+- Os nomes em PascalCase do TCC, que conviviam com os `tflm_` novos.
+
+A API resultante espelha a sintaxe nativa um para um:
+
+| Biblioteca (`ai.tflm`) | Sintaxe nativa |
+|---|---|
+| `tflm_input(m, i)` / `tflm_output(m, i)` | `m.input[i]` / `m.output[i]` |
+| `tflm_invoke(m)` | `m.invoke()` |
+| `tflm_set_values(t, v)` / `tflm_get_values(t, v)` | `m.input[i] = v` / `v = m.output[i]` |
+| `tflm_set_value(t, j, x)` / `tflm_get_value(t, j)` | `m.input[i][j] = x` / `x = m.output[i][j]` |
+| `tflm_set_raw_int8(t, v)` / `tflm_get_raw_int8(t, v)` | `m.input[i].raw = v` / `v = m.output[i].raw` |
+| `tflm_tensor_size(t)` | `m.input[i].size` |
+
+**Serve para:** o argumento de que a sintaxe nativa é açúcar sobre o modo
+biblioteca (5.1.6) deixa de ser só conceitual — a correspondência é literal,
+função a função.
+
+### 5.1.8 Segunda regressão do B6, corrigida: verificação de limites
+
+A unificação da conversão de tipos perdeu a verificação de índice que o wrapper
+do TCC tinha (`if (index >= tensor_size) return 0.0f`). Um índice além do tensor
+escreveria na arena. Corrigido no ponto único de despacho (`tensor_write`/
+`tensor_read`), onde passa a valer para todas as funções; testado em
+`validate_wrapper.cpp`.
+
+Com esta e a 5.4.17, o B6 introduziu duas regressões, ambas achadas ao portar os
+testes do TCC e compará-los com a semântica original. Lição de método: unificar
+código duplicado exige comparar o comportamento de CADA cópia, inclusive as
+verificações de borda, não só o caminho principal.
+
+### 5.1.9 Handles de 32 bits no Cortex-M: toda a API quebraria no hardware
+
+A RL declara handles e índices como `uint64`. O wrapper do TCC os recebia como
+`uintptr_t` e `size_t`. No x86_64 os três têm 64 bits e coincidem por acaso. No
+Cortex-M, `uintptr_t` e `size_t` têm 32:
+
+```
+RL  (robcmp -a stm32f1):  declare i64 @GetInputTensor(i64, i64)
+C   (Cortex-M4):          define  i32 @GetInputTensor(i32, i32)
+```
+
+Pelo AAPCS, um argumento de 64 bits ocupa um par de registradores. A RL põe o
+handle em r0:r1 e o índice em r2:r3; o C lê o índice de r1 — a metade alta do
+handle, sempre zero. `GetInputTensor(h, 1)` devolveria sempre o tensor 0, e o
+retorno chegaria truncado. Afetava todas as funções com handle, incluindo as
+119 `tflm_add_*`. Nenhum erro de compilação nem de linkedição: só resultado
+errado no STM32.
+
+Corrigido usando `uint64_t` no C. Criado `test/tflm/check_abi.py`, parte do
+`make check`: gera um programa RL que chama as 137 funções da fachada e um C++
+que chama as do header, compila os dois para LLVM IR em x86_64 e Cortex-M, e
+compara as assinaturas. Resultado: **0 divergências de tipo nos dois alvos**.
+A regra foi registrada no `CLAUDE.md`, seção 6.
+
+**Serve para:** a Etapa 4. Sem essa correção, a primeira execução no STM32
+produziria resultados errados sem nenhuma pista da causa. E como argumento
+metodológico: o TCC foi validado só em x86_64, onde esse defeito é invisível.
+
 ---
 
 ## Seção 5.2 — Frontend e análise estática
@@ -276,6 +346,22 @@ ambiguidade silenciosa.
 antes desta especificação — ordem invertida. A especificação confirmou que as
 funções existentes bastam. A regra "sintaxe antes da implementação" foi
 registrada no `CLAUDE.md` (seção 6).
+
+### 5.2.7 O robcmp marca `zeroext` em retornos inteiros com sinal
+
+Achado pelo `check_abi.py`. Em toda função que devolve `int8`, a RL declara
+`zeroext i8` e o C (`int8_t`, com sinal) define `signext i8`. O atributo diz ao
+backend que o chamador pode supor os bits altos zerados; quando o wrapper
+devolve −1, eles não estão.
+
+Testado: `r = tflm_invoke(0)` (que devolve −1) comparado com `!= 0`, `== -1` e
+`< 0` — as três comparações acertam, porque o robcmp compara em `i8` e o backend
+olha só os 8 bits baixos. O risco é latente: aparece quando o valor é ampliado
+e o backend dispensa uma extensão confiando no `zeroext`.
+
+A causa é do compilador, não do wrapper: o `int8` da RL é com sinal e deveria
+gerar `signext`. **Para a Etapa 3**: corrigir a escolha do atributo por
+sinalização do tipo. O `check_abi.py` reporta a divergência como aviso.
 
 ---
 
@@ -696,6 +782,19 @@ para o host, linkados com o wrapper e o TFLM:
 Os testes conseguem falhar: trocando as imagens entre si, `tcc_person_detect`
 falha com código 1; trocando as features de "yes" e "no", `tcc_micro_speech`
 falha com código 3.
+
+**Equivalência de valores entre RL e C++.** Os testes do TCC só devolvem
+passou/falhou contra um limiar, então passar não prova que os valores batem.
+Verificado à parte: os mesmos 24 casos (hello_world float e int8 com x = 0,0 e
+1,57; as duas frases do spam; as duas imagens do person_detect; os três áudios
+do micro speech, cada classe) rodados por um programa C++ e por variantes dos
+programas RL que imprimem cada saída. **24 de 24 idênticos**, até a sexta casa
+decimal. Como os dois lados chamam o mesmo wrapper, isso confirma que o robcmp
+passa vetores, tamanhos injetados e floats sem alteração.
+
+Nota prática: no x86, o `PrintFloat` escreve na saída de erro (`stderr`), porque
+o log do TFLM (`DebugLog`) vai para lá. Quem capturar a saída de um programa RL
+precisa redirecionar `2>&1`.
 
 Os dados de teste ficam em `test/tflm/data/`, com a origem documentada
 (`data/README.md`); as imagens do TCC conferem byte a byte com as do TFLM.

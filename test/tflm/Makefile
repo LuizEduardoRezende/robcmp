@@ -2,7 +2,8 @@
 #
 #   make              compila o tflite_info (inspetor estático de .tflite)
 #   make analyze      inspeciona todos os modelos de models/
-#   make check        roda a validação completa do wrapper (camadas 1 e 2)
+#   make check        validação completa: wrapper (C++), testes do TCC em RL e
+#                     assinaturas RL x C em x86_64 e Cortex-M
 #
 # Depende do submódulo third-party/tflite-micro. Na primeira vez, `make check`
 # compila a libtensorflow-microlite.a e baixa as dependências do TFLM (demora
@@ -131,9 +132,16 @@ rob: $(addprefix $(OUT)/,$(ROB_TESTS))
 		else printf "  %-24s FALHOU (codigo %d)\n" $$t $$st; falhou=1; fi; \
 	done; exit $$falhou
 
-check: validate rob
+# Confere, para x86_64 e Cortex-M, que cada funcao declarada em lib/ai/tflm.rob
+# tem a mesma assinatura no LLVM IR que a do header C. Pega o tipo de erro que
+# so apareceria no hardware (handle de 64 bits na RL, 32 bits no C).
+abi:
+	@echo "== assinaturas: lib/ai/tflm.rob x tflm_wrapper.h"
+	@python3 check_abi.py
+
+check: validate rob abi
 
 clean:
 	rm -rf tflite_info $(OUT)
 
-.PHONY: all analyze validate rob check clean
+.PHONY: all analyze validate rob abi check clean

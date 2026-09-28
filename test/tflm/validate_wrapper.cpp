@@ -63,7 +63,7 @@ alignas(16) static uint8_t g_arena_aux[40 * 1024];
 
 // O handle de tensor do wrapper é um TfLiteTensor*. Só o código de teste se
 // apoia nisso, para ler e escrever bytes crus e comparar com a referência.
-static TfLiteTensor *tensor_de(uintptr_t h) {
+static TfLiteTensor *tensor_de(uint64_t h) {
     return reinterpret_cast<TfLiteTensor *>(h);
 }
 
@@ -94,22 +94,22 @@ static void testa_senoide(const char *path) {
     std::vector<uint8_t> modelo = carregar(path);
     if (modelo.empty()) { g_falhas++; return; }
 
-    uintptr_t r = tflm_create_resolver();
+    uint64_t r = tflm_create_resolver();
     CHECK(r != 0, "tflm_create_resolver devolveu 0");
     CHECK(tflm_add_fully_connected(r) == 0, "tflm_add_fully_connected falhou");
-    uintptr_t m = tflm_create_model(r, modelo.data(), g_arena_wrapper,
+    uint64_t m = tflm_create_model(r, modelo.data(), g_arena_wrapper,
                                     (int32_t)modelo.size(), 3000);
     CHECK(m != 0, "tflm_create_model devolveu 0");
     if (!m) return;
 
-    uintptr_t in = GetInputTensor(m, 0), out = GetOutputTensor(m, 0);
+    uint64_t in = tflm_input(m, 0), out = tflm_output(m, 0);
     float erro_max = 0.0f;
     const int N = 40;
     for (int i = 0; i <= N; ++i) {
         float x = 2.0f * (float)M_PI * i / N;
-        SetTensorValue(in, 0, x);
-        CHECK(InvokeInterpreter(m) == 0, "InvokeInterpreter falhou em x=%f", x);
-        float e = fabsf(GetTensorAsFloat(out, 0) - sinf(x));
+        tflm_set_value(in, 0, x);
+        CHECK(tflm_invoke(m) == 0, "tflm_invoke falhou em x=%f", x);
+        float e = fabsf(tflm_get_value(out, 0) - sinf(x));
         if (e > erro_max) erro_max = e;
     }
     printf("  erro maximo contra sin(x) em %d pontos: %.4f\n", N + 1, erro_max);
@@ -127,22 +127,22 @@ static void testa_ciclo_de_vida() {
 
     // Slots precisam ser reciclados: mais ciclos do que slots existentes.
     for (int i = 0; i < 10; ++i) {
-        uintptr_t r = tflm_create_resolver();
+        uint64_t r = tflm_create_resolver();
         CHECK(r != 0, "sem slot livre na iteracao %d -- in_use nao resetado", i);
         if (!r) return;
         tflm_add_fully_connected(r);
-        uintptr_t m = tflm_create_model(r, modelo.data(), g_arena_wrapper,
+        uint64_t m = tflm_create_model(r, modelo.data(), g_arena_wrapper,
                                         (int32_t)modelo.size(), 3000);
         CHECK(m != 0, "create_model falhou na iteracao %d", i);
         tflm_free_model(m);
     }
 
     // Com todos os slots ocupados, o próximo falha de forma controlada.
-    uintptr_t h[4];
+    uint64_t h[4];
     for (int i = 0; i < 4; ++i) h[i] = tflm_create_resolver();
     CHECK(tflm_create_resolver() == 0, "o quinto resolver deveria falhar");
     tflm_free_model(h[2]);
-    uintptr_t outro = tflm_create_resolver();
+    uint64_t outro = tflm_create_resolver();
     CHECK(outro != 0, "slot liberado nao foi reaproveitado");
     for (int i = 0; i < 4; ++i) if (i != 2) tflm_free_model(h[i]);
     tflm_free_model(outro);
@@ -151,8 +151,8 @@ static void testa_ciclo_de_vida() {
     CHECK(tflm_add_fully_connected(0) == -1, "add com handle 0 deveria devolver -1");
     CHECK(tflm_create_model(0, nullptr, g_arena_wrapper, 0, 0) == 0,
           "create_model com handle 0 deveria devolver 0");
-    CHECK(InvokeInterpreter(0) == -1, "invoke com handle 0 deveria devolver -1");
-    CHECK(GetInputTensor(0, 0) == 0, "GetInputTensor com handle 0 deveria devolver 0");
+    CHECK(tflm_invoke(0) == -1, "invoke com handle 0 deveria devolver -1");
+    CHECK(tflm_input(0, 0) == 0, "tflm_input com handle 0 deveria devolver 0");
     tflm_free_model(0);
 
     // Arena pequena demais. Cada tamanho roda num processo filho, porque o
@@ -168,7 +168,7 @@ static void testa_ciclo_de_vida() {
         pid_t p = fork();
         if (p == 0) {
             fclose(stderr);
-            uintptr_t r = tflm_create_resolver();
+            uint64_t r = tflm_create_resolver();
             tflm_add_fully_connected(r);
             _exit(tflm_create_model(r, modelo.data(), g_arena_wrapper,
                                     (int32_t)modelo.size(), tam) ? 1 : 0);
@@ -191,39 +191,41 @@ static void testa_ciclo_de_vida() {
                crashes);
     // API crua: recusa tipo e tamanho errados, sem copiar nada.
     {
-        uintptr_t r = tflm_create_resolver();
+        uint64_t r = tflm_create_resolver();
         tflm_add_fully_connected(r);
-        uintptr_t m = tflm_create_model(r, modelo.data(), g_arena_wrapper,
+        uint64_t m = tflm_create_model(r, modelo.data(), g_arena_wrapper,
                                         (int32_t)modelo.size(), 3000);
-        uintptr_t in = GetInputTensor(m, 0);          // float32[1,1]
+        uint64_t in = tflm_input(m, 0);          // float32[1,1]
         int8_t b8[1] = {7};
         int16_t b16[1] = {7};
-        CHECK(SetTensorRawInt8(in, b8, 1) == -1, "SetTensorRawInt8 aceitou tensor float32");
-        CHECK(SetTensorRawInt16(in, b16, 1) == -1, "SetTensorRawInt16 aceitou tensor float32");
-        CHECK(SetTensorRawInt8(0, b8, 1) == -1, "SetTensorRawInt8 aceitou handle 0");
+        CHECK(tflm_set_raw_int8(in, b8, 1) == -1, "tflm_set_raw_int8 aceitou tensor float32");
+        CHECK(tflm_set_raw_int16(in, b16, 1) == -1, "tflm_set_raw_int16 aceitou tensor float32");
+        CHECK(tflm_set_raw_int8(0, b8, 1) == -1, "tflm_set_raw_int8 aceitou handle 0");
         tflm_free_model(m);
 
         std::vector<uint8_t> q = carregar("test/tflm/models/hello_world_int8.tflite");
         r = tflm_create_resolver();
         tflm_add_fully_connected(r);
         m = tflm_create_model(r, q.data(), g_arena_wrapper, (int32_t)q.size(), 3000);
-        in = GetInputTensor(m, 0);                    // int8[1,1]
+        in = tflm_input(m, 0);                    // int8[1,1]
         int8_t dois[2] = {1, 2};
         tensor_de(in)->data.int8[0] = 99;
-        CHECK(SetTensorRawInt8(in, dois, 2) == -1, "SetTensorRawInt8 aceitou tamanho errado");
+        CHECK(tflm_set_raw_int8(in, dois, 2) == -1, "tflm_set_raw_int8 aceitou tamanho errado");
         CHECK(tensor_de(in)->data.int8[0] == 99, "recusa por tamanho ainda assim copiou dados");
-        CHECK(SetTensorRawInt8(in, b8, 1) == 0, "SetTensorRawInt8 recusou entrada valida");
-        CHECK(tensor_de(in)->data.int8[0] == 7, "SetTensorRawInt8 nao escreveu o valor");
+        CHECK(tflm_set_raw_int8(in, b8, 1) == 0, "tflm_set_raw_int8 recusou entrada valida");
+        CHECK(tensor_de(in)->data.int8[0] == 7, "tflm_set_raw_int8 nao escreveu o valor");
         int8_t lido[1] = {0};
-        CHECK(GetTensorRawInt8(in, lido, 1) == 0 && lido[0] == 7, "GetTensorRawInt8 nao leu o valor");
+        CHECK(tflm_get_raw_int8(in, lido, 1) == 0 && lido[0] == 7, "tflm_get_raw_int8 nao leu o valor");
 
-        // SetTensorFromIntArray copia CRU (comportamento do TCC), nao quantiza:
-        // num tensor int8 com scale 0,0244801, o valor 5 tem de chegar como 5.
-        const int16_t cru[1] = {5};
-        SetTensorFromIntArray(in, cru, 1, 1);
-        CHECK(tensor_de(in)->data.int8[0] == 5,
-              "SetTensorFromIntArray quantizou (%d) em vez de copiar cru (5)",
-              tensor_de(in)->data.int8[0]);
+        // Limites: indice fora do tensor nao escreve e le 0; vetor de tamanho
+        // errado e recusado sem copiar. O B6 havia perdido essa verificacao.
+        tensor_de(in)->data.int8[0] = 7;
+        tflm_set_value(in, 1, 3.0f);                  // tensor tem 1 elemento
+        CHECK(tensor_de(in)->data.int8[0] == 7, "escrita fora do limite alterou o tensor");
+        CHECK(tflm_get_value(in, 1) == 0.0f, "leitura fora do limite nao devolveu 0");
+        float dois_f[2] = {1.0f, 2.0f};
+        CHECK(tflm_set_values(in, dois_f, 2) == -1, "set_values aceitou tamanho errado");
+        CHECK(tensor_de(in)->data.int8[0] == 7, "set_values recusado ainda assim copiou");
         tflm_free_model(m);
     }
     printf("  reciclagem, limite, handles nulos, arena insuficiente e recusas da API crua: ok\n");
@@ -242,12 +244,12 @@ static void testa_spam() {
     const int32_t legitima[20] = {1, 82, 70, 214, 55, 98, 84, 47, 89, 26, 73};  // "This is a great article thank you for the information"
     const int32_t spam[20]     = {1, 93, 326, 72, 8, 485, 24, 35, 6};           // "win free money online click www site com"
 
-    uintptr_t r = tflm_create_resolver();
+    uint64_t r = tflm_create_resolver();
     tflm_add_fully_connected(r);
     tflm_add_gather(r);
     tflm_add_mean(r);
     tflm_add_softmax(r);
-    uintptr_t m = tflm_create_model(r, modelo.data(), g_arena_wrapper,
+    uint64_t m = tflm_create_model(r, modelo.data(), g_arena_wrapper,
                                     (int32_t)modelo.size(), 16 * 1024);
     CHECK(m != 0, "tflm_create_model devolveu 0");
     if (!m) return;
@@ -261,19 +263,19 @@ static void testa_spam() {
 
     const int32_t *frases[2] = {legitima, spam};
     const char *nomes[2] = {"legitima", "spam"};
-    uintptr_t in = GetInputTensor(m, 0), out = GetOutputTensor(m, 0);
+    uint64_t in = tflm_input(m, 0), out = tflm_output(m, 0);
     for (int f = 0; f < 2; ++f) {
-        for (int j = 0; j < 20; ++j) SetTensorValue(in, j, (float)frases[f][j]);
+        for (int j = 0; j < 20; ++j) tflm_set_value(in, j, (float)frases[f][j]);
         memcpy(ref.interp->input(0)->data.i32, frases[f], 20 * sizeof(int32_t));
 
         CHECK(mesmos_bytes(tensor_de(in), ref.interp->input(0)),
               "entrada '%s' difere da referencia", nomes[f]);
-        CHECK(InvokeInterpreter(m) == 0, "invoke falhou");
+        CHECK(tflm_invoke(m) == 0, "invoke falhou");
         CHECK(ref.interp->Invoke() == kTfLiteOk, "invoke da referencia falhou");
         CHECK(mesmos_bytes(tensor_de(out), ref.interp->output(0)),
               "saida '%s' difere da referencia", nomes[f]);
 
-        float p_legit = GetTensorAsFloat(out, 0), p_spam = GetTensorAsFloat(out, 1);
+        float p_legit = tflm_get_value(out, 0), p_spam = tflm_get_value(out, 1);
         printf("  %-9s p(legitima)=%.4f p(spam)=%.4f  soma=%.4f\n",
                nomes[f], p_legit, p_spam, p_legit + p_spam);
         CHECK(fabsf(p_legit + p_spam - 1.0f) < 1e-3f, "softmax nao soma 1");
@@ -293,13 +295,13 @@ static void testa_person_detect() {
     if (modelo.empty()) { g_falhas++; return; }
     const int32_t arena = 136 * 1024;  // valor do teste oficial do TFLM
 
-    uintptr_t r = tflm_create_resolver();
+    uint64_t r = tflm_create_resolver();
     tflm_add_average_pool_2d(r);
     tflm_add_conv_2d(r);
     tflm_add_depthwise_conv_2d(r);
     tflm_add_reshape(r);
     tflm_add_softmax(r);
-    uintptr_t m = tflm_create_model(r, modelo.data(), g_arena_wrapper,
+    uint64_t m = tflm_create_model(r, modelo.data(), g_arena_wrapper,
                                     (int32_t)modelo.size(), arena);
     CHECK(m != 0, "tflm_create_model devolveu 0");
     if (!m) return;
@@ -312,9 +314,9 @@ static void testa_person_detect() {
     ref.resolver.AddSoftmax();
     CHECK(ref.iniciar(modelo.data(), g_arena_ref, arena), "referencia nao inicializou");
 
-    uintptr_t in = GetInputTensor(m, 0), out = GetOutputTensor(m, 0);
-    CHECK(GetTensorSize(in) == 9216, "entrada deveria ter 9216 elementos, tem %zu",
-          GetTensorSize(in));
+    uint64_t in = tflm_input(m, 0), out = tflm_output(m, 0);
+    CHECK(tflm_tensor_size(in) == 9216, "entrada deveria ter 9216 elementos, tem %zu",
+          tflm_tensor_size(in));
 
     // As imagens já estão em int8 quantizado. Pela API do wrapper, que só fala
     // float, é preciso desquantizar para a conversão reconstruir o mesmo byte.
@@ -327,24 +329,24 @@ static void testa_person_detect() {
     for (int k = 0; k < 2; ++k) {
         for (int i = 0; i < 9216; ++i)
             buf[i] = scale * ((float)(int8_t)imagens[k][i] - (float)zp);
-        SetTensorArray(in, buf.data(), 9216, 9216);
+        tflm_set_values(in, buf.data(), 9216);
         memcpy(ref.interp->input(0)->data.int8, imagens[k], 9216);
 
         CHECK(mesmos_bytes(tensor_de(in), ref.interp->input(0)),
               "imagem '%s': conversao float->int8 nao reconstruiu os bytes originais", nomes[k]);
 
         // O mesmo pela API crua: a imagem ja esta em int8, entra como esta.
-        CHECK(SetTensorRawInt8(in, (const int8_t *)imagens[k], 9216) == 0,
-              "SetTensorRawInt8 recusou a imagem");
+        CHECK(tflm_set_raw_int8(in, (const int8_t *)imagens[k], 9216) == 0,
+              "tflm_set_raw_int8 recusou a imagem");
         CHECK(mesmos_bytes(tensor_de(in), ref.interp->input(0)),
               "imagem '%s' pela API crua difere da referencia", nomes[k]);
-        CHECK(InvokeInterpreter(m) == 0, "invoke falhou");
+        CHECK(tflm_invoke(m) == 0, "invoke falhou");
         CHECK(ref.interp->Invoke() == kTfLiteOk, "invoke da referencia falhou");
         CHECK(mesmos_bytes(tensor_de(out), ref.interp->output(0)),
               "saida '%s' difere da referencia", nomes[k]);
 
         // Índices do modelo: 0 = sem pessoa, 1 = pessoa.
-        float nao = GetTensorAsFloat(out, 0), sim = GetTensorAsFloat(out, 1);
+        float nao = tflm_get_value(out, 0), sim = tflm_get_value(out, 1);
         printf("  %-10s p(pessoa)=%.4f p(sem pessoa)=%.4f\n", nomes[k], sim, nao);
         if (k == 0) CHECK(sim > nao, "pessoa nao detectada na imagem com pessoa");
         else        CHECK(nao > sim, "pessoa detectada na imagem sem pessoa");
@@ -361,7 +363,7 @@ static const int kPassoAmostras = 320;      // 20 ms
 static const int kFeatureSize = 40;
 static const int kFeatureCount = 49;
 
-static void registra_preprocessor(uintptr_t r) {
+static void registra_preprocessor(uint64_t r) {
     tflm_add_reshape(r);
     tflm_add_cast(r);
     tflm_add_strided_slice(r);
@@ -384,11 +386,11 @@ static void registra_preprocessor(uintptr_t r) {
 
 // Uma janela de áudio -> 40 features, pela API crua do wrapper: as amostras
 // int16 entram como estão, e as features int8 saem como estão.
-static bool extrai_feature(uintptr_t pre, const int16_t *audio, int8_t *saida) {
-    uintptr_t in = GetInputTensor(pre, 0), out = GetOutputTensor(pre, 0);
-    if (SetTensorRawInt16(in, audio, kAmostrasPorJanela) != 0) return false;
-    if (InvokeInterpreter(pre) != 0) return false;
-    return GetTensorRawInt8(out, saida, kFeatureSize) == 0;
+static bool extrai_feature(uint64_t pre, const int16_t *audio, int8_t *saida) {
+    uint64_t in = tflm_input(pre, 0), out = tflm_output(pre, 0);
+    if (tflm_set_raw_int16(in, audio, kAmostrasPorJanela) != 0) return false;
+    if (tflm_invoke(pre) != 0) return false;
+    return tflm_get_raw_int8(out, saida, kFeatureSize) == 0;
 }
 
 static const char *kRotulos[4] = {"silence", "unknown", "yes", "no"};
@@ -399,18 +401,18 @@ static void testa_micro_speech() {
     std::vector<uint8_t> m_cls = carregar("test/tflm/models/micro_speech_quantized.tflite");
     if (m_pre.empty() || m_cls.empty()) { g_falhas++; return; }
 
-    uintptr_t rp = tflm_create_resolver();
+    uint64_t rp = tflm_create_resolver();
     registra_preprocessor(rp);
-    uintptr_t pre = tflm_create_model(rp, m_pre.data(), g_arena_aux,
+    uint64_t pre = tflm_create_model(rp, m_pre.data(), g_arena_aux,
                                       (int32_t)m_pre.size(), sizeof(g_arena_aux));
     CHECK(pre != 0, "preprocessor nao inicializou");
 
-    uintptr_t rc = tflm_create_resolver();
+    uint64_t rc = tflm_create_resolver();
     tflm_add_reshape(rc);
     tflm_add_fully_connected(rc);
     tflm_add_depthwise_conv_2d(rc);
     tflm_add_softmax(rc);
-    uintptr_t cls = tflm_create_model(rc, m_cls.data(), g_arena_wrapper,
+    uint64_t cls = tflm_create_model(rc, m_cls.data(), g_arena_wrapper,
                                       (int32_t)m_cls.size(), 40 * 1024);
     CHECK(cls != 0, "classificador nao inicializou");
     if (!pre || !cls) return;
@@ -434,7 +436,7 @@ static void testa_micro_speech() {
     //     parâmetros de quantização, e o classificador as espera como int8 COM
     //     scale/zero_point. Os códigos já estão na escala certa: o exemplo
     //     oficial os copia crus. Testamos os dois caminhos.
-    uintptr_t in = GetInputTensor(cls, 0), out = GetOutputTensor(cls, 0);
+    uint64_t in = tflm_input(cls, 0), out = tflm_output(cls, 0);
     struct { const char *rotulo; const int16_t *audio; unsigned n; } amostras[2] = {
         {"yes", g_yes_1000ms_audio_data, g_yes_1000ms_audio_data_size},
         {"no",  g_no_1000ms_audio_data,  g_no_1000ms_audio_data_size},
@@ -452,12 +454,12 @@ static void testa_micro_speech() {
                 // reais e requantizadas com o scale do classificador.
                 static float f[kFeatureCount * kFeatureSize];
                 for (int i = 0; i < kFeatureCount * kFeatureSize; ++i) f[i] = features[i];
-                SetTensorArray(in, f, kFeatureCount * kFeatureSize, kFeatureCount * kFeatureSize);
+                tflm_set_values(in, f, kFeatureCount * kFeatureSize);
             } else {
                 // API crua: os códigos int8 entram como estão, como no exemplo
                 // oficial do TFLM.
-                CHECK(SetTensorRawInt8(in, features, kFeatureCount * kFeatureSize) == 0,
-                      "SetTensorRawInt8 recusou as features");
+                CHECK(tflm_set_raw_int8(in, features, kFeatureCount * kFeatureSize) == 0,
+                      "tflm_set_raw_int8 recusou as features");
             }
             if (caminho == 0) {
                 // Quanto a requantizacao pela API float alterou a entrada, em
@@ -471,11 +473,11 @@ static void testa_micro_speech() {
                 printf("  %-4s API float alterou %d de %d bytes da entrada (%d saturados em +-127/-128)\n",
                        a.rotulo, diferentes, kFeatureCount * kFeatureSize, saturados);
             }
-            InvokeInterpreter(cls);
+            tflm_invoke(cls);
             int melhor = 0;
             float p[4];
             for (int i = 0; i < 4; ++i) {
-                p[i] = GetTensorAsFloat(out, i);
+                p[i] = tflm_get_value(out, i);
                 if (p[i] > p[melhor]) melhor = i;
             }
             printf("  %-4s via %-12s -> %-7s (silence %.2f unknown %.2f yes %.2f no %.2f)\n",

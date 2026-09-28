@@ -6,6 +6,7 @@
  * do TCC -- é a base da comparação retroativa. Muda só a API:
  *   - InitializeInterpreter(modelo, arena, {9})  -> tflm_create_resolver +
  *     tflm_add_fully_connected + tflm_create_model
+ *   - demais funções renomeadas para a convenção tflm_ (ver lib/ai/tflm.rob)
  *   - DestroyInterpreter                         -> tflm_free_model
  *
  * No TCC eram dois arquivos idênticos exceto pelo modelo. Aqui é um template
@@ -45,15 +46,15 @@ int8 test_infer_zero() {
     if h == 0 {
         return 1;
     }
-    in = GetInputTensor(h, 0);
-    out = GetOutputTensor(h, 0);
+    in = tflm_input(h, 0);
+    out = tflm_output(h, 0);
     if in == 0 or out == 0 {
         tflm_free_model(h);
         return 2;
     }
-    SetTensorValue(in, 0, 0.0);
-    InvokeInterpreter(h);
-    r = GetTensorAsFloat(out, 0);
+    tflm_set_value(in, 0, 0.0);
+    tflm_invoke(h);
+    r = tflm_get_value(out, 0);
     tflm_free_model(h);
     if r < -0.5 or r > 0.5 {
         return 3;
@@ -67,15 +68,15 @@ int8 test_infer_pi_2() {
     if h == 0 {
         return 1;
     }
-    in = GetInputTensor(h, 0);
-    out = GetOutputTensor(h, 0);
+    in = tflm_input(h, 0);
+    out = tflm_output(h, 0);
     if in == 0 or out == 0 {
         tflm_free_model(h);
         return 2;
     }
-    SetTensorValue(in, 0, 1.57);
-    InvokeInterpreter(h);
-    r = GetTensorAsFloat(out, 0);
+    tflm_set_value(in, 0, 1.57);
+    tflm_invoke(h);
+    r = tflm_get_value(out, 0);
     tflm_free_model(h);
     if r < 0.5 or r > 1.5 {
         return 3;
@@ -89,7 +90,7 @@ int8 test_input_tensor_fail() {
     if h == 0 {
         return 1;
     }
-    in = GetInputTensor(h, 99);
+    in = tflm_input(h, 99);
     tflm_free_model(h);
     if in != 0 {
         return 2;
@@ -103,7 +104,7 @@ int8 test_output_tensor_fail() {
     if h == 0 {
         return 1;
     }
-    out = GetOutputTensor(h, 99);
+    out = tflm_output(h, 99);
     tflm_free_model(h);
     if out != 0 {
         return 2;

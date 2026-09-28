@@ -7,6 +7,8 @@
 #include "third-party/tflite-micro/tensorflow/lite/micro/arena_allocator/single_arena_buffer_allocator.h"
 #include "third-party/tflite-micro/tensorflow/lite/micro/memory_planner/greedy_memory_planner.h"
 #include "third-party/tflite-micro/tensorflow/lite/micro/micro_arena_constants.h"
+#include "tflm_wrapper.h"
+
 #include <cstring>
 #include <cstdint>
 #include <new>
@@ -21,7 +23,7 @@ extern "C" {
 #endif
 // Logs de diagnostico usam TFLM_LOG, nunca MicroPrintf diretamente. Antes, o
 // no-op era aplicado redefinindo o proprio MicroPrintf, o que desligava junto
-// o PrintFloat -- uma funcao do usuario, nao um log de diagnostico.
+// o PrintFloat (hoje tflm_print_float) -- funcao do usuario, nao log de diagnostico.
 #if TFLM_DEBUG_LOGS
 #define TFLM_LOG(...) MicroPrintf(__VA_ARGS__)
 #else
@@ -66,8 +68,23 @@ static constexpr size_t kArenaMinima =
     sizeof(tflite::MicroAllocator) + alignof(tflite::MicroAllocator) +
     tflite::MicroArenaBufferAlignment();
 
-static TFLM_Instance *instance_from_handle(uintptr_t h) {
-    return reinterpret_cast<TFLM_Instance*>(h);
+/* Handles cruzam a fronteira com a RL como uint64_t -- o tamanho do uint64 da
+ * linguagem em QUALQUER alvo. Nao usar uintptr_t nem size_t na assinatura: no
+ * Cortex-M eles tem 32 bits, enquanto a RL passa 64. Pelo AAPCS um argumento
+ * de 64 bits ocupa um par de registradores, e o C leria a metade alta do
+ * handle no lugar do argumento seguinte -- tflm_input(h, 1) devolveria sempre
+ * o tensor 0, sem erro nenhum. No x86_64 os tipos coincidem por acaso, e por
+ * isso o defeito passou despercebido no TCC. */
+static void *de_handle(uint64_t h) {
+    return reinterpret_cast<void*>(static_cast<uintptr_t>(h));
+}
+
+static uint64_t para_handle(const void *p) {
+    return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(p));
+}
+
+static TFLM_Instance *instance_from_handle(uint64_t h) {
+    return static_cast<TFLM_Instance*>(de_handle(h));
 }
 
 /* ---------------------------------------------------------------------------
@@ -83,593 +100,593 @@ static TFLM_Instance *instance_from_handle(uintptr_t h) {
 
 // O handle aponta para a TFLM_Instance, nao para o resolver. Acessar o campo
 // explicitamente evita depender de `resolver` ser o primeiro membro da struct.
-static MutableResolver *resolver_from_handle(uintptr_t h) {
+static MutableResolver *resolver_from_handle(uint64_t h) {
     return h ? &instance_from_handle(h)->resolver : nullptr;
 }
 
-int8_t tflm_add_add(uintptr_t resolver_handle) {
+int8_t tflm_add_add(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddAdd() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_average_pool_2d(uintptr_t resolver_handle) {
+int8_t tflm_add_average_pool_2d(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddAveragePool2D() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_concatenation(uintptr_t resolver_handle) {
+int8_t tflm_add_concatenation(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddConcatenation() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_conv_2d(uintptr_t resolver_handle) {
+int8_t tflm_add_conv_2d(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddConv2D() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_depthwise_conv_2d(uintptr_t resolver_handle) {
+int8_t tflm_add_depthwise_conv_2d(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddDepthwiseConv2D() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_depth_to_space(uintptr_t resolver_handle) {
+int8_t tflm_add_depth_to_space(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddDepthToSpace() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_dequantize(uintptr_t resolver_handle) {
+int8_t tflm_add_dequantize(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddDequantize() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_embedding_lookup(uintptr_t resolver_handle) {
+int8_t tflm_add_embedding_lookup(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddEmbeddingLookup() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_floor(uintptr_t resolver_handle) {
+int8_t tflm_add_floor(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddFloor() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_fully_connected(uintptr_t resolver_handle) {
+int8_t tflm_add_fully_connected(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddFullyConnected() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_l2_normalization(uintptr_t resolver_handle) {
+int8_t tflm_add_l2_normalization(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddL2Normalization() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_l2_pool_2d(uintptr_t resolver_handle) {
+int8_t tflm_add_l2_pool_2d(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddL2Pool2D() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_logistic(uintptr_t resolver_handle) {
+int8_t tflm_add_logistic(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddLogistic() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_max_pool_2d(uintptr_t resolver_handle) {
+int8_t tflm_add_max_pool_2d(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddMaxPool2D() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_mul(uintptr_t resolver_handle) {
+int8_t tflm_add_mul(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddMul() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_relu(uintptr_t resolver_handle) {
+int8_t tflm_add_relu(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddRelu() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_relu6(uintptr_t resolver_handle) {
+int8_t tflm_add_relu6(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddRelu6() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_reshape(uintptr_t resolver_handle) {
+int8_t tflm_add_reshape(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddReshape() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_resize_bilinear(uintptr_t resolver_handle) {
+int8_t tflm_add_resize_bilinear(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddResizeBilinear() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_softmax(uintptr_t resolver_handle) {
+int8_t tflm_add_softmax(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSoftmax() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_space_to_depth(uintptr_t resolver_handle) {
+int8_t tflm_add_space_to_depth(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSpaceToDepth() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_svdf(uintptr_t resolver_handle) {
+int8_t tflm_add_svdf(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSvdf() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_tanh(uintptr_t resolver_handle) {
+int8_t tflm_add_tanh(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddTanh() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_pad(uintptr_t resolver_handle) {
+int8_t tflm_add_pad(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddPad() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_gather(uintptr_t resolver_handle) {
+int8_t tflm_add_gather(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddGather() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_batch_to_space_nd(uintptr_t resolver_handle) {
+int8_t tflm_add_batch_to_space_nd(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddBatchToSpaceNd() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_space_to_batch_nd(uintptr_t resolver_handle) {
+int8_t tflm_add_space_to_batch_nd(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSpaceToBatchNd() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_transpose(uintptr_t resolver_handle) {
+int8_t tflm_add_transpose(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddTranspose() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_mean(uintptr_t resolver_handle) {
+int8_t tflm_add_mean(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddMean() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_sub(uintptr_t resolver_handle) {
+int8_t tflm_add_sub(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSub() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_div(uintptr_t resolver_handle) {
+int8_t tflm_add_div(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddDiv() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_squeeze(uintptr_t resolver_handle) {
+int8_t tflm_add_squeeze(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSqueeze() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_unidirectional_sequence_lstm(uintptr_t resolver_handle) {
+int8_t tflm_add_unidirectional_sequence_lstm(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddUnidirectionalSequenceLSTM() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_strided_slice(uintptr_t resolver_handle) {
+int8_t tflm_add_strided_slice(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddStridedSlice() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_exp(uintptr_t resolver_handle) {
+int8_t tflm_add_exp(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddExp() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_split(uintptr_t resolver_handle) {
+int8_t tflm_add_split(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSplit() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_log_softmax(uintptr_t resolver_handle) {
+int8_t tflm_add_log_softmax(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddLogSoftmax() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_cast(uintptr_t resolver_handle) {
+int8_t tflm_add_cast(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddCast() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_prelu(uintptr_t resolver_handle) {
+int8_t tflm_add_prelu(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddPrelu() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_maximum(uintptr_t resolver_handle) {
+int8_t tflm_add_maximum(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddMaximum() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_arg_max(uintptr_t resolver_handle) {
+int8_t tflm_add_arg_max(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddArgMax() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_minimum(uintptr_t resolver_handle) {
+int8_t tflm_add_minimum(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddMinimum() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_less(uintptr_t resolver_handle) {
+int8_t tflm_add_less(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddLess() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_neg(uintptr_t resolver_handle) {
+int8_t tflm_add_neg(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddNeg() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_padv2(uintptr_t resolver_handle) {
+int8_t tflm_add_padv2(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddPadV2() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_greater(uintptr_t resolver_handle) {
+int8_t tflm_add_greater(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddGreater() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_greater_equal(uintptr_t resolver_handle) {
+int8_t tflm_add_greater_equal(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddGreaterEqual() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_less_equal(uintptr_t resolver_handle) {
+int8_t tflm_add_less_equal(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddLessEqual() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_slice(uintptr_t resolver_handle) {
+int8_t tflm_add_slice(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSlice() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_sin(uintptr_t resolver_handle) {
+int8_t tflm_add_sin(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSin() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_transpose_conv(uintptr_t resolver_handle) {
+int8_t tflm_add_transpose_conv(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddTransposeConv() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_expand_dims(uintptr_t resolver_handle) {
+int8_t tflm_add_expand_dims(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddExpandDims() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_equal(uintptr_t resolver_handle) {
+int8_t tflm_add_equal(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddEqual() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_not_equal(uintptr_t resolver_handle) {
+int8_t tflm_add_not_equal(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddNotEqual() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_log(uintptr_t resolver_handle) {
+int8_t tflm_add_log(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddLog() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_sum(uintptr_t resolver_handle) {
+int8_t tflm_add_sum(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSum() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_sqrt(uintptr_t resolver_handle) {
+int8_t tflm_add_sqrt(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSqrt() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_rsqrt(uintptr_t resolver_handle) {
+int8_t tflm_add_rsqrt(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddRsqrt() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_shape(uintptr_t resolver_handle) {
+int8_t tflm_add_shape(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddShape() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_arg_min(uintptr_t resolver_handle) {
+int8_t tflm_add_arg_min(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddArgMin() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_reduce_max(uintptr_t resolver_handle) {
+int8_t tflm_add_reduce_max(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddReduceMax() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_pack(uintptr_t resolver_handle) {
+int8_t tflm_add_pack(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddPack() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_logical_or(uintptr_t resolver_handle) {
+int8_t tflm_add_logical_or(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddLogicalOr() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_logical_and(uintptr_t resolver_handle) {
+int8_t tflm_add_logical_and(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddLogicalAnd() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_logical_not(uintptr_t resolver_handle) {
+int8_t tflm_add_logical_not(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddLogicalNot() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_unpack(uintptr_t resolver_handle) {
+int8_t tflm_add_unpack(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddUnpack() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_reduce_min(uintptr_t resolver_handle) {
+int8_t tflm_add_reduce_min(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddReduceMin() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_floor_div(uintptr_t resolver_handle) {
+int8_t tflm_add_floor_div(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddFloorDiv() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_square(uintptr_t resolver_handle) {
+int8_t tflm_add_square(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSquare() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_zeros_like(uintptr_t resolver_handle) {
+int8_t tflm_add_zeros_like(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddZerosLike() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_fill(uintptr_t resolver_handle) {
+int8_t tflm_add_fill(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddFill() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_floor_mod(uintptr_t resolver_handle) {
+int8_t tflm_add_floor_mod(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddFloorMod() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_resize_nearest_neighbor(uintptr_t resolver_handle) {
+int8_t tflm_add_resize_nearest_neighbor(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddResizeNearestNeighbor() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_leaky_relu(uintptr_t resolver_handle) {
+int8_t tflm_add_leaky_relu(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddLeakyRelu() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_squared_difference(uintptr_t resolver_handle) {
+int8_t tflm_add_squared_difference(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSquaredDifference() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_mirror_pad(uintptr_t resolver_handle) {
+int8_t tflm_add_mirror_pad(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddMirrorPad() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_abs(uintptr_t resolver_handle) {
+int8_t tflm_add_abs(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddAbs() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_split_v(uintptr_t resolver_handle) {
+int8_t tflm_add_split_v(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSplitV() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_ceil(uintptr_t resolver_handle) {
+int8_t tflm_add_ceil(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddCeil() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_reverse_v2(uintptr_t resolver_handle) {
+int8_t tflm_add_reverse_v2(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddReverseV2() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_add_n(uintptr_t resolver_handle) {
+int8_t tflm_add_add_n(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddAddN() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_gather_nd(uintptr_t resolver_handle) {
+int8_t tflm_add_gather_nd(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddGatherNd() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_cos(uintptr_t resolver_handle) {
+int8_t tflm_add_cos(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddCos() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_elu(uintptr_t resolver_handle) {
+int8_t tflm_add_elu(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddElu() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_quantize(uintptr_t resolver_handle) {
+int8_t tflm_add_quantize(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddQuantize() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_round(uintptr_t resolver_handle) {
+int8_t tflm_add_round(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddRound() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_hard_swish(uintptr_t resolver_handle) {
+int8_t tflm_add_hard_swish(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddHardSwish() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_if(uintptr_t resolver_handle) {
+int8_t tflm_add_if(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddIf() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_while(uintptr_t resolver_handle) {
+int8_t tflm_add_while(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddWhile() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_select_v2(uintptr_t resolver_handle) {
+int8_t tflm_add_select_v2(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddSelectV2() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_batch_matmul(uintptr_t resolver_handle) {
+int8_t tflm_add_batch_matmul(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddBatchMatMul() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_cumsum(uintptr_t resolver_handle) {
+int8_t tflm_add_cumsum(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddCumSum() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_call_once(uintptr_t resolver_handle) {
+int8_t tflm_add_call_once(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddCallOnce() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_broadcast_to(uintptr_t resolver_handle) {
+int8_t tflm_add_broadcast_to(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddBroadcastTo() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_var_handle(uintptr_t resolver_handle) {
+int8_t tflm_add_var_handle(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddVarHandle() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_read_variable(uintptr_t resolver_handle) {
+int8_t tflm_add_read_variable(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddReadVariable() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_assign_variable(uintptr_t resolver_handle) {
+int8_t tflm_add_assign_variable(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddAssignVariable() == kTfLiteOk) ? 0 : -1;
 }
 
-int8_t tflm_add_broadcast_args(uintptr_t resolver_handle) {
+int8_t tflm_add_broadcast_args(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddBroadcastArgs() == kTfLiteOk) ? 0 : -1;
@@ -693,147 +710,147 @@ int8_t tflm_add_broadcast_args(uintptr_t resolver_handle) {
  * -------------------------------------------------------------------------*/
 
 // custom op
-int8_t tflm_add_basic_classifier(uintptr_t resolver_handle) {
+int8_t tflm_add_basic_classifier(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddBasicClassifier() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_circular_buffer(uintptr_t resolver_handle) {
+int8_t tflm_add_circular_buffer(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddCircularBuffer() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_decode(uintptr_t resolver_handle) {
+int8_t tflm_add_decode(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddDecode() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_delay(uintptr_t resolver_handle) {
+int8_t tflm_add_delay(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddDelay() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_detection_postprocess(uintptr_t resolver_handle) {
+int8_t tflm_add_detection_postprocess(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddDetectionPostprocess() == kTfLiteOk) ? 0 : -1;
 }
 
 // builtin
-int8_t tflm_add_dynamic_update_slice(uintptr_t resolver_handle) {
+int8_t tflm_add_dynamic_update_slice(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddDynamicUpdateSlice() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_energy(uintptr_t resolver_handle) {
+int8_t tflm_add_energy(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddEnergy() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_ethos_u(uintptr_t resolver_handle) {
+int8_t tflm_add_ethos_u(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddEthosU() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_fft_auto_scale(uintptr_t resolver_handle) {
+int8_t tflm_add_fft_auto_scale(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddFftAutoScale() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_filter_bank(uintptr_t resolver_handle) {
+int8_t tflm_add_filter_bank(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddFilterBank() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_filter_bank_log(uintptr_t resolver_handle) {
+int8_t tflm_add_filter_bank_log(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddFilterBankLog() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_filter_bank_spectral_subtraction(uintptr_t resolver_handle) {
+int8_t tflm_add_filter_bank_spectral_subtraction(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddFilterBankSpectralSubtraction() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_filter_bank_square_root(uintptr_t resolver_handle) {
+int8_t tflm_add_filter_bank_square_root(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddFilterBankSquareRoot() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_framer(uintptr_t resolver_handle) {
+int8_t tflm_add_framer(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddFramer() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_irfft(uintptr_t resolver_handle) {
+int8_t tflm_add_irfft(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddIrfft() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_overlap_add(uintptr_t resolver_handle) {
+int8_t tflm_add_overlap_add(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddOverlapAdd() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_pcan(uintptr_t resolver_handle) {
+int8_t tflm_add_pcan(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddPCAN() == kTfLiteOk) ? 0 : -1;
 }
 
 // builtin
-int8_t tflm_add_reduce_all(uintptr_t resolver_handle) {
+int8_t tflm_add_reduce_all(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddReduceAll() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_rfft(uintptr_t resolver_handle) {
+int8_t tflm_add_rfft(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddRfft() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_stacker(uintptr_t resolver_handle) {
+int8_t tflm_add_stacker(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddStacker() == kTfLiteOk) ? 0 : -1;
 }
 
 // custom op
-int8_t tflm_add_window(uintptr_t resolver_handle) {
+int8_t tflm_add_window(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
     return (r->AddWindow() == kTfLiteOk) ? 0 : -1;
@@ -856,7 +873,7 @@ int8_t tflm_add_window(uintptr_t resolver_handle) {
  * para deixar as fases legiveis em quem le o .rob.
  * -------------------------------------------------------------------------*/
 
-uintptr_t tflm_create_resolver(void) {
+uint64_t tflm_create_resolver(void) {
     for (int i = 0; i < TFLM_MAX_MODELS; ++i) {
         if (!g_instances[i].in_use) {
             TFLM_Instance *inst = &g_instances[i];
@@ -864,14 +881,14 @@ uintptr_t tflm_create_resolver(void) {
             inst->allocator = nullptr;
             inst->interpreter = nullptr;
             new (&inst->resolver) MutableResolver();
-            return reinterpret_cast<uintptr_t>(inst);
+            return para_handle(inst);
         }
     }
     TFLM_LOG("ERRO: limite de %d modelos simultaneos atingido", TFLM_MAX_MODELS);
     return 0;
 }
 
-uintptr_t tflm_create_model(uintptr_t resolver_handle,
+uint64_t tflm_create_model(uint64_t resolver_handle,
                             const uint8_t *model_data, uint8_t *tensor_arena,
                             int32_t model_size, int32_t arena_size) {
     (void)model_size;  // o tamanho do modelo vem do proprio FlatBuffer
@@ -926,7 +943,7 @@ uintptr_t tflm_create_model(uintptr_t resolver_handle,
     return resolver_handle;
 }
 
-void tflm_free_model(uintptr_t handle) {
+void tflm_free_model(uint64_t handle) {
     if (handle == 0) return;
     TFLM_Instance *inst = instance_from_handle(handle);
     if (inst->interpreter) {
@@ -937,78 +954,71 @@ void tflm_free_model(uintptr_t handle) {
     inst->in_use = false;
 }
 
-uintptr_t GetInputTensor(uintptr_t instance_handle, size_t index) {
-    if (instance_handle == 0) {
-        TFLM_LOG("ERRO: instance_handle nulo");
-        return 0;
-    }
-    
-    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
-    if (instance == nullptr || instance->interpreter == nullptr) {
-        TFLM_LOG("ERRO: instance ou interpreter nulo");
-        return 0;
-    }
-    
-    if (index >= instance->interpreter->inputs_size()) {
-        TFLM_LOG("ERRO: índice %zu >= %zu", index, instance->interpreter->inputs_size());
-        return 0;
-    }
-    
-    TfLiteTensor* tensor = instance->interpreter->input(index);
-    if (tensor == nullptr) {
-        TFLM_LOG("ERRO: tensor nulo");
-        return 0;
-    }
-    
-    if (tensor->bytes == 0) {
-        TFLM_LOG("ERRO: tensor sem dados alocados");
-        return 0;
-    }
-    
-    return reinterpret_cast<uintptr_t>(tensor);
+/* ---------------------------------------------------------------------------
+ * Acesso aos tensores -- espelha a sintaxe nativa.
+ *
+ *   tflm_input(m, i)            m.input[i]
+ *   tflm_output(m, i)           m.output[i]
+ *   tflm_set_values(t, v)       m.input[i] = v           valores reais
+ *   tflm_get_values(t, v)       v = m.output[i]
+ *   tflm_set_value(t, j, x)     m.input[i][j] = x
+ *   tflm_get_value(t, j)        x = m.output[i][j]
+ *   tflm_set_raw_int8(t, v)     m.input[i].raw = v       codigos crus
+ *   tflm_get_raw_int8(t, v)     v = m.output[i].raw
+ *   tflm_tensor_size(t)         m.input[i].size
+ * -------------------------------------------------------------------------*/
+
+static TfLiteTensor *tensor_de(uint64_t handle) {
+    return static_cast<TfLiteTensor*>(de_handle(handle));
 }
 
-uintptr_t GetOutputTensor(uintptr_t instance_handle, size_t index) {
-    if (instance_handle == 0) {
-        TFLM_LOG("ERRO: instance_handle nulo");
-        return 0;
-    }
-    
-    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
-    if (instance == nullptr || instance->interpreter == nullptr) {
-        TFLM_LOG("ERRO: instance ou interpreter nulo");
-        return 0;
-    }
-    
-    if (index >= instance->interpreter->outputs_size()) {
-        TFLM_LOG("ERRO: índice %zu fora dos limites", index);
-        return 0;
-    }
-    
-    TfLiteTensor* tensor = const_cast<TfLiteTensor*>(instance->interpreter->output(index));
-    if (tensor == nullptr) {
-        TFLM_LOG("ERRO: tensor de saída nulo");
-        return 0;
-    }
-    
-    return reinterpret_cast<uintptr_t>(tensor);
+static uint64_t elementos(const TfLiteTensor *t) {
+    return (t && t->dims) ? static_cast<uint64_t>(tflite::ElementCount(*t->dims)) : 0;
+}
+
+static tflite::MicroInterpreter *interpretador(uint64_t model_handle) {
+    return model_handle ? instance_from_handle(model_handle)->interpreter : nullptr;
+}
+
+uint64_t tflm_input(uint64_t model_handle, uint64_t index) {
+    tflite::MicroInterpreter *it = interpretador(model_handle);
+    if (!it || index >= it->inputs_size()) return 0;
+    return para_handle(it->input(static_cast<size_t>(index)));
+}
+
+uint64_t tflm_output(uint64_t model_handle, uint64_t index) {
+    tflite::MicroInterpreter *it = interpretador(model_handle);
+    if (!it || index >= it->outputs_size()) return 0;
+    return para_handle(it->output(static_cast<size_t>(index)));
+}
+
+uint64_t tflm_input_count(uint64_t model_handle) {
+    tflite::MicroInterpreter *it = interpretador(model_handle);
+    return it ? it->inputs_size() : 0;
+}
+
+uint64_t tflm_output_count(uint64_t model_handle) {
+    tflite::MicroInterpreter *it = interpretador(model_handle);
+    return it ? it->outputs_size() : 0;
+}
+
+uint64_t tflm_tensor_size(uint64_t tensor_handle) {
+    return tensor_handle ? elementos(tensor_de(tensor_handle)) : 0;
+}
+
+int8_t tflm_invoke(uint64_t model_handle) {
+    tflite::MicroInterpreter *it = interpretador(model_handle);
+    if (!it) return -1;
+    return it->Invoke() == kTfLiteOk ? 0 : -1;
 }
 
 /* ---------------------------------------------------------------------------
- * Conversao de tipos -- ponto unico (secao 5.1, item B6).
+ * Valores reais -- conversao float <-> quantizado (secao 5.1, item B6).
  *
- * Antes, o despacho por tipo de tensor estava replicado em seis switches, com
- * cada copia tendo seu proprio tratamento de ponteiro nulo, arredondamento e
- * clamping. SetTensorValue sozinho ocupava 222 linhas para escrever um valor.
- *
- * Duas assimetrias que a duplicacao escondia, agora corrigidas: a leitura
- * cobria 4 tipos contra 6 da escrita (faltavam int16 e int64 -- e a entrada do
- * audio_preprocessor e int16), e o clamping so existia em alguns ramos.
- *
- * Quando a analise estatica da secao 5.2 estiver em pe, scale e zero_point
- * passam a ser constantes de compilacao e o compilador pode emitir a conversao
- * ja resolvida. Esta camada continua servindo o modo ai.tflm, que decide em
- * runtime.
+ * O despacho por tipo fica num ponto so, tensor_write/tensor_read. E ali que
+ * mora a verificacao de limites: um indice fora do tensor e recusado. A
+ * unificacao do B6 havia perdido essa verificacao, que o wrapper do TCC tinha
+ * -- uma escrita com indice grande demais corromperia a arena.
  * -------------------------------------------------------------------------*/
 
 // Le scale/zero_point do tensor. Devolve false se nao houver quantizacao
@@ -1044,11 +1054,8 @@ static float from_storage(const TfLiteTensor *t, int64_t q) {
     return (float)q;
 }
 
-// Escreve um float na posicao index, convertendo conforme o tipo do tensor.
-// Devolve 0 em caso de sucesso, -1 se o tipo nao for suportado ou os dados
-// nao estiverem alocados.
-static int8_t tensor_write(TfLiteTensor *t, size_t index, float value) {
-    if (!t || !t->data.data) return -1;
+static int8_t tensor_write(TfLiteTensor *t, uint64_t index, float value) {
+    if (!t || !t->data.data || index >= elementos(t)) return -1;
     switch (t->type) {
         case kTfLiteFloat32:
             t->data.f[index] = value;
@@ -1074,9 +1081,8 @@ static int8_t tensor_write(TfLiteTensor *t, size_t index, float value) {
     }
 }
 
-// Le a posicao index como float, desquantizando conforme o tipo.
-static float tensor_read(const TfLiteTensor *t, size_t index) {
-    if (!t || !t->data.data) return 0.0f;
+static float tensor_read(const TfLiteTensor *t, uint64_t index) {
+    if (!t || !t->data.data || index >= elementos(t)) return 0.0f;
     switch (t->type) {
         case kTfLiteFloat32: return t->data.f[index];
         case kTfLiteInt8:    return from_storage(t, t->data.int8[index]);
@@ -1090,168 +1096,84 @@ static float tensor_read(const TfLiteTensor *t, size_t index) {
     }
 }
 
-void SetTensorValue(uintptr_t tensor_handle, size_t index, float value) {
-    if (tensor_handle == 0) return;
-    TfLiteTensor *t = reinterpret_cast<TfLiteTensor*>(tensor_handle);
-    tensor_write(t, index, value);
+void tflm_set_value(uint64_t tensor_handle, uint64_t index, float value) {
+    if (tensor_handle) tensor_write(tensor_de(tensor_handle), index, value);
 }
 
-float GetTensorAsFloat(uintptr_t tensor_handle, size_t index) {
-    if (tensor_handle == 0) return 0.0f;
-    return tensor_read(reinterpret_cast<const TfLiteTensor*>(tensor_handle), index);
+float tflm_get_value(uint64_t tensor_handle, uint64_t index) {
+    return tensor_handle ? tensor_read(tensor_de(tensor_handle), index) : 0.0f;
 }
 
-size_t GetTensorSize(uintptr_t tensor_handle) {
-    if (tensor_handle == 0) return 0;
-    const TfLiteTensor *t = reinterpret_cast<const TfLiteTensor*>(tensor_handle);
-    if (!t->dims) return 0;
-    // ElementCount deriva o total das dimensoes. A versao anterior fazia
-    // bytes / tamanho_do_elemento, com um switch proprio por tipo -- que
-    // errava para tensores cujo bytes nao e multiplo exato do elemento.
-    int n = tflite::ElementCount(*t->dims);
-    return n > 0 ? (size_t)n : 0;
+// O tamanho vem so do que a RL injeta (values_len), e precisa ser exatamente o
+// numero de elementos do tensor. Nao ha mais um `count` escrito pelo usuario
+// ao lado do tamanho injetado -- herança do TCC que permitia os dois
+// divergirem e a copia sair do vetor.
+int8_t tflm_set_values(uint64_t tensor_handle, const float *values, int32_t values_len) {
+    TfLiteTensor *t = tensor_handle ? tensor_de(tensor_handle) : nullptr;
+    if (!t || !values || values_len < 0 || (uint64_t)values_len != elementos(t)) return -1;
+    for (int32_t i = 0; i < values_len; ++i)
+        if (tensor_write(t, (uint64_t)i, values[i]) != 0) return -1;
+    return 0;
 }
 
-void SetTensorArray(uintptr_t tensor_handle, const float* values, size_t count, int32_t values_len) {
-    if (tensor_handle == 0 || !values) return;
-    TfLiteTensor *t = reinterpret_cast<TfLiteTensor*>(tensor_handle);
-    for (size_t i = 0; i < count; ++i)
-        tensor_write(t, i, values[i]);
-}
-
-// Copia inteiros para o tensor SEM quantizar: cada valor vai para o tipo do
-// tensor por cast direto. E o comportamento do wrapper do TCC, e o que os
-// programas ai.tflm existentes esperam -- o teste de micro speech do TCC passa
-// por aqui codigos int8 ja prontos, e quantiza-los os corromperia.
-//
-// A unificacao da conversao de tipos (B6) chegou a fazer esta funcao quantizar,
-// o que foi uma regressao; restaurado. Para valores REAIS, use SetTensorArray.
-// Para codigos com verificacao de tipo e tamanho, prefira SetTensorRawInt8/16.
-void SetTensorFromIntArray(uintptr_t tensor_handle, const int16_t* values, size_t count, int32_t values_len) {
-    (void)values_len;
-    if (tensor_handle == 0 || !values) return;
-    TfLiteTensor *t = reinterpret_cast<TfLiteTensor*>(tensor_handle);
-    if (!t->data.data || !t->dims) return;
-    size_t n = (size_t)tflite::ElementCount(*t->dims);
-    if (count > n) count = n;
-    switch (t->type) {
-        case kTfLiteInt8:    for (size_t i = 0; i < count; ++i) t->data.int8[i]  = (int8_t)values[i];  break;
-        case kTfLiteUInt8:   for (size_t i = 0; i < count; ++i) t->data.uint8[i] = (uint8_t)values[i]; break;
-        case kTfLiteInt16:   for (size_t i = 0; i < count; ++i) t->data.i16[i]   = values[i];           break;
-        case kTfLiteInt32:   for (size_t i = 0; i < count; ++i) t->data.i32[i]   = values[i];           break;
-        case kTfLiteFloat32: for (size_t i = 0; i < count; ++i) t->data.f[i]     = (float)values[i];    break;
-        default:
-            TFLM_LOG("ERRO: tipo de tensor nao suportado em SetTensorFromIntArray: %d", t->type);
-            break;
-    }
-}
-
-void GetTensorArray(uintptr_t tensor_handle, float* values, size_t max_count, int32_t values_len) {
-    if (tensor_handle == 0 || !values) return;
-    const TfLiteTensor *t = reinterpret_cast<const TfLiteTensor*>(tensor_handle);
-    for (size_t i = 0; i < max_count; ++i)
-        values[i] = tensor_read(t, i);
+int8_t tflm_get_values(uint64_t tensor_handle, float *values, int32_t values_len) {
+    const TfLiteTensor *t = tensor_handle ? tensor_de(tensor_handle) : nullptr;
+    if (!t || !values || values_len < 0 || (uint64_t)values_len != elementos(t)) return -1;
+    for (int32_t i = 0; i < values_len; ++i)
+        values[i] = tensor_read(t, (uint64_t)i);
+    return 0;
 }
 
 /* ---------------------------------------------------------------------------
- * Acesso cru -- dados que ja estao na representacao do modelo.
+ * Codigos crus -- sem conversao float <-> quantizado.
  *
- * As funcoes acima convertem float <-> quantizado. Isso esta errado quando os
- * dados ja sao os codigos que o tensor espera: saida de um modelo que alimenta
- * outro (o pipeline do micro speech) ou dados de sensor ja em int8. Passar
- * esses codigos pela API float os requantiza -- no micro speech, 39% da
+ * Para dados que ja estao na representacao do modelo: saida de um modelo que
+ * alimenta outro (o pipeline do micro speech) ou dados de sensor ja em int8.
+ * Pela conversao acima eles seriam requantizados -- no micro speech, 39% da
  * entrada do classificador era corrompida.
  *
- * Aqui nao ha conversao: os elementos sao copiados como estao. Por isso as
- * funcoes sao exigentes -- o tipo do tensor precisa ser o do vetor, e o vetor
- * precisa ter exatamente o numero de elementos do tensor. Qualquer divergencia
- * devolve -1 sem copiar nada.
- *
- * Sao separadas por tipo, e nao genericas por bytes, porque a RL injeta a
- * contagem de ELEMENTOS do vetor: uma versao por bytes, recebendo um int16[],
- * copiaria so metade dos dados.
+ * Exigentes de proposito: o tipo do tensor precisa ser o do vetor, e o vetor
+ * precisa ter exatamente o numero de elementos do tensor; senao devolvem -1 sem
+ * copiar nada. Sao separadas por tipo porque a RL injeta a contagem de
+ * ELEMENTOS, nao de bytes.
  * -------------------------------------------------------------------------*/
 
-static TfLiteTensor *tensor_cru(uintptr_t handle, TfLiteType tipo, int32_t len) {
-    if (handle == 0) return nullptr;
-    TfLiteTensor *t = reinterpret_cast<TfLiteTensor*>(handle);
-    if (!t->data.data || !t->dims) return nullptr;
-    if (t->type != tipo) {
-        TFLM_LOG("ERRO: tensor de tipo %d, acesso cru pediu tipo %d", t->type, tipo);
-        return nullptr;
-    }
-    if (len != tflite::ElementCount(*t->dims)) {
-        TFLM_LOG("ERRO: vetor de %d elementos, tensor tem %d",
-                 len, tflite::ElementCount(*t->dims));
-        return nullptr;
-    }
+static TfLiteTensor *tensor_cru(uint64_t handle, TfLiteType tipo, int32_t len) {
+    TfLiteTensor *t = handle ? tensor_de(handle) : nullptr;
+    if (!t || !t->data.data || t->type != tipo) return nullptr;
+    if (len < 0 || (uint64_t)len != elementos(t)) return nullptr;
     return t;
 }
 
-int8_t SetTensorRawInt8(uintptr_t tensor_handle, const int8_t *values, int32_t values_len) {
+int8_t tflm_set_raw_int8(uint64_t tensor_handle, const int8_t *values, int32_t values_len) {
     TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt8, values_len);
     if (!t || !values) return -1;
     memcpy(t->data.int8, values, (size_t)values_len * sizeof(int8_t));
     return 0;
 }
 
-int8_t GetTensorRawInt8(uintptr_t tensor_handle, int8_t *values, int32_t values_len) {
+int8_t tflm_get_raw_int8(uint64_t tensor_handle, int8_t *values, int32_t values_len) {
     TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt8, values_len);
     if (!t || !values) return -1;
     memcpy(values, t->data.int8, (size_t)values_len * sizeof(int8_t));
     return 0;
 }
 
-int8_t SetTensorRawInt16(uintptr_t tensor_handle, const int16_t *values, int32_t values_len) {
+int8_t tflm_set_raw_int16(uint64_t tensor_handle, const int16_t *values, int32_t values_len) {
     TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt16, values_len);
     if (!t || !values) return -1;
     memcpy(t->data.i16, values, (size_t)values_len * sizeof(int16_t));
     return 0;
 }
 
-int8_t GetTensorRawInt16(uintptr_t tensor_handle, int16_t *values, int32_t values_len) {
+int8_t tflm_get_raw_int16(uint64_t tensor_handle, int16_t *values, int32_t values_len) {
     TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt16, values_len);
     if (!t || !values) return -1;
     memcpy(values, t->data.i16, (size_t)values_len * sizeof(int16_t));
     return 0;
 }
 
-// Função para alocar e retornar um array preenchido com os valores do tensor
-
-size_t GetInputTensorCount(uintptr_t instance_handle) {
-    if (instance_handle == 0) return 0;
-    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
-    return instance->interpreter->inputs_size();
-}
-
-size_t GetOutputTensorCount(uintptr_t instance_handle) {
-    if (instance_handle == 0) return 0;
-    TFLM_Instance* instance = reinterpret_cast<TFLM_Instance*>(instance_handle);
-    return instance->interpreter->outputs_size();
-}
-
-int8_t InvokeInterpreter(uintptr_t instance_handle) {
-    if (instance_handle == 0) {
-        TFLM_LOG("ERRO: instance_handle nulo");
-        return -1;
-    }
-
-    TFLM_Instance *instance = instance_from_handle(instance_handle);
-    if (instance->interpreter == nullptr) {
-        TFLM_LOG("ERRO: modelo nao inicializado");
-        return -1;
-    }
-
-    TfLiteStatus status = instance->interpreter->Invoke();
-    if (status != kTfLiteOk) {
-        TFLM_LOG("ERRO na inferencia: status %d", status);
-        return -1;
-    }
-    return 0;
-}
-
-// Função simples para imprimir float com quebras de linha
-void PrintFloat(float value) {
+void tflm_print_float(float value) {
     MicroPrintf("%f", value);
 }
 

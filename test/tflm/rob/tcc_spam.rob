@@ -6,6 +6,7 @@
  * TCC. Muda só a API:
  *   - required_kernels = {36, 40, 9, 25}  -> tflm_add_gather, tflm_add_mean,
  *     tflm_add_fully_connected, tflm_add_softmax
+ *   - demais funções renomeadas para a convenção tflm_ (ver lib/ai/tflm.rob)
  *   - DestroyInterpreter                  -> tflm_free_model
  *
  * Devolve 0 se tudo passar, ou o número do último teste que falhou.
@@ -43,19 +44,19 @@ int8 test_infer_not_spam() {
     if h == 0 {
         return 1;
     }
-    in = GetInputTensor(h, 0);
-    out = GetOutputTensor(h, 0);
+    in = tflm_input(h, 0);
+    out = tflm_output(h, 0);
     if in == 0 or out == 0 {
         tflm_free_model(h);
         return 2;
     }
     dados = {1.0, 82.0, 70.0, 214.0, 55.0, 98.0, 84.0, 47.0, 89.0, 26.0, 73.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     output = {0.0, 0.0};
-    SetTensorArray(in, dados, 20);
-    InvokeInterpreter(h);
-    GetTensorArray(out, output, 2);
+    tflm_set_values(in, dados);
+    tflm_invoke(h);
+    tflm_get_values(out, output);
     tflm_free_model(h);
-    PrintFloat(output[1]);
+    tflm_print_float(output[1]);
     if output[1] > 0.1 {
         return 3;
     }
@@ -68,19 +69,19 @@ int8 test_infer_spam() {
     if h == 0 {
         return 1;
     }
-    in = GetInputTensor(h, 0);
-    out = GetOutputTensor(h, 0);
+    in = tflm_input(h, 0);
+    out = tflm_output(h, 0);
     if in == 0 or out == 0 {
         tflm_free_model(h);
         return 2;
     }
     dados = {1.0, 93.0, 326.0, 72.0, 8.0, 485.0, 24.0, 35.0, 6.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     output = {0.0, 0.0};
-    SetTensorArray(in, dados, 20);
-    InvokeInterpreter(h);
-    GetTensorArray(out, output, 2);
+    tflm_set_values(in, dados);
+    tflm_invoke(h);
+    tflm_get_values(out, output);
     tflm_free_model(h);
-    PrintFloat(output[1]);
+    tflm_print_float(output[1]);
     if output[1] < 0.90 {
         return 3;
     }
@@ -92,7 +93,7 @@ int8 test_input_tensor_fail() {
     if h == 0 {
         return 1;
     }
-    in = GetInputTensor(h, 99);
+    in = tflm_input(h, 99);
     tflm_free_model(h);
     if in != 0 {
         return 2;
@@ -105,7 +106,7 @@ int8 test_output_tensor_fail() {
     if h == 0 {
         return 1;
     }
-    out = GetOutputTensor(h, 99);
+    out = tflm_output(h, 99);
     tflm_free_model(h);
     if out != 0 {
         return 2;

@@ -7,8 +7,9 @@
  *   - required_kernels = {1, 3, 4, 22, 25}  -> tflm_add_average_pool_2d,
  *     tflm_add_conv_2d, tflm_add_depthwise_conv_2d, tflm_add_reshape,
  *     tflm_add_softmax
+ *   - demais funções renomeadas para a convenção tflm_ (ver lib/ai/tflm.rob)
  *   - DestroyInterpreter                    -> tflm_free_model
- *   - SetTensorFromIntArray(in, imagem, 9216) -> SetTensorRawInt8(in, imagem)
+ *   - SetTensorFromIntArray(in, imagem, 9216) -> tflm_set_raw_int8(in, imagem)
  *
  * A última troca é CORREÇÃO, não só adaptação. A imagem é um vetor int8
  * (literal em hexadecimal), e o TCC a passava a SetTensorFromIntArray, cujo
@@ -47,19 +48,19 @@ int8 test_person() {
     if h == 0 {
         return 1;
     }
-    in = GetInputTensor(h, 0);
-    out = GetOutputTensor(h, 0);
+    in = tflm_input(h, 0);
+    out = tflm_output(h, 0);
     if in == 0 or out == 0 {
         tflm_free_model(h);
         return 2;
     }
     output = {0.0, 0.0};
-    if SetTensorRawInt8(in, imagem_pessoa) != 0 {
+    if tflm_set_raw_int8(in, imagem_pessoa) != 0 {
         tflm_free_model(h);
         return 2;
     }
-    InvokeInterpreter(h);
-    GetTensorArray(out, output, 2);   // [sem pessoa, pessoa]
+    tflm_invoke(h);
+    tflm_get_values(out, output);   // [sem pessoa, pessoa]
     tflm_free_model(h);
     if output[1] > output[0] {
         return 0;
@@ -72,19 +73,19 @@ int8 test_no_person() {
     if h == 0 {
         return 1;
     }
-    in = GetInputTensor(h, 0);
-    out = GetOutputTensor(h, 0);
+    in = tflm_input(h, 0);
+    out = tflm_output(h, 0);
     if in == 0 or out == 0 {
         tflm_free_model(h);
         return 2;
     }
     output = {0.0, 0.0};
-    if SetTensorRawInt8(in, imagem_sem_pessoa) != 0 {
+    if tflm_set_raw_int8(in, imagem_sem_pessoa) != 0 {
         tflm_free_model(h);
         return 2;
     }
-    InvokeInterpreter(h);
-    GetTensorArray(out, output, 2);   // [sem pessoa, pessoa]
+    tflm_invoke(h);
+    tflm_get_values(out, output);   // [sem pessoa, pessoa]
     tflm_free_model(h);
     if output[0] > output[1] {
         return 0;

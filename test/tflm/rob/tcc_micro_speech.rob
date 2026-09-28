@@ -7,8 +7,9 @@
  * features entram prontas, sem o audio_preprocessor. Muda a API:
  *   - required_kernels                   -> tflm_add_depthwise_conv_2d,
  *     tflm_add_fully_connected, tflm_add_reshape, tflm_add_softmax
+ *   - demais funções renomeadas para a convenção tflm_ (ver lib/ai/tflm.rob)
  *   - DestroyInterpreter                 -> tflm_free_model
- *   - SetTensorFromIntArray(in, f, 1960) -> SetTensorRawInt8(in, f)
+ *   - SetTensorFromIntArray(in, f, 1960) -> tflm_set_raw_int8(in, f)
  *
  * As features são códigos int8 já na escala que o classificador espera. O TCC
  * as declarava como int16[] e usava SetTensorFromIntArray, que copia cru; aqui
@@ -46,16 +47,16 @@ int8 test_infer_yes() {
     if h == 0 {
         return 1;
     }
-    in = GetInputTensor(h, 0);
-    out = GetOutputTensor(h, 0);
+    in = tflm_input(h, 0);
+    out = tflm_output(h, 0);
     if in == 0 or out == 0 {
         tflm_free_model(h);
         return 2;
     }
     output = {0.0, 0.0, 0.0, 0.0};
-    SetTensorRawInt8(in, features_yes);
-    InvokeInterpreter(h);
-    GetTensorArray(out, output, 4);
+    tflm_set_raw_int8(in, features_yes);
+    tflm_invoke(h);
+    tflm_get_values(out, output);
     tflm_free_model(h);
     if output[2] > output[0] and output[2] > output[1] and output[2] > output[3] {
         return 0;
@@ -68,16 +69,16 @@ int8 test_infer_no() {
     if h == 0 {
         return 1;
     }
-    in = GetInputTensor(h, 0);
-    out = GetOutputTensor(h, 0);
+    in = tflm_input(h, 0);
+    out = tflm_output(h, 0);
     if in == 0 or out == 0 {
         tflm_free_model(h);
         return 2;
     }
     output = {0.0, 0.0, 0.0, 0.0};
-    SetTensorRawInt8(in, features_no);
-    InvokeInterpreter(h);
-    GetTensorArray(out, output, 4);
+    tflm_set_raw_int8(in, features_no);
+    tflm_invoke(h);
+    tflm_get_values(out, output);
     tflm_free_model(h);
     if output[3] > output[0] and output[3] > output[1] and output[3] > output[2] {
         return 0;
@@ -90,16 +91,16 @@ int8 test_infer_silence() {
     if h == 0 {
         return 1;
     }
-    in = GetInputTensor(h, 0);
-    out = GetOutputTensor(h, 0);
+    in = tflm_input(h, 0);
+    out = tflm_output(h, 0);
     if in == 0 or out == 0 {
         tflm_free_model(h);
         return 2;
     }
     output = {0.0, 0.0, 0.0, 0.0};
-    SetTensorRawInt8(in, features_silence);
-    InvokeInterpreter(h);
-    GetTensorArray(out, output, 4);
+    tflm_set_raw_int8(in, features_silence);
+    tflm_invoke(h);
+    tflm_get_values(out, output);
     tflm_free_model(h);
     if output[0] > output[1] and output[0] > output[2] and output[0] > output[3] {
         return 0;

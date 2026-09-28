@@ -179,7 +179,7 @@ Critérios de teste: corretude funcional (unit tests) + comparação de **tempo 
 - **Responsabilidade única / Clean Architecture** (Martin, 2008) — guia explícito da refatoração do wrapper e do frontend. Evitar classes/funções "God object" como o antigo `ModelNode` ou o antigo `RegisterOp`.
 - **Extensão não-intrusiva da gramática** — não alterar semântica ou sintaxe já estabelecida da RL fora do escopo de TinyML.
 - **Deslocar verificações de runtime para compile-time sempre que possível** (mesmo princípio já adotado no mecanismo de injeção de dependência dirigida pelo compilador do Robcmp — Oliveira & Costa, 2025).
-- Qualquer nova função exposta pelo wrapper para uso via `.rob` deve respeitar a convenção de assinatura do Robcmp (parâmetro de tamanho extra para cada vetor).
+- Qualquer nova função exposta pelo wrapper para uso via `.rob` deve respeitar a convenção de assinatura do Robcmp (parâmetro de tamanho extra para cada vetor). Handles, índices e contagens usam `uint64_t` no C — nunca `uintptr_t` nem `size_t`, que têm 32 bits no Cortex-M enquanto o `uint64` da RL tem 64. O `make -C test/tflm check` verifica isso para todas as funções.
 - Preservar a possibilidade de uso **tanto** via biblioteca padrão `ai.tflm` **quanto** via sintaxe nativa — não são mutuamente exclusivos.
 - **A sintaxe vem antes da implementação.** Toda construção nova da linguagem é definida primeiro em `test/tflm/native-syntax.rob` — a especificação executável da sintaxe nativa — e só depois implementada no wrapper e no compilador. O que o compilador emite decorre da sintaxe, e o formato das funções do wrapper decorre do que o compilador emite; implementar antes de especificar inverte essa dependência.
 
