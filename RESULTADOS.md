@@ -399,6 +399,49 @@ Ressalva: medido em x86_64. No Cortex-M, com ponteiros de 32 bits, as
 estruturas internas do TFLM são menores, e os números devem cair um pouco.
 Não medido.
 
+### 5.2.9 O verificador do FlatBuffers separa o compilador de um crash
+
+O acesso do FlatBuffers é *zero-copy*: os acessores seguem offsets lidos do
+próprio arquivo, sem conferir limites. O `tflite_info` do início da pesquisa só
+conferia o identificador `TFL3`. No compilador, isso significaria que um
+`.tflite` danificado, citado num `ai_model("...")`, derruba o robcmp.
+
+Medido com `test/tflm/check_tflite.py`, sobre o `hello_world_int8.tflite`, com
+o módulo compilado com AddressSanitizer, com e sem `tflite::VerifyModelBuffer`:
+
+| Entrada | Sem verificador | Com verificador |
+|---|---|---|
+| 128 truncamentos (todo byte de 8 a 63, e a cada 37 até o fim) | **110 falhas de memória**, 18 aceitos como modelo válido | 128 rejeitados |
+| 300 arquivos com 1–8 bytes corrompidos (semente fixa) | **64 falhas de memória**, 21 rejeitados | 238 rejeitados, 0 falhas |
+
+As falhas sem verificador são `heap-buffer-overflow` e acesso desalinhado. Os
+18 truncados "aceitos" (cortes em 44–52, 1100–1322, 2543 e 2654 bytes, de 2704)
+são o caso mais traiçoeiro: o corte não atingiu nenhum campo que a análise lê,
+então o compilador aceitaria e embutiria um modelo incompleto, e o erro só
+apareceria no dispositivo, ao alocar os tensores. Com o verificador, os 62
+corrompidos restantes que passam são modelos estruturalmente válidos (um byte
+de peso trocado, por exemplo) — corretos de aceitar, e sem acesso inválido.
+
+**Serve para:** a 5.2, como requisito de robustez de uma fase de elaboração que
+lê entrada externa dentro do compilador. Um compilador não pode falhar com
+*segfault* por causa de um arquivo de dados do usuário; o erro precisa ser
+diagnóstico (`corrupted or truncated TFLite file`).
+
+### 5.2.10 Kernels vêm dos operadores, não da lista de códigos
+
+O `Model.operator_codes` é a tabela de códigos do modelo; os operadores a
+referenciam por `opcode_index`. O TFLM resolve kernels **por operador**
+(`micro_interpreter.cc:119`), então um código que nenhum operador usa não precisa ser
+registrado. O módulo coleta os kernels percorrendo os operadores de todos os
+subgrafos — o que também cobre os corpos de `IF`/`WHILE` (5b da especificação).
+
+Nos 7 modelos de `models/`, o resultado é idêntico ao da leitura direta de
+`operator_codes` (comparado com o `tflite_info` anterior). A diferença é de
+robustez: com a leitura direta, um código órfão deixado por um conversor viraria
+kernel linkado sem uso — ou, se sem suporte, um erro de compilação falso.
+
+**Serve para:** a 5.2, na descrição do algoritmo de extração de kernels.
+
 ---
 
 ## Seção 5.4 — Validação e métricas
@@ -971,6 +1014,21 @@ Totais da refatoração completa: `.cpp` 1787 → 1175, `.h` 299 → 212,
 `kernel_config.h` 269 → 0. **2355 → 1387 linhas, −41%**, com 20 kernels a mais
 expostos.
 
+### 2026-09-28 — Etapa 3.1: módulo de análise de `.tflite` no compilador
+
+`src/tinyml/TfliteModel.{h,cpp}`, compilado dentro do robcmp. O
+`test/tflm/tflite_info.cpp` passou de implementação própria a executável fino
+sobre o módulo, e deixou de compilar o `schema_utils.cc` do TFLM: o
+`GetBuiltinCode` foi reimplementado (uma linha, `max` dos dois campos).
+
+Acrescentados ao que o `tflite_info` fazia: verificação estrutural (5.2.9),
+kernels pelos operadores (5.2.10), a função do wrapper de cada kernel, e erros
+por tensor inexistente, shape dinâmico e custom op sem nome.
+
+`make -C test/tflm check` ganhou o alvo `tflite` (`check_tflite.py`): tabela ×
+header (119 = 119), fatos dos 7 modelos de `models/` — o teste falha se entrar um modelo sem fatos esperados — (incluindo o `spam` da 5.2.4 e os 9
+custom ops do áudio) e robustez sob AddressSanitizer. Suíte completa passa.
+
 ---
 
 ## Roteiro — o que foi feito e o que vem
@@ -1055,7 +1113,7 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 | # | Tarefa |
 |---|---|
 | 3.0 | Fechar as decisões em aberto de `test/tflm/native-syntax.rob` | **feito**, exceto o nome `ai_model` (aguarda o orientador) |
-| 3.1 | Migrar a leitura do `.tflite` de `test/tflm/tflite_info.cpp` para um módulo em `src/`, como fase de elaboração prévia |
+| 3.1 | Migrar a leitura do `.tflite` de `test/tflm/tflite_info.cpp` para um módulo em `src/`, como fase de elaboração prévia | **feito** — `src/tinyml/TfliteModel` (5.2.9, 5.2.10) |
 | 3.2 | Acrescentar à gramática as produções P1, P2 e P3 (5.2.1 e 5.2.6: zero conflitos medidos) |
 | 3.3 | Tipo `ai_model` na semântica, com a regra de precedência que preserva a função do usuário |
 | 3.4 | Tipagem de `input[i]`/`output[i]` e das propriedades (`.size`, `.scale`, `.zero_point`) derivada do `.tflite` |
@@ -1067,39 +1125,27 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 
 A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
 
-**Notas para retomar a 3.1** (levantadas em 2026-09-28, antes de começar):
+**Interface deixada pela 3.1** (`src/tinyml/TfliteModel.h`), para a 3.3 em diante:
 
-- **Onde:** um subdiretório novo, por exemplo `src/tinyml/`. O `CMakeLists.txt`
-  usa `file(GLOB ... "src/**/*.cpp")`, que no CMake NÃO é recursivo — pega só um
-  nível de subdiretório, como `src/semantic/`. Um nível basta.
-- **FlatBuffers:** o `schema_generated.h` exige a versão 25 do FlatBuffers
-  (`static_assert(FLATBUFFERS_VERSION_MAJOR == 25 ...)`), e o sistema não tem
-  FlatBuffers instalado. Usar o que o TFLM baixa em
-  `third-party/tflite-micro/tensorflow/lite/micro/tools/make/downloads/flatbuffers/include`.
-  Consequência: o build do robcmp passa a depender do `third_party_downloads`
-  do TFLM. O CMake precisa verificar e dar mensagem clara se faltar.
-- **`GetBuiltinCode`:** é uma linha,
-  `max(builtin_code, deprecated_builtin_code)`. Reimplementar no módulo em vez de
-  compilar o `schema_utils.cc` do TFLM dentro do compilador.
-- **Verificação estrutural:** usar o verificador do FlatBuffers
-  (`tflite::VerifyModelBuffer`). O `tflite_info` só confere o identificador
-  `TFL3`; um `.tflite` truncado ou corrompido não pode derrubar o compilador.
-- **Isolamento:** incluir os headers do TFLM só no `.cpp` do módulo. O header do
-  módulo expõe estruturas próprias, para o namespace `tflite` não vazar para as
-  outras unidades do robcmp.
-- **Fonte única:** o `test/tflm/tflite_info.cpp` passa a ser um executável fino
-  sobre o módulo, em vez de uma segunda implementação.
-- **Kernel → função do wrapper:** o módulo precisa da tabela que mapeia cada
-  kernel (builtin por nome do enum; custom por `custom_code`, ex.
-  `"SignalRfft"` → `tflm_add_rfft`) para a função `tflm_add_*`. Kernel sem
-  entrada na tabela = "kernel sem suporte" (3.7). Acrescentar ao `make check`
-  uma verificação de que a tabela cobre exatamente as funções do header.
-- **Mensagens de erro em inglês**, como as demais do robcmp
-  (`semantic error: Symbol ... not found`).
-- **Fora do escopo da 3.1:** como resolver o caminho de `ai_model("...")`
-  (relativo ao `.rob` ou às pastas `-I`) é decisão de sintaxe, em aberto na
-  seção 9 de `native-syntax.rob`; só é necessária na 3.3. O módulo recebe o
-  caminho já resolvido.
+- `TfliteModel::load(caminho, modelo, erro)` — lê e verifica o arquivo uma vez.
+  Falha devolve `false` e uma mensagem em inglês nomeando o arquivo: `file not
+  found or not readable`, `not a TFLite model (TFL3 identifier missing)`,
+  `corrupted or truncated TFLite file`, tensor inexistente, shape dinâmico,
+  custom op sem nome. O chamador acrescenta a localização no `.rob`.
+- `modelo.inputs`/`outputs` — do subgrafo 0: tipo (`TfliteType`), shape,
+  `elements` (achatado), `quantized`, `scale`, `zeroPoint`, `quantChannels`.
+- `modelo.kernels` — sem duplicatas, ordenados; `wrapperFunction` vazio =
+  kernel sem suporte (erro da 3.7, a ser emitido pela semântica).
+- `modelo.bytes` — o arquivo inteiro, para a 3.6 embutir no objeto.
+- O header não expõe nada do TFLM: só `TfliteModel.cpp` inclui o schema, e só
+  ele recebe os include dirs do TFLM no `CMakeLists.txt`, que falha com
+  mensagem clara se faltar o submódulo ou o `third_party_downloads`.
+- A tabela kernel → `tflm_add_*` fica no `.cpp`; `make -C test/tflm tflite`
+  confere que ela cobre exatamente as funções do header e que cada custom op é
+  um nome registrado pelo resolver do TFLM.
+
+Continua em aberto (seção 9 de `native-syntax.rob`): como resolver o caminho de
+`ai_model("...")` — necessário na 3.3.
 
 ---
 
@@ -1141,15 +1187,5 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
 
 ## Estado do repositório
 
-Em 2026-09-23, a Etapa 1 estava **concluída e não commitada**:
-
-```
- D wrappers/tflm/kernel_config.h
- M wrappers/tflm/tflm_wrapper.cpp
- M wrappers/tflm/tflm_wrapper.h
-?? lib/ai/tflm.rob
-?? RESULTADOS.md
-?? test/tflm/native-syntax.rob
-```
-
-Último commit: `e1f108a` — wrapper do TCC, modelos e inspetor estático.
+Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento,
+com a 3.1 concluída. `make -C test/tflm check` passa por inteiro.

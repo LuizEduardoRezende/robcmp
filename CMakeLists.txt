@@ -28,6 +28,20 @@ file(GLOB robcmp_SRC CONFIGURE_DEPENDS
     "src/**/*.cpp"
 )
 
+# TinyML: the .tflite analysis (src/tinyml) reads models with the FlatBuffers
+# schema of the TFLM submodule. Only that translation unit sees these headers.
+set(TFLM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/tflite-micro")
+set(TFLM_FLATBUFFERS_INCLUDE "${TFLM_DIR}/tensorflow/lite/micro/tools/make/downloads/flatbuffers/include")
+if (NOT EXISTS "${TFLM_DIR}/tensorflow/lite/schema/schema_generated.h")
+	message(FATAL_ERROR "TFLM submodule missing. Run: git submodule update --init third-party/tflite-micro")
+endif()
+if (NOT EXISTS "${TFLM_FLATBUFFERS_INCLUDE}/flatbuffers/flatbuffers.h")
+	message(FATAL_ERROR "FlatBuffers headers missing (the TFLM schema needs version 25.9). Run:\n"
+		"  make -C third-party/tflite-micro -f tensorflow/lite/micro/tools/make/Makefile third_party_downloads")
+endif()
+set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/tinyml/TfliteModel.cpp" PROPERTIES
+	INCLUDE_DIRECTORIES "${TFLM_DIR};${TFLM_FLATBUFFERS_INCLUDE}")
+
 flex_target(lexer "${CMAKE_CURRENT_SOURCE_DIR}/src/Language.l" "${CMAKE_BINARY_DIR}/Language_l.cpp")
 
 bison_target(scanner_main 

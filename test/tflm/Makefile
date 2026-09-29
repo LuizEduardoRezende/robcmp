@@ -2,8 +2,9 @@
 #
 #   make              compila o tflite_info (inspetor estático de .tflite)
 #   make analyze      inspeciona todos os modelos de models/
-#   make check        validação completa: wrapper (C++), testes do TCC em RL e
-#                     assinaturas RL x C em x86_64 e Cortex-M
+#   make check        validação completa: wrapper (C++), testes do TCC em RL,
+#                     assinaturas RL x C em x86_64 e Cortex-M e o módulo de
+#                     análise de .tflite do compilador
 #
 # Depende do submódulo third-party/tflite-micro. Na primeira vez, `make check`
 # compila a libtensorflow-microlite.a e baixa as dependências do TFLM (demora
@@ -20,19 +21,24 @@ OUT = out
 
 CXX ?= clang++
 CXXFLAGS = -std=c++17 -O2 -Wall
-INCLUDES = -I$(TFLM) -I$(DOWNLOADS)/flatbuffers/include
+INCLUDES = -I$(ROOT)/src -I$(TFLM) -I$(DOWNLOADS)/flatbuffers/include
 
-# schema_utils.cc traz GetBuiltinCode(), que resolve builtin_code vs
-# deprecated_builtin_code. Sem ele, modelos de conversores antigos reportam
-# a lista de kernels errada, sem aviso.
-SRCS = tflite_info.cpp $(TFLM)/tensorflow/compiler/mlir/lite/schema/schema_utils.cc
+# O tflite_info é um executável fino sobre o módulo de análise do compilador:
+# a mesma fonte, não uma segunda implementação.
+SRCS = tflite_info.cpp $(ROOT)/src/tinyml/TfliteModel.cpp
+DEPS = $(SRCS) $(ROOT)/src/tinyml/TfliteModel.h
 
 MODELS = $(wildcard models/*.tflite)
 
 all: tflite_info
 
-tflite_info: $(SRCS) | $(DOWNLOADS)
+tflite_info: $(DEPS) | $(DOWNLOADS)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SRCS) -o $@
+
+# Mesmo módulo com AddressSanitizer, para o teste de robustez.
+$(OUT)/tflite_info_asan: $(DEPS) | $(DOWNLOADS) $(OUT)
+	$(CXX) $(CXXFLAGS) -g -fsanitize=address,undefined -fno-sanitize-recover=all \
+		$(INCLUDES) $(SRCS) -o $@
 
 # Inspeciona todos os modelos de validação de uma vez.
 analyze: tflite_info
@@ -139,9 +145,14 @@ abi:
 	@echo "== assinaturas: lib/ai/tflm.rob x tflm_wrapper.h"
 	@python3 check_abi.py
 
-check: validate rob abi
+# Módulo de análise de .tflite do compilador: tabela de kernels x header,
+# fatos dos modelos reais e robustez contra arquivos truncados/corrompidos.
+tflite: tflite_info $(OUT)/tflite_info_asan
+	@python3 check_tflite.py ./tflite_info $(OUT)/tflite_info_asan
+
+check: validate rob abi tflite
 
 clean:
 	rm -rf tflite_info $(OUT)
 
-.PHONY: all analyze validate rob abi check clean
+.PHONY: all analyze validate rob abi tflite check clean

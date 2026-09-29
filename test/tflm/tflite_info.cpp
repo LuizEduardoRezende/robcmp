@@ -1,140 +1,72 @@
 /*
  * tflite_info -- inspeciona um arquivo .tflite sem executá-lo.
  *
- * Lê o modelo via FlatBuffers (acesso zero-copy: o arquivo é a estrutura de
- * dados, não há passo de desserialização) e extrai o que a análise estática
- * da seção 5.2 precisa conhecer em tempo de compilação:
- *
- *   - tensores de entrada e saída: tipo, shape, scale e zero_point
- *   - conjunto de kernels exigidos pelo modelo
- *
- * Nenhum interpretador é instanciado e nenhuma arena é alocada. Este é o
- * esqueleto do módulo de elaboração prévia que o compilador vai executar
- * antes de percorrer a AST.
+ * Executável fino sobre o módulo de análise do compilador
+ * (src/tinyml/TfliteModel.cpp): o que ele imprime é exatamente o que o robcmp
+ * enxerga do modelo em tempo de compilação -- tensores de entrada e saída
+ * (tipo, shape, scale, zero_point) e kernels exigidos, cada um com a função do
+ * wrapper que o registra.
  *
  * Uso:  ./tflite_info modelo.tflite [outro.tflite ...]
+ *       ./tflite_info --kernel-table     tabela kernel -> função do wrapper
  */
 
-#include "tensorflow/lite/schema/schema_generated.h"
-#include "tensorflow/lite/schema/schema_utils.h"
+#include "tinyml/TfliteModel.h"
 
 #include <cstdio>
-#include <fstream>
-#include <set>
-#include <string>
-#include <vector>
+#include <cstring>
 
-static const char *TypeName(tflite::TensorType t) {
-	switch (t) {
-		case tflite::TensorType_FLOAT32: return "float32";
-		case tflite::TensorType_FLOAT16: return "float16";
-		case tflite::TensorType_INT32:   return "int32";
-		case tflite::TensorType_UINT8:   return "uint8";
-		case tflite::TensorType_INT64:   return "int64";
-		case tflite::TensorType_STRING:  return "string";
-		case tflite::TensorType_BOOL:    return "bool";
-		case tflite::TensorType_INT16:   return "int16";
-		case tflite::TensorType_INT8:    return "int8";
-		case tflite::TensorType_UINT16:  return "uint16";
-		case tflite::TensorType_UINT32:  return "uint32";
-		default:                         return "outro";
-	}
-}
+static void PrintTensor(const TfliteTensor &t, const char *role, unsigned position) {
+	printf("  %-6s[%u] tipo=%-8s shape=[", role, position, tfliteTypeName(t.type));
+	for (size_t i = 0; i < t.shape.size(); i++)
+		printf("%s%d", i ? "," : "", t.shape[i]);
+	printf("] elementos=%llu", (unsigned long long)t.elements);
 
-// Imprime um tensor de interface (entrada ou saída) do subgrafo.
-static void PrintTensor(const tflite::SubGraph *sg, int index,
-                        const char *role, int position) {
-	const tflite::Tensor *t = sg->tensors()->Get(index);
-
-	printf("  %-6s[%d] tipo=%-8s shape=[", role, position, TypeName(t->type()));
-
-	long long elements = 1;
-	for (unsigned i = 0; i < t->shape()->size(); i++) {
-		printf("%s%d", i ? "," : "", t->shape()->Get(i));
-		elements *= t->shape()->Get(i);
-	}
-	printf("] elementos=%lld", elements);
-
-	// Parâmetros de quantização assimétrica linear. O schema define a
-	// conversão como f = scale * (q - zero_point); é a mesma fórmula que o
-	// wrapper aplica hoje em runtime, e que pode ser resolvida em compilação.
-	const tflite::QuantizationParameters *q = t->quantization();
-	if (q && q->scale() && q->scale()->size() > 0) {
-		printf("  scale=%g zero_point=%lld", q->scale()->Get(0),
-		       (long long)q->zero_point()->Get(0));
-		if (q->scale()->size() > 1)
-			printf("  (quantizacao por canal: %u escalas)", q->scale()->size());
+	if (t.quantized) {
+		printf("  scale=%g zero_point=%lld", t.scale, (long long)t.zeroPoint);
+		if (t.quantChannels > 1)
+			printf("  (quantizacao por canal: %u escalas)", t.quantChannels);
 	}
 	printf("\n");
 }
 
 static bool Inspect(const char *path) {
-	std::ifstream file(path, std::ios::binary);
-	if (!file) {
-		fprintf(stderr, "erro: nao foi possivel abrir %s\n", path);
-		return false;
-	}
-	std::vector<char> buffer((std::istreambuf_iterator<char>(file)),
-	                          std::istreambuf_iterator<char>());
-
-	// "TFL3" nos bytes 4..7 identifica o formato. Custa nada verificar e evita
-	// interpretar lixo como modelo -- a primeira checagem que o compilador
-	// deve fazer ao receber um caminho no .rob do usuario.
-	if (buffer.size() < 8 || !tflite::ModelBufferHasIdentifier(buffer.data())) {
-		fprintf(stderr, "erro: %s nao e um .tflite valido (identificador TFL3 ausente)\n", path);
+	TfliteModel model;
+	std::string error;
+	if (!TfliteModel::load(path, model, error)) {
+		fprintf(stderr, "erro: %s\n", error.c_str());
 		return false;
 	}
 
-	const tflite::Model *model = tflite::GetModel(buffer.data());
-	const tflite::SubGraph *sg = model->subgraphs()->Get(0);
+	printf("=== %s (%zu bytes) ===\n", path, model.bytes.size());
+	printf("  versao do schema=%u  subgrafos=%u\n", model.schemaVersion, model.subgraphs);
+	printf("  entradas=%zu  saidas=%zu\n", model.inputs.size(), model.outputs.size());
 
-	printf("=== %s (%zu bytes) ===\n", path, buffer.size());
-	printf("  versao do schema=%u  subgrafos=%u  tensores=%u  operadores=%u\n",
-	       model->version(), model->subgraphs()->size(), sg->tensors()->size(),
-	       sg->operators() ? sg->operators()->size() : 0);
-	printf("  entradas=%u  saidas=%u\n", sg->inputs()->size(), sg->outputs()->size());
+	for (unsigned i = 0; i < model.inputs.size(); i++)
+		PrintTensor(model.inputs[i], "input", i);
+	for (unsigned i = 0; i < model.outputs.size(); i++)
+		PrintTensor(model.outputs[i], "output", i);
 
-	for (unsigned i = 0; i < sg->inputs()->size(); i++)
-		PrintTensor(sg, sg->inputs()->Get(i), "input", i);
-	for (unsigned i = 0; i < sg->outputs()->size(); i++)
-		PrintTensor(sg, sg->outputs()->Get(i), "output", i);
-
-	// Kernels exigidos. ATENCAO: ler oc->builtin_code() diretamente devolve
-	// resultado errado para modelos gerados por conversores antigos, que
-	// deixam esse campo zerado e guardam o codigo real em
-	// deprecated_builtin_code. GetBuiltinCode() trata os dois casos. A falha e
-	// silenciosa: o modelo parece usar ADD quando na verdade usa outra coisa.
-	std::set<std::string> builtins, customs;
-	for (unsigned i = 0; i < model->operator_codes()->size(); i++) {
-		const tflite::OperatorCode *oc = model->operator_codes()->Get(i);
-		if (oc->custom_code())
-			customs.insert(oc->custom_code()->str());
-		else
-			builtins.insert(tflite::EnumNameBuiltinOperator(tflite::GetBuiltinCode(oc)));
-	}
-
-	printf("  kernels builtin (%zu):", builtins.size());
-	for (const std::string &k : builtins)
-		printf(" %s", k.c_str());
-	printf("\n");
-
-	// Custom ops nao aparecem no enum BuiltinOperator: sao registrados por
-	// string, via AddCustom(). O enum KernelType do wrapper atual e cego para
-	// eles, e por isso nao consegue rodar o audio preprocessor.
-	if (!customs.empty()) {
-		printf("  kernels custom  (%zu):", customs.size());
-		for (const std::string &k : customs)
-			printf(" %s", k.c_str());
-		printf("\n");
-	}
+	printf("  kernels (%zu):\n", model.kernels.size());
+	for (const TfliteKernel &k : model.kernels)
+		printf("    %-7s %-38s %s\n", k.custom ? "custom" : "builtin", k.op.c_str(),
+		       k.wrapperFunction.empty() ? "SEM SUPORTE" : k.wrapperFunction.c_str());
 	printf("\n");
 	return true;
 }
 
 int main(int argc, char **argv) {
 	if (argc < 2) {
-		fprintf(stderr, "uso: %s modelo.tflite [outro.tflite ...]\n", argv[0]);
+		fprintf(stderr, "uso: %s modelo.tflite [outro.tflite ...]\n"
+		                "     %s --kernel-table\n", argv[0], argv[0]);
 		return 2;
+	}
+
+	if (strcmp(argv[1], "--kernel-table") == 0) {
+		for (const TfliteKernel &k : TfliteModel::supportedKernels())
+			printf("%s %s %s\n", k.custom ? "custom" : "builtin", k.op.c_str(),
+			       k.wrapperFunction.c_str());
+		return 0;
 	}
 
 	bool ok = true;
