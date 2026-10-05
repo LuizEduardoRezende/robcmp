@@ -15,6 +15,7 @@
 #include "Load.h"
 #include "MemCopy.h"
 #include "BitCast.h"
+#include "ElementAccess.h"
 #include "semantic/Visitor.h"
 
 class CoercionBase: public Node {
@@ -210,6 +211,10 @@ public:
     virtual Node* visit(Array& n) override;
     virtual Node* visit(Matrix& n) override;
     virtual Node* visit(UpdateArray& n) override;
+
+    virtual Node* visit(UpdateElementArray& n) override;
+    virtual Node* visit(LoadElementMember& n) override;
+    virtual Node* visit(UpdateElementMember& n) override;
 
     virtual Node* visit(UserType &n) override;
     virtual Node* visit(Enum &n) override;

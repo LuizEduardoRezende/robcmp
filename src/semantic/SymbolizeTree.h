@@ -6,6 +6,7 @@
 #include "Matrix.h"
 #include "Array.h"
 #include "UpdateArray.h"
+#include "ElementAccess.h"
 #include "FunctionImpl.h"
 #include "Scalar.h"
 #include "Enum.h"
@@ -68,6 +69,28 @@ public:
                 c->setScope(&n);
             }
         }
+        return NULL;
+    }
+
+    // Array literal values are not children of the node, as in Array.
+    void visitElements(Node& n, ArrayElements *elements) {
+        if (!elements)
+            return;
+        for(ArrayElement *e : elements->getElements()) {
+            e->value->setScope(&n);
+            e->value->accept(*this);
+        }
+    }
+
+    virtual Node* visit(UpdateElementArray& n) override {
+        visit((Node&)n);
+        visitElements(n, n.getElements());
+        return NULL;
+    }
+
+    virtual Node* visit(UpdateElementMember& n) override {
+        visit((Node&)n);
+        visitElements(n, n.getElements());
         return NULL;
     }
 
