@@ -236,7 +236,13 @@ metodológico: o TCC foi validado só em x86_64, onde esse defeito é invisível
 
 ## Seção 5.2 — Frontend e análise estática
 
-### 5.2.1 A sintaxe nativa exige apenas três produções novas de gramática
+### 5.2.1 O desenho indexado exigia três produções novas de gramática
+
+**Substituído (2026-10-05, ver 5.2.12).** Este registro mede o desenho em que
+os tensores eram indexados (`m.input[0]`). O desenho adotado, com membros
+nomeados (`m.input0`), não exige nenhuma produção. A medição continua valendo
+como termo de comparação entre os dois.
+
 
 Levantamento empírico, compilando cada forma contra o robcmp:
 
@@ -347,46 +353,84 @@ antes desta especificação — ordem invertida. A especificação confirmou que
 funções existentes bastam. A regra "sintaxe antes da implementação" foi
 registrada no `CLAUDE.md` (seção 6).
 
-### 5.2.7 O robcmp marca `zeroext` em retornos inteiros com sinal
+### 5.2.7 O robcmp não marca `signext` em inteiros pequenos com sinal
 
-Achado pelo `check_abi.py`. Em toda função que devolve `int8`, a RL declara
-`zeroext i8` e o C (`int8_t`, com sinal) define `signext i8`. O atributo diz ao
-backend que o chamador pode supor os bits altos zerados; quando o wrapper
-devolve −1, eles não estão.
+**Correção (2026-10-06).** A versão anterior deste registro dizia que o robcmp
+declara `zeroext i8` nos retornos `int8`. Está errado: o `check_abi.py` agrupa
+os atributos da assinatura inteira, e o `zeroext` visto era o do parâmetro
+`uint64`. Lido no IR, função por função:
 
-Testado: `r = tflm_invoke(0)` (que devolve −1) comparado com `!= 0`, `== -1` e
-`< 0` — as três comparações acertam, porque o robcmp compara em `i8` e o backend
-olha só os 8 bits baixos. O risco é latente: aparece quando o valor é ampliado
-e o backend dispensa uma extensão confiando no `zeroext`.
+```
+RL (robcmp):  declare i8 @ret_i8()            declare i32 @amplia(i8)
+C  (clang):   define signext i8 @ret_i8()     define i32 @amplia(i8 signext %0)
+```
 
-A causa é do compilador, não do wrapper: o `int8` da RL é com sinal e deveria
-gerar `signext`. **Para a Etapa 3**: corrigir a escolha do atributo por
-sinalização do tipo. O `check_abi.py` reporta a divergência como aviso.
+O robcmp põe `zeroext` nos tipos sem sinal e **nada** nos com sinal
+(`src/FunctionDecl.cpp:150` e `:158`, `src/FunctionImpl.cpp:52` e `:86`). Falta o
+`signext` em `int8` e `int16`, em parâmetros e retornos.
+
+**Não é risco latente: produz valor errado.** A RL passa −1 (`int8`) a uma função
+C que o devolve como `int32`:
+
+| Lado C compilado por | Código da função | Resultado |
+|---|---|---|
+| clang (x86_64) | `mov %edi,%eax` — confia na extensão feita por quem chama | **255** |
+| gcc (x86_64) | `movsbl %dil,%eax` — estende de novo | −1 |
+| clang (Cortex-M) | `bx lr` — a convenção do ARM obriga quem chama a estender | não executado; mesmo padrão |
+
+Reproduzir: `make -C test/achados signext`.
+
+No sentido inverso (retorno), o caminho RL ← C é seguro: sem o atributo, quem
+chama não supõe extensão e estende. Comparações de `tflm_invoke(...)` com `0` e
+`-1` acertam, como verificado antes.
+
+A API do wrapper não tem parâmetro `int8`/`int16` escalar, então o TinyML não é
+afetado hoje. A linguagem é: qualquer função C com esses parâmetros, compilada
+pelo clang, recebe valores errados. **Para a Etapa 3 (3.8):** marcar `signext`
+nos tipos com sinal.
 
 ### 5.2.8 Arena: quanto cada modelo precisa, e quanto o TCC reservava
 
 Medido em x86_64 com o TFLM puro. "Usada" é o `arena_used_bytes()` depois do
 `AllocateTensors`; "mínima viável" é a menor arena com a qual o
 `AllocateTensors` passa, obtida por busca binária com cada tentativa num
-processo isolado (por causa das janelas de crash da 5.4.12).
+processo isolado (por causa das janelas de crash da 5.4.12). Medida duas vezes:
+com o buffer da arena começando num endereço múltiplo de 16, e 8 bytes depois.
+Reproduzir: `make -C test/achados arena` (`test/achados/arena/arena.cpp`).
 
-| Modelo | Usada | Mínima viável | Arena do TCC | Sobra no TCC |
-|---|---|---|---|---|
-| hello_world (float e int8) | 1216 | 1616 | 3000 | 86% |
-| spam | 2000 | 2208 | 4096 | 86% |
-| person_detect | 85024 | 85024 | 90000 | 6% |
-| micro_speech_quantized | 7312 | 7312 | 12288 | 68% |
-| audio_preprocessor_int8 | 9952 | 9952 | — | — |
+| Modelo | Usada | Mínima (alinhada) | Mínima (+8 bytes) | Arena do TCC | Sobra no TCC |
+|---|---|---|---|---|---|
+| hello_world_float | 1216 | 1608 | 1616 | 3000 | 87% |
+| hello_world_int8 | 1184 | 1608 | 1616 | 3000 | 87% |
+| spam | 2000 | 2200 | 2208 | 4096 | 86% |
+| person_detect | 85024 | 85016 | 85024 | 90000 | 6% |
+| micro_speech_quantized | 7312 | 7304 | 7312 | 12288 | 68% |
+| audio_preprocessor_float | 9136 | 9128 | 9136 | — | — |
+| audio_preprocessor_int8 | 9952 | 9944 | 9952 | — | — |
 
-Dois fatos:
+A sobra é calculada sobre a mínima alinhada.
+
+**Correção (2026-10-06).** A primeira versão desta tabela tinha só a coluna
+"+8 bytes", sem dizer o alinhamento, e juntava os dois hello_world numa linha
+com "usada 1216" — o int8 usa 1184. A ferramenta daquela medição não foi
+guardada; a de `test/achados` reproduz exatamente os números antigos quando o
+buffer começa 8 bytes fora do alinhamento de 16, o que explica a diferença.
+
+Três fatos:
 
 1. **`arena_used_bytes()` não é o mínimo.** Nos modelos pequenos, o planejamento
    de memória precisa de espaço temporário que é devolvido ao final: o
-   hello_world usa 1216 bytes mas só aloca com 1616. Nos modelos maiores, o
-   temporário cabe dentro do que é usado e os dois números coincidem. Um cálculo
-   estático da arena que reproduza só o `arena_used_bytes` subdimensionaria os
-   modelos pequenos — e cairia na faixa de falha, ou de crash.
-2. **As arenas do TCC eram superdimensionadas em até 86%.** Num STM32F407, com
+   hello_world usa 1216 bytes mas só aloca com 1608. Nos modelos maiores, o
+   temporário cabe dentro do que é usado, e a mínima fica até 8 bytes abaixo da
+   usada (que conta o arredondamento de alinhamento). Um cálculo estático da
+   arena que reproduza só o `arena_used_bytes` subdimensionaria os modelos
+   pequenos — e cairia na faixa de falha, ou de crash.
+2. **O alinhamento do buffer muda a arena necessária.** O TFLM descarta os bytes
+   até o próximo múltiplo de 16: com o buffer deslocado em 8, todo modelo
+   precisa de 8 bytes a mais. Liga-se à 5.4.10 — o alinhamento que o robcmp dá à
+   arena depende de heurística do backend, então o cálculo da arena precisa
+   somar a margem de alinhamento ou o compilador precisa garantir o alinhamento.
+3. **As arenas do TCC eram superdimensionadas em até 87%.** Num STM32F407, com
    192 KB de RAM, reservar arena por tentativa desperdiça memória que o
    firmware poderia usar para outra coisa.
 
@@ -441,6 +485,71 @@ robustez: com a leitura direta, um código órfão deixado por um conversor vira
 kernel linkado sem uso — ou, se sem suporte, um erro de compilação falso.
 
 **Serve para:** a 5.2, na descrição do algoritmo de extração de kernels.
+
+### 5.2.11 O modo de declarações do `use` perde o arquivo inteiro com um literal de array
+
+No modo padrão, o `use` lê a biblioteca por uma gramática simplificada
+(`src/LanguageUse.y`), que guarda só as declarações e pula o corpo das funções
+por recuperação de erro. Com `-bdep`, lê pela gramática completa e compila a
+biblioteca junto (`src/Scanner.cpp:185`).
+
+| Biblioteca | Sem `-bdep` | Com `-bdep` |
+|---|---|---|
+| três funções, uma com `a = {1.0, 2.0};` no corpo | `Symbol dobro not found` — perde **as três**, inclusive a anterior ao literal | compila |
+| a mesma, com `a = 1.0;` no lugar do literal | compila | compila |
+| uma variável global e uma função (5.4.14) | `Symbol contador not found` | compila |
+
+Confirmado no robcmp do commit `f6263b0`, anterior à gramática da 3.2: o
+problema é da base. O `test/general` compila tudo com `-bdep`, por isso nunca
+apareceu nos testes. Reproduzir: `make -C test/achados use`. O mecanismo exato
+dentro da gramática simplificada não foi investigado.
+
+**Serve para:** uma biblioteca em RL que use a sintaxe nativa terá
+`m.input0 = {…}` no corpo das funções, e compilada separadamente cai neste
+caso. Levado à orientação de 2026-10-05 como pergunta: corrigir na branch,
+reportar ao upstream ou só documentar.
+
+### 5.2.12 Com tensores como membros nomeados, a sintaxe nativa não exige nenhuma produção
+
+Proposta do orientador (2026-10-05): cada tensor é um membro do modelo, com
+nome e número, em vez de `input[0]`, `input[1]`. Adotado com numeração a partir
+de 0: `input0`, `input1`, ..., `output0`, .... O elemento k passa a ser
+`m.output0[k]` — índice de vetor comum.
+
+| Forma | Desenho indexado | Desenho com membros |
+|---|---|---|
+| vetor inteiro | `m.input[0] = {1.0}` — P1, nova | `m.input0 = {1.0}` — já aceita |
+| elemento | `m.output[0][5]` — duplo índice (`LoadMatrix`) | `m.output0[5]` — `LoadArray` |
+| propriedade | `m.input[0].scale` — P2, nova | `m.input0.scale` — identificador pontilhado |
+| visão crua | `m.input[0].raw = v` — P3, nova | `m.input0.raw = v` — já aceita |
+| elemento cru | não previsto | `m.output0.raw[1]` — já aceita |
+| contagem | `m.input.count` | `m.input_count` |
+
+Verificado: `test/tflm/native-syntax.rob`, reescrito no desenho novo (640
+linhas), é lido pela gramática original sem nenhum erro de sintaxe — com um
+erro proposital na última linha, para provar que o parser chegou ao fim. As
+produções P1–P3 (`4dd5c68`) foram revertidas; a gramática voltou a ser idêntica
+à do commit `07af0f3`, e o placar de `test/general` não muda (63 passam).
+
+Outros efeitos:
+
+- **Some uma regra.** O índice do tensor precisava ser constante porque cada
+  tensor tem um tipo; com o número no nome, é sempre constante.
+- **Numeração a partir de 0.** O orientador propôs começar em 1 (`input1`);
+  trocado para 0 por três razões, registradas na seção 0 da especificação: na
+  mesma expressão `m.output0[0]` tensor e elemento começam do mesmo número; o
+  modo biblioteca já chama o primeiro tensor de `tflm_input(m, 0)`; e o TFLite,
+  o TFLM e suas ferramentas numeram a partir de 0.
+- **Contadores no modelo.** `input_count`/`output_count` contam tensores; `.size`
+  conta elementos de um tensor. Por isso não existe `input0.count`.
+- **Sem atalho para tensor único.** Não há `m.input` significando "o único
+  tensor": mesmo num modelo de uma entrada, ela é `input0` (decisão da seção 5).
+
+**Serve para:** a 5.2, como o resultado mais forte possível para a
+classificação de extensão minimamente intrusiva (Mernik/Heering/Sloane):
+**nenhuma mudança sintática**, todo o trabalho na semântica. A comparação com o
+desenho indexado (três produções, 5.2.1) mostra que a escolha de desenho, e não
+só a implementação, determina o quanto a extensão é intrusiva.
 
 ---
 
@@ -1029,6 +1138,45 @@ por tensor inexistente, shape dinâmico e custom op sem nome.
 header (119 = 119), fatos dos 7 modelos de `models/` — o teste falha se entrar um modelo sem fatos esperados — (incluindo o `spam` da 5.2.4 e os 9
 custom ops do áudio) e robustez sob AddressSanitizer. Suíte completa passa.
 
+### 2026-10-05 — `4dd5c68` Etapa 3.2: produções da gramática (revertido em 2026-10-13)
+
+As formas P1, P2 e P3 entraram em `src/Language.y`, gerando nós que só
+registram a forma sintática (`src/ElementAccess.h`): `UpdateElementArray`,
+`LoadElementMember`, `UpdateElementMember`. O parser não conhece o tipo do
+objeto indexado; a semântica dá o significado. Até o `ai_model` existir (3.3),
+todo uso é um único erro semântico, na linha e coluna certas
+(`Member access a[...].scale is only valid on ai_model tensors.`).
+
+Evidência de extensão mínima: o Bison continua com o 1 conflito já declarado
+com `%expect 1`, com o mesmo contraexemplo (`'(' expr • ')'`); o LLVM IR dos 65
+programas de `test/general` é idêntico byte a byte antes e depois; o placar dos
+testes não muda (63 passam; `bool.rob` e `scalar-in-two-contexts.rob` já
+falhavam).
+
+Notado para a 3.4 (superado em 2026-10-13: no desenho com membros o elemento é
+`m.output0[5]`, um `LoadArray`, e não há duplo índice): `m.output[0][5]` e
+`m.input[0][7] = v` já eram aceitos pela gramática, como `LoadMatrix`/`UpdateMatrix`. Escrita com
+duplo índice num símbolo inexistente aborta o robcmp
+(`Assertion 'tid != -1 && "Undefined type"'`), também na base.
+
+### 2026-10-06 — Demonstrações executáveis dos achados (`test/achados`)
+
+Pasta com um alvo de Makefile por achado, para mostrar na orientação:
+`make signext` (5.2.7), `make use` (5.2.11), `make arena` (5.2.8). Construí-las
+corrigiu dois registros: a 5.2.7 descrevia o mecanismo errado (não há `zeroext`
+em `int8`; falta `signext`, e o valor sai de fato errado), e a 5.2.8 não dizia o
+alinhamento do buffer em que foi medida.
+
+### 2026-10-13 — Sintaxe com tensores como membros; P1–P3 revertidas
+
+Aplicadas à especificação as decisões da orientação de 2026-10-05 (5.2.12):
+`inputN`/`outputN`, `input_count`/`output_count`, caminho relativo ao `.rob` e
+depois `-I`. Numeração trocada de 1 para 0 (5.2.12). Acrescentados à seção 8 os
+erros de tensor além do último e de índice de elemento constante fora do
+tensor. Corrigidas na especificação a API citada
+no modo biblioteca (ainda dizia `InitializeInterpreter`) e a origem dos kernels
+(5.2.10). O commit `4dd5c68` (P1–P3) foi revertido: a gramática é a original.
+
 ---
 
 ## Roteiro — o que foi feito e o que vem
@@ -1112,15 +1260,15 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 
 | # | Tarefa |
 |---|---|
-| 3.0 | Fechar as decisões em aberto de `test/tflm/native-syntax.rob` | **feito**, exceto o nome `ai_model` (aguarda o orientador) |
-| 3.1 | Migrar a leitura do `.tflite` de `test/tflm/tflite_info.cpp` para um módulo em `src/`, como fase de elaboração prévia | **feito** — `src/tinyml/TfliteModel` (5.2.9, 5.2.10) |
-| 3.2 | Acrescentar à gramática as produções P1, P2 e P3 (5.2.1 e 5.2.6: zero conflitos medidos) |
-| 3.3 | Tipo `ai_model` na semântica, com a regra de precedência que preserva a função do usuário |
-| 3.4 | Tipagem de `input[i]`/`output[i]` e das propriedades (`.size`, `.scale`, `.zero_point`) derivada do `.tflite` |
-| 3.5 | Visão `.raw`: verificação de tipo e tamanho em tempo de compilação |
-| 3.6 | Geração de código: emitir as chamadas da API `tflm_` (mapeamento em 5.1.7), incluindo um `tflm_add_*` por kernel detectado |
-| 3.7 | Erros de compilação: shape incompatível, kernel sem suporte, caminho não-literal, índice de tensor não-constante |
-| 3.8 | Retornos inteiros com sinal: `signext` em vez de `zeroext` (5.2.7) |
+| 3.0 | Fechar as decisões de `test/tflm/native-syntax.rob` | **feito** — decisões da orientação de 2026-10-05 aplicadas (5.2.12); só o nome `ai_model` segue em aberto |
+| 3.1 | Migrar a leitura do `.tflite` para um módulo em `src/`, como fase de elaboração prévia | **feito** — `src/tinyml/TfliteModel` (5.2.9, 5.2.10) |
+| 3.2 | Gramática | **dispensada** — o desenho com membros não exige produção (5.2.12); P1–P3 (`4dd5c68`) revertidas |
+| 3.3 | `ai_model(...)` na semântica (`PropagateTypes::visit(FunctionCall)`): precedência da função do usuário, caminho literal resolvido relativo ao `.rob` e depois nas pastas `-I`, arena obrigatória, `TfliteModel::load` |
+| 3.4 | Membros do modelo derivados do `.tflite`: `inputN`/`outputN` (vetores tipados), `input_count`/`output_count`, e por tensor `.size`/`.scale`/`.zero_point`/`.raw`. Interceptar os nós que o parser já gera: `Load`, `LoadArray`, `UpdateArray`, `Scalar`, `Array`, e `FunctionCall` para `m.invoke()` |
+| 3.5 | Visão `.raw`: verificação de tipo e tamanho em tempo de compilação, inclusive `.raw[k]` |
+| 3.6 | Geração de código: modelo e arena como globais alinhados a 16 (5.2.8), um `tflm_add_*` por kernel detectado, e as chamadas da API `tflm_` (5.1.7) |
+| 3.7 | Erros de compilação da seção 8 da especificação: caminho não literal, arena ausente, arquivo inválido, tamanho incompatível, tensor inexistente (como `input1` num modelo de uma entrada), índice de elemento constante fora do tensor, escrita em `.scale`, `.raw` com tipo ou tamanho errado, kernel sem suporte |
+| 3.8 | `signext` em `int8`/`int16` com sinal, em parâmetros e retornos (5.2.7) |
 | 3.9 | Fazer `test/tflm/native-syntax.rob` compilar e rodar, com o mesmo resultado do modo biblioteca |
 
 A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
@@ -1176,16 +1324,21 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
 
 ## Decisões ainda em aberto
 
-- Nome do construtor na sintaxe nativa: `ai_model` foi aplicado em
-  `native-syntax.rob`, aguardando confirmação do orientador.
-- `arena_size`: derivar exige reproduzir estaticamente o memory planner do TFLM.
-  Enquanto não existir, o argumento explícito é a saída.
-- `input.count` / `output.count` existem na sintaxe?
-- Modelos com mais de um subgrafo: ignorar os demais ou recusar com erro?
+- Nome do construtor na sintaxe nativa: `ai_model` (aplicado em
+  `native-syntax.rob`).
+- Arena automática (fase 2): o caminho é medir na compilação, rodando o TFLM do
+  host (`test/achados/arena`). Falta saber se o valor do host cobre o do
+  Cortex-M — decide-se com as medições no STM32 da Etapa 4.
+
+Decididas na orientação de 2026-10-05: tensores como membros numerados
+(5.2.12), a partir de 0 — a base 1 proposta foi trocada depois; `input_count`/`output_count` no modelo; caminho do modelo relativo
+ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
 
 ---
 
 ## Estado do repositório
 
-Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento,
-com a 3.1 concluída. `make -C test/tflm check` passa por inteiro.
+Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento:
+3.0 e 3.1 concluídas, 3.2 dispensada, próxima a 3.3. `make -C test/tflm check`
+passa por inteiro; `make -C test/achados` reproduz os achados 5.2.7, 5.2.8 e
+5.2.11.

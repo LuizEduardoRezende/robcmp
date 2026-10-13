@@ -10,68 +10,58 @@
  * Todos os modelos, tipos, shapes e parâmetros de quantização citados abaixo
  * foram extraídos dos arquivos reais em models/, com ./tflite_info.
  *
- * Princípio que guia tudo: extensão mínima da gramática. Quase tudo o que
- * aparece aqui já existe na RL e foi verificado compilando contra o robcmp
- * atual:
+ * Princípio que guia tudo: extensão mínima da linguagem. Toda forma usada aqui
+ * JÁ É ACEITA pela gramática atual do robcmp -- verificado compilando cada uma:
  *
  *   x = f(args)         chamada; vira construção de tipo na análise semântica
- *                       (src/semantic/PropagateTypes.cpp:338)
- *   x.campo[i]          acesso recursivo a campo, leitura e escrita (commit 98ab7b8)
- *   x.campo[i][j]       duplo índice, leitura e escrita
+ *                       (PropagateTypes::visit(FunctionCall))
+ *   x.campo = {1.0}     literal de array atribuído a campo
+ *   x.campo[i]          elemento de campo vetor, leitura e escrita
+ *   x.campo.prop        identificador pontilhado, como x.size
+ *   x.campo.prop[i]     elemento de propriedade vetor
  *   x.metodo()          chamada de método (test/general/bind.rob)
- *   x.size              constante nomeada anexada ao valor (src/Array.cpp:11)
- *   x.campo = {1.0}     literal de array atribuído a campo SEM índice
  *
- * O trabalho é quase todo semântico. A gramática muda em três pontos, descritos
- * na seção 0.
+ * O trabalho é todo semântico: nenhuma produção de gramática é acrescentada
+ * (seção 0).
  */
 
 
 /* =========================================================================
- * 0. Os três acréscimos de gramática necessários
+ * 0. Nenhuma produção nova de gramática
  *
- * Levantados empiricamente, compilando cada forma contra o robcmp atual.
+ * Cada tensor é um MEMBRO do modelo, com nome e número: input0, input1, ...,
+ * output0, output1, ... Cada membro é um vetor. O elemento k do tensor de
+ * saída 0 é `m.output0[k]` -- um índice só, de vetor comum.
  *
- * ACEITAS HOJE:
- *     x = obj.campo[0];           x = obj.campo[0][1];
- *     obj.campo[0]    = escalar;  obj.campo[0][1] = escalar;
- *     obj.campo       = {1.0};    x = obj.campo.size;
- *     obj.metodo();               x = tipo("string");
+ * Desenho anterior, substituído na orientação de 2026-10-05: os tensores eram
+ * indexados, `m.input[0]`, e o elemento era `m.input[0][k]`. Aquele desenho
+ * exigia três produções novas de gramática, porque `m.input[0].scale` e
+ * `m.input[0] = {1.0}` continuam DEPOIS de um índice, forma que a RL não tinha.
+ * As três foram medidas (zero conflitos novos no Bison), implementadas
+ * (commit 4dd5c68) e revertidas com a troca de desenho.
  *
- * ERRO DE SINTAXE HOJE -- e necessárias para esta sintaxe:
+ * Com membros nomeados, tudo é identificador pontilhado e vetor -- formas que a
+ * gramática já aceita. Verificado: um programa com todas as formas desta
+ * especificação é lido pelo parser sem nenhum erro de sintaxe.
  *
- *   (P1)  obj.campo[0] = {1.0};       literal de array à direita de campo indexado
- *   (P2)  x = obj.campo[0].prop;      propriedade lida depois de um índice
- *   (P3)  obj.campo[0].prop = v;      atribuição a propriedade depois de um índice
- *         obj.campo[0].prop = {1};    (e a mesma forma com literal de array)
+ * Ganhos além da gramática:
+ *   - o número do tensor faz parte do nome, então é sempre constante: some a
+ *     regra "índice de tensor deve ser constante de compilação";
+ *   - `m.output0.raw[k]`, o elemento k da visão crua, sai sem custo;
+ *   - membros resolvidos por valor, como .size e .rows (src/Array.cpp,
+ *     src/Matrix.cpp): um tipo do usuário com campo `input0` resolve o seu.
  *
- * P1 é a forma central: atribuir um vetor a um tensor identificado por índice.
- * Foi por causa dela que o arquivo do TCC 1 escrevia em duas linhas
- * (dados = {1.57}; depois modelo.input[0] = dados;) -- não era estilo, era a
- * gramática obrigando.
- *
- * P2 é o que permite ler scale, zero_point e size de um tensor específico.
- * Note que `obj.campo.size` (sem índice) já funciona; o que falta é a
- * composição índice-depois-propriedade.
- *
- * P3 é a escrita na visão .raw de um tensor (seção 4b): `modelo.input[0].raw =
- * imagem`. Tem as duas formas, com expressão e com literal de array, pelo mesmo
- * motivo de P1 -- sem a segunda, a visão padrão aceitaria literal e a .raw não.
- *
- * Custo medido: aplicando P1, P2 e P3 (as duas formas) a uma cópia da gramática,
- * o Bison continua reportando o mesmo 1 conflito shift/reduce do baseline.
- * Zero conflitos novos. O motivo é o léxico: `{ID}(\.{ID})+` faz maximal munch,
- * então `a.b` é sempre um único TOK_XIDENTIFIER, e um `.` depois de `]` só pode
- * ser uma das regras novas.
- *
- * ALTERNATIVA sem mexer na gramática: exigir variável intermediária no lugar
- * de P1, e desistir das propriedades por tensor no lugar de P2. Custa uma
- * linha extra em todo uso e remove informação útil da linguagem.
- *
- * RECOMENDAÇÃO: acrescentar as três. Todas são puramente ADITIVAS -- hoje as
- * três formas são erro de sintaxe, então nenhum programa que compila hoje muda
- * de significado. Três produções continuam dentro do que se admite como
- * extensão mínima, e o restante do trabalho segue sendo semântico.
+ * DECISÃO: numeração a partir de 0. `input0` é o tensor `SubGraph.inputs[0]`
+ * do arquivo, e o último é `input<input_count - 1>` -- a mesma regra dos
+ * vetores da RL. Três razões:
+ *   - coerência na própria expressão: em `m.output0[0]`, tensor e elemento
+ *     começam do mesmo número (com base 1 seria `m.output1[0]`);
+ *   - coerência entre os dois modos: no modo biblioteca o primeiro tensor é
+ *     `tflm_input(m, 0)`, e na sintaxe nativa é `m.input0`;
+ *   - coerência com o formato: o TFLite, o TFLM, o tflite_info e o Netron
+ *     numeram a partir de 0.
+ * A base 1 (`input1` primeiro) foi proposta na orientação de 2026-10-05 e
+ * trocada pela base 0 por essas razões.
  * ========================================================================= */
 
 
@@ -79,8 +69,8 @@
  * 1. Caso mínimo -- modelo float
  *
  * models/hello_world_float.tflite
- *   input [0] float32[1,1]   1 elemento
- *   output[0] float32[1,1]   1 elemento
+ *   input0  float32[1,1]   1 elemento
+ *   output0 float32[1,1]   1 elemento
  *   kernels: FULLY_CONNECTED
  * ========================================================================= */
 
@@ -89,11 +79,14 @@ int16 exemplo_minimo() {
     // consegue abrir o arquivo em tempo de compilação, e sem isso nada mais
     // aqui funciona: nem a tipagem, nem a escolha de kernels, nem a validação.
     // Caminho não-literal é erro de compilação.
+    //
+    // DECISÃO (orientação de 2026-10-05): o caminho é procurado primeiro
+    // relativo ao diretório do .rob que faz a chamada, depois em cada pasta
+    // passada com -I, na ordem -- como o #include "..." do C.
     classifier = ai_model("models/hello_world_float.tflite", 3000);
 
-    // Primeiro índice é SEMPRE o tensor. Nunca o elemento.
-    // Aqui: tensor de entrada 0 recebe o vetor inteiro.
-    classifier.input[0] = {1.57};
+    // O tensor de entrada 0 recebe o vetor inteiro.
+    classifier.input0 = {1.57};
 
     // DECISÃO: invoke() devolve status, int8 -- 0 = sucesso, -1 = falha. A
     // inferência pode falhar, e antes a falha era capturada pelo wrapper e
@@ -102,9 +95,9 @@ int16 exemplo_minimo() {
         return 1;
     }
 
-    // O tipo de `saida` vem do .tflite: float32. O compilador só sabe isso
+    // O tipo de `saida` vem do .tflite: float32[1]. O compilador só sabe isso
     // porque leu o modelo na fase de elaboração prévia.
-    saida = classifier.output[0];
+    saida = classifier.output0;
 
     return 0;
 }
@@ -114,8 +107,8 @@ int16 exemplo_minimo() {
  * 2. Modelo quantizado -- quantização é automática e invisível
  *
  * models/hello_world_int8.tflite
- *   input [0] int8[1,1]  scale=0.0244801  zero_point=-128
- *   output[0] int8[1,1]  scale=0.00829096 zero_point=5
+ *   input0  int8[1,1]  scale=0.0244801  zero_point=-128
+ *   output0 int8[1,1]  scale=0.00829096 zero_point=5
  * ========================================================================= */
 
 int16 exemplo_quantizado() {
@@ -124,13 +117,13 @@ int16 exemplo_quantizado() {
     // O usuário escreve float. O compilador conhece scale e zero_point em
     // tempo de compilação, então emite a conversão q = round(f/scale + zp)
     // com as constantes já resolvidas -- sem divisão em runtime.
-    classifier.input[0] = {1.57};
+    classifier.input0 = {1.57};
 
     classifier.invoke();
 
     // Desquantização no caminho inverso, f = scale * (q - zp), também com
     // constantes resolvidas. O usuário recebe float e nunca vê o int8.
-    saida = classifier.output[0];
+    saida = classifier.output0;
 
     return 0;
 }
@@ -138,6 +131,9 @@ int16 exemplo_quantizado() {
 
 /* =========================================================================
  * 3. Propriedades só-leitura
+ *
+ * De cada tensor: .scale, .zero_point, .size. Do modelo: .input_count e
+ * .output_count.
  *
  * DECISÃO: scale e zero_point são IMUTÁVEIS.
  *
@@ -149,15 +145,18 @@ int16 exemplo_quantizado() {
  * Expor para LEITURA, por outro lado, é útil e custa zero: são constantes de
  * compilação, resolvidas como NamedConst igual ao .size dos arrays. Servem
  * para depuração e para quem quiser fazer a conversão na mão.
+ *
+ * .size é do TENSOR (quantos elementos ele tem); .input_count é do MODELO
+ * (quantos tensores de entrada ele tem). Por isso não existe input0.count.
  * ========================================================================= */
 
 int16 exemplo_propriedades() {
     classifier = ai_model("models/hello_world_int8.tflite", 3000);
 
-    s  = classifier.input[0].scale;        // 0.0244801  -- constante
-    zp = classifier.input[0].zero_point;   // -128       -- constante
-    n  = classifier.input[0].size;         // 1          -- constante
-    ne = classifier.input.count;           // 1          -- constante (seção 5)
+    s  = classifier.input0.scale;          // 0.0244801  -- constante
+    zp = classifier.input0.zero_point;     // -128       -- constante
+    n  = classifier.input0.size;           // 1          -- constante
+    ne = classifier.input_count;           // 1          -- constante (seção 5)
 
     // Nenhuma dessas leituras gera código: todas viram literais no IR.
 
@@ -169,29 +168,41 @@ int16 exemplo_propriedades() {
  * 4. Elemento x vetor inteiro
  *
  * models/micro_speech_quantized.tflite
- *   input [0] int8[1,1960]  scale=0.101716  zero_point=-128
- *   output[0] int8[1,4]     scale=0.00390625
+ *   input0  int8[1,1960]  scale=0.101716  zero_point=-128
+ *   output0 int8[1,4]     scale=0.00390625
  *
  * DECISÃO: shape achatado. [1,1960] é exposto como 1960 elementos, não como
  * matriz 1x1960. A dimensão de batch é ruído para quem escreve firmware, e
  * sem achatar a aridade mudaria por modelo (o audio_preprocessor tem saída
- * [40], sem batch, enquanto os outros têm [1,N]).
+ * [40], sem batch, enquanto os outros têm [1,N]). O TFLM guarda o tensor
+ * contíguo, linha após linha: o pixel (y, x) de uma imagem 96x96 é o elemento
+ * y * 96 + x.
+ *
+ * O índice do ELEMENTO pode ser variável (um laço). Quando é constante, o
+ * compilador confere o limite: m.output0[5] num tensor de 4 elementos é erro
+ * de compilação (seção 8), não uma leitura que o wrapper devolveria como 0.
  * ========================================================================= */
 
 int16 exemplo_elemento_e_vetor() {
     classifier = ai_model("models/micro_speech_quantized.tflite", 12288);
 
-    // Vetor inteiro: tensor 0 recebe tudo de uma vez.
+    // Vetor inteiro: o tensor recebe tudo de uma vez.
     features = {0.0:1960};
-    classifier.input[0] = features;
+    classifier.input0 = features;
 
-    // Elemento individual: elemento 7 do tensor 0.
-    classifier.input[0][7] = 0.42;
+    // Elemento individual: elemento 7 do tensor de entrada 0.
+    classifier.input0[7] = 0.42;
 
     classifier.invoke();
 
-    melhor = classifier.output[0][0];   // elemento 0 do tensor de saída 0
-    todas  = classifier.output[0];      // as 4 classes de uma vez
+    melhor = classifier.output0[0];     // elemento 0 do tensor de saída 0
+    todas  = classifier.output0;        // as 4 classes de uma vez
+
+    i = 0;
+    while i < classifier.output0.size {
+        p = classifier.output0[i];      // índice de elemento variável
+        i = i + 1;
+    }
 
     return 0;
 }
@@ -202,11 +213,11 @@ int16 exemplo_elemento_e_vetor() {
  *
  * Cada tensor tem duas visões:
  *
- *   modelo.input[0]        VALORES REAIS. Conversão automática na escrita
+ *   modelo.input0          VALORES REAIS. Conversão automática na escrita
  *                          (q = round(v/scale) + zero_point) e na leitura
  *                          (v = scale * (q - zero_point)). É o padrão.
  *
- *   modelo.input[0].raw    CÓDIGOS, exatamente como o tensor os guarda. Sem
+ *   modelo.input0.raw      CÓDIGOS, exatamente como o tensor os guarda. Sem
  *                          conversão nenhuma.
  *
  * A visão .raw existe porque há dados que JÁ SÃO códigos do modelo: a saída de
@@ -220,8 +231,8 @@ int16 exemplo_elemento_e_vetor() {
  * decide pela visão a partir do tipo do valor atribuído. Se decidisse, no
  * hello_world_int8 (scale 0,0244801, zero_point −128):
  *
- *     modelo.input[0] = {1.0};   // valor real 1,0 -> código −87
- *     modelo.input[0] = {1};     // literal int8 -> seria lido como CÓDIGO 1
+ *     modelo.input0 = {1.0};     // valor real 1,0 -> código −87
+ *     modelo.input0 = {1};       // literal int8 -> seria lido como CÓDIGO 1
  *
  * Uma diferença de digitação mudaria o significado sem aviso. Com o marcador,
  * a visão padrão SEMPRE significa valor real, qualquer que seja o tipo do
@@ -234,10 +245,12 @@ int16 exemplo_elemento_e_vetor() {
  *     (int8[] para tensor int8, int16[] para tensor int16);
  *   - quando o vetor tem tamanho fixo, precisa ter exatamente o número de
  *     elementos do tensor;
- *   - na leitura, a variável recebe o tipo do tensor.
+ *   - na leitura, a variável recebe o tipo do tensor;
+ *   - .raw[k] é o código do elemento k, com o tipo do tensor.
  *
  * Mapeamento para o wrapper: escrita em .raw -> tflm_set_raw_int8/int16, leitura
- * -> tflm_get_raw_int8/int16, escolhidas pelo tipo do tensor.
+ * -> tflm_get_raw_int8/int16, escolhidas pelo tipo do tensor. Como .raw[k] é
+ * gerado (função própria no wrapper ou leitura do vetor) fica para a tarefa 3.6.
  *
  * O nome .raw não colide com código existente: membros são resolvidos por
  * valor, como .rows e .cols, então um tipo do usuário com campo `raw` segue
@@ -247,22 +260,23 @@ int16 exemplo_elemento_e_vetor() {
 // Imagem de sensor já em int8, direto para o modelo.
 //
 // models/person_detect.tflite
-//   input [0] int8[1,96,96,1]  scale=0.00784314  zero_point=-1
-//   output[0] int8[1,2]        scale=0.00390625  zero_point=-128
+//   input0  int8[1,96,96,1]  scale=0.00784314  zero_point=-1
+//   output0 int8[1,2]        scale=0.00390625  zero_point=-128
 int16 exemplo_raw_imagem() {
     detector = ai_model("models/person_detect.tflite", 90000);
 
     imagem = {0x0b:9216};                // viria da câmera, já em int8
-    detector.input[0].raw = imagem;      // códigos entram como estão
+    detector.input0.raw = imagem;        // códigos entram como estão
 
     detector.invoke();
 
     // Leitura na visão padrão: probabilidades como valores reais.
-    p_sem_pessoa = detector.output[0][0];
-    p_pessoa     = detector.output[0][1];
+    p_sem_pessoa = detector.output0[0];
+    p_pessoa     = detector.output0[1];
 
     // Leitura na visão .raw: os códigos int8 que o modelo produziu.
-    codigos = detector.output[0].raw;    // int8[2]
+    codigos = detector.output0.raw;      // int8[2]
+    c_pessoa = detector.output0.raw[1];  // int8
 
     return 0;
 }
@@ -270,11 +284,11 @@ int16 exemplo_raw_imagem() {
 // Pipeline: a saída de um modelo alimenta outro. É o micro speech completo.
 //
 // models/audio_preprocessor_int8.tflite
-//   input [0] int16[1,480]     30 ms de áudio a 16 kHz
-//   output[0] int8[40]         SEM parâmetros de quantização
+//   input0  int16[1,480]     30 ms de áudio a 16 kHz
+//   output0 int8[40]         SEM parâmetros de quantização
 // models/micro_speech_quantized.tflite
-//   input [0] int8[1,1960]     scale=0.101716  zero_point=-128
-//   output[0] int8[1,4]        silence, unknown, yes, no
+//   input0  int8[1,1960]     scale=0.101716  zero_point=-128
+//   output0 int8[1,4]        silence, unknown, yes, no
 //
 // As features saem do preprocessor como códigos int8 sem escala, e o
 // classificador as espera como códigos int8 com escala. Pela visão padrão,
@@ -296,9 +310,9 @@ int16 exemplo_raw_pipeline() {
             i = i + 1;
         }
 
-        pre.input[0].raw = janela;       // amostras int16 entram como estão
+        pre.input0.raw = janela;         // amostras int16 entram como estão
         pre.invoke();
-        f = pre.output[0].raw;           // int8[40], sem conversão
+        f = pre.output0.raw;             // int8[40], sem conversão
 
         i = 0;
         while i < 40 {
@@ -308,12 +322,12 @@ int16 exemplo_raw_pipeline() {
         k = k + 1;
     }
 
-    cls.input[0].raw = features;         // códigos passam direto
+    cls.input0.raw = features;           // códigos passam direto
     cls.invoke();
 
     // O resultado sim é lido como valor real: probabilidade de cada classe.
-    p_yes = cls.output[0][2];
-    p_no  = cls.output[0][3];
+    p_yes = cls.output0[2];
+    p_no  = cls.output0[3];
 
     return 0;
 }
@@ -335,11 +349,11 @@ int16 exemplo_raw_pipeline() {
  * custom op TFLite_Detection_PostProcess, que o TFLM implementa
  * (AddDetectionPostprocess) embora não traga nenhum modelo que o use.
  *
- * DECISÃO: nenhum atalho para o caso de tensor único. `input[4]` nunca
- * significa "elemento 4 da única entrada". Se significasse, o sentido do
- * código dependeria do arquivo .tflite: trocar um modelo de 1 entrada por um
- * de 2 mudaria silenciosamente o significado de código já escrito, em vez de
- * dar erro. É o oposto de mover verificações para tempo de compilação.
+ * DECISÃO: nenhum atalho para o caso de tensor único. Não existe `m.input`
+ * nem `m.output` significando "o único tensor". Mesmo num modelo de uma
+ * entrada, ela é `input0`. Se houvesse atalho, trocar um modelo de 1 entrada
+ * por um de 2 mudaria silenciosamente o significado de código já escrito, em
+ * vez de dar erro. É o oposto de mover verificações para tempo de compilação.
  *
  * O fato de praticamente todo modelo real ser 1x1 REFORÇA essa decisão, não a
  * enfraquece: é justamente quando o atalho pareceria inofensivo que ele viraria
@@ -349,25 +363,25 @@ int16 exemplo_raw_pipeline() {
 int16 exemplo_multiplos_tensores() {
     detector = ai_model("models/algum_modelo_multi_entrada.tflite", 8192);
 
-    detector.input[0] = {1.0, 2.0};   // primeira entrada
-    detector.input[1] = {3.0};        // segunda entrada, tipo possivelmente
+    detector.input0 = {1.0, 2.0};     // primeira entrada
+    detector.input1 = {3.0};          // segunda entrada, tipo possivelmente
                                       // diferente da primeira
 
     detector.invoke();
 
-    caixas    = detector.output[0];
-    classes   = detector.output[1];
-    scores    = detector.output[2];
-    contagem  = detector.output[3][0];
+    caixas    = detector.output0;
+    classes   = detector.output1;
+    scores    = detector.output2;
+    contagem  = detector.output3[0];
 
-    // DECISÃO: .count existe, em input e em output. É constante de compilação,
-    // lida do .tflite como o .size -- não gera chamada ao wrapper. Serve para
-    // código genérico, que funciona com modelos de uma ou de várias entradas.
-    // (tflm_input_count/tflm_output_count são o equivalente no modo biblioteca.)
-    // Sintaticamente `detector.input.count` já é aceito hoje: é um único
-    // identificador pontilhado, como `obj.campo.size`.
-    n_entradas = detector.input.count;    // 2
-    n_saidas   = detector.output.count;   // 4
+    // DECISÃO: input_count e output_count existem, no modelo. São constantes
+    // de compilação, lidas do .tflite como o .size -- não geram chamada ao
+    // wrapper. (tflm_input_count/tflm_output_count são o equivalente no modo
+    // biblioteca.) Ficam no modelo, e não no tensor, porque contam tensores:
+    // input0.size é quantos elementos tem o tensor 0; input_count é quantos
+    // tensores de entrada o modelo tem.
+    n_entradas = detector.input_count;    // 2
+    n_saidas   = detector.output_count;   // 4
 
     return 0;
 }
@@ -376,8 +390,8 @@ int16 exemplo_multiplos_tensores() {
 /* =========================================================================
  * 5b. Modelos com mais de um subgrafo
  *
- * DECISÃO: aceitos. A interface do modelo -- input, output, count -- é a do
- * subgrafo 0. Os demais não são expostos.
+ * DECISÃO: aceitos. A interface do modelo -- inputN, outputN, input_count,
+ * output_count -- é a do subgrafo 0. Os demais não são expostos.
  *
  * Um subgrafo é um grafo de computação completo: tensores, operadores, entradas
  * e saídas. Quase todo modelo tem um só. Os subgrafos extras aparecem com
@@ -396,9 +410,9 @@ int16 exemplo_multiplos_tensores() {
  * Recusar esses modelos rejeitaria modelos válidos. Ignorar os subgrafos extras
  * na INTERFACE é o correto: o schema define que "the 0th is assumed to be the
  * main model" (schema.fbs), e é o subgrafo 0 que recebe as entradas e produz
- * as saídas. Os kernels, por outro lado, vêm de Model.operator_codes, que fica
- * no nível do modelo e já cobre todos os subgrafos -- a análise estática
- * registra IF/WHILE e os kernels dos corpos sem tratamento especial.
+ * as saídas. Os kernels, por outro lado, vêm dos operadores de TODOS os
+ * subgrafos (RESULTADOS.md, 5.2.10) -- a análise estática registra IF/WHILE e
+ * os kernels dos corpos sem tratamento especial.
  *
  * Levantamento: nenhum dos 144 arquivos .tflite do repositório do TFLM tem mais
  * de um subgrafo. O TFLM testa o caso com modelos montados em código.
@@ -413,30 +427,40 @@ int16 exemplo_multiplos_tensores() {
  *   FASE 1 (primeira versão do compilador): OBRIGATÓRIO. ai_model() sem arena
  *   é erro de compilação.
  *
- *   FASE 2 (quando existir o cálculo): OPCIONAL. Sem ele, o compilador usa a
- *   arena calculada a partir do .tflite; com ele, vale o valor informado.
+ *   FASE 2 (se o cálculo se mostrar seguro): OPCIONAL. Sem ele, o compilador
+ *   usa a arena calculada; com ele, vale o valor informado.
  *
  * Argumento e não propriedade por ordem: ai_model() constrói o intérprete e
  * aloca a arena na hora. Uma propriedade atribuída depois (m.arena = N)
  * chegaria tarde demais -- ou obrigaria a construção preguiçosa, cuja
  * semântica fica sutil demais para o ganho.
  *
- * Por que em duas fases: calcular a arena exige reproduzir estaticamente o
- * memory planner do TFLM, e isso é trabalho de pesquisa por si só. A fase 1
- * não depende dele. O cálculo é SEGURANÇA, não conveniência: uma arena mal
- * dimensionada pode derrubar o próprio TFLM em vez de dar erro (RESULTADOS.md,
- * 5.4.12).
+ * O .tflite não guarda o tamanho da arena: o número só existe rodando o TFLM
+ * sobre o modelo. O caminho previsto para a fase 2 é MEDIR na compilação --
+ * rodar o TFLM do host sobre o modelo e procurar a menor arena que aloca, como
+ * em test/achados/arena -- em vez de reimplementar o planejador de memória do
+ * TFLM. Falta saber se o valor do host serve para o alvo: no Cortex-M os
+ * ponteiros são de 32 bits (estruturas menores), mas kernels otimizados
+ * (CMSIS-NN) podem pedir buffers que os de referência não pedem. Decide-se
+ * com as medições no STM32 da Etapa 4. O cálculo é SEGURANÇA, não
+ * conveniência: uma arena mal dimensionada pode derrubar o próprio TFLM em vez
+ * de dar erro (RESULTADOS.md, 5.4.12).
  *
- * Arenas medidas em x86_64 (bytes). "Mínima viável" é a menor com a qual o
+ * O buffer da arena é alinhado a 16 pelo compilador: o TFLM descarta os bytes
+ * até o próximo múltiplo de 16, então um buffer desalinhado precisa de mais
+ * arena para o mesmo modelo (RESULTADOS.md, 5.2.8 e 5.4.10).
+ *
+ * Arenas medidas em x86_64 (bytes), com o buffer alinhado a 16
+ * (make -C test/achados arena). "Mínima viável" é a menor com a qual o
  * AllocateTensors passa; nos modelos pequenos ela supera o arena_used_bytes,
  * por causa da memória temporária do planejamento. Os valores usados nos
  * exemplos deste arquivo têm margem e são os validados nos testes.
  *
  *   modelo                  usada   mínima viável   nos exemplos
- *   hello_world              1216        1616              3000
- *   person_detect           85024       85024             90000
- *   micro_speech_quantized   7312        7312             12288
- *   audio_preprocessor_int8  9952        9952             12288
+ *   hello_world_float        1216        1608              3000
+ *   person_detect           85024       85016             90000
+ *   micro_speech_quantized   7312        7304             12288
+ *   audio_preprocessor_int8  9952        9944             12288
  * ========================================================================= */
 
 int16 exemplo_arena() {
@@ -458,9 +482,9 @@ int16 exemplo_arena() {
 //
 // A regra: função definida pelo usuário VENCE o tipo embutido. O lugar dessa
 // decisão já existe -- é o mesmo ponto onde o compilador escolhe entre a
-// leitura "tipo" e a leitura "função" de nome(args), em PropagateTypes.cpp:338.
-// Num programa que define isto, a sintaxe de TinyML simplesmente não está
-// disponível, e o código antigo segue idêntico.
+// leitura "tipo" e a leitura "função" de nome(args),
+// PropagateTypes::visit(FunctionCall). Num programa que define isto, a sintaxe
+// de TinyML simplesmente não está disponível, e o código antigo segue idêntico.
 
 int16 ai_model(int16 valor) {
     return valor * 2;
@@ -470,16 +494,16 @@ int16 usa_funcao_propria() {
     return ai_model(21);   // continua sendo a função acima. 42.
 }
 
-// 7b. Tipo do usuário com membros chamados input e output.
+// 7b. Tipo do usuário com membros chamados como os de um modelo.
 //
-// Isto nunca foi ameaçado no desenho novo: input e output não são tokens do
-// léxico, são símbolos resolvidos a partir do VALOR, como .rows e .cols. Um
-// tipo do usuário resolve os seus próprios. É por isso que a instrução da
-// seção 5.2 de "remover os tokens .input/.output" se aplica ao desenho do
-// TCC 1, onde eles eram tokens -- aqui eles nunca chegam a ser criados.
+// inputN, outputN, input_count e raw não são tokens do léxico: são símbolos
+// resolvidos a partir do VALOR, como .rows e .cols. Um tipo do usuário resolve
+// os seus próprios. É por isso que a instrução da seção 5.2 de "remover os
+// tokens .input/.output" se aplica ao desenho do TCC 1, onde eles eram tokens
+// -- aqui eles nunca chegam a ser criados.
 
 type sensor {
-    leitura = 0;
+    input0 = 0;
 
     int8 input() {
         return 1;
@@ -492,7 +516,8 @@ type sensor {
 
 int16 usa_tipo_proprio() {
     s = sensor();
-    if s.input() == 1 and s.output() == 2 {
+    s.input0 = 5;
+    if s.input() == 1 and s.output() == 2 and s.input0 == 5 {
         return 0;
     }
     return 1;
@@ -500,9 +525,10 @@ int16 usa_tipo_proprio() {
 
 // 7c. Modo biblioteca padrão (ai.tflm) continua funcionando.
 //
-// As duas formas coexistem, conforme a seção 6. O modo biblioteca usa
-// InitializeInterpreter/tflm_input/... diretamente, com o modelo embutido
-// como array de bytes. Não é substituído pela sintaxe nativa.
+// As duas formas coexistem. O modo biblioteca usa as funções do wrapper
+// diretamente (tflm_create_resolver, tflm_add_*, tflm_create_model,
+// tflm_input, tflm_set_values, tflm_invoke, ...), com o modelo embutido como
+// array de bytes. Não é substituído pela sintaxe nativa.
 
 
 /* =========================================================================
@@ -521,37 +547,40 @@ int16 usa_tipo_proprio() {
 //     -> erro (fase 1): tamanho da arena não informado
 
 // b = ai_model("models/nao_existe.tflite", 3000);
-//     -> erro: arquivo não encontrado
+//     -> erro: arquivo não encontrado (nem relativo ao .rob, nem nas pastas -I)
 
 // c = ai_model("Makefile", 3000);
 //     -> erro: não é um .tflite válido (identificador TFL3 ausente)
 
+// t = ai_model("models/truncado.tflite", 3000);
+//     -> erro: .tflite corrompido ou truncado (RESULTADOS.md, 5.2.9)
+
 // d = ai_model("models/hello_world_float.tflite", 3000);
-// d.input[0] = {1.0, 2.0};
-//     -> erro: tensor de entrada 0 tem 1 elemento, recebeu 2
+// d.input0 = {1.0, 2.0};
+//     -> erro: tensor input0 tem 1 elemento, recebeu 2
 
-// e.input[3] = {1.0};
-//     -> erro: o modelo tem 1 tensor de entrada, índice 3 inválido
+// d.input1 = {1.0};
+//     -> erro: o modelo tem 1 tensor de entrada (input0); input1 não existe
+//        (a numeração dos tensores começa em 0, como a dos vetores)
 
-// i = alguma_variavel;
-// e.input[i] = {1.0};
-//     -> erro: índice de tensor deve ser constante de compilação
-//        (é ele que determina o tipo da expressão; tensores do mesmo modelo
-//         têm tipos diferentes -- no spam.tflite a entrada é int32 e a saída
-//         float32)
+// m4 = ai_model("models/micro_speech_quantized.tflite", 12288);
+// x = m4.output0[5];
+//     -> erro: output0 tem 4 elementos, índice 5 fora do tensor
+//        (só quando o índice é constante; índice variável é conferido em
+//         runtime pelo wrapper)
 
-// e.input[0].scale = 0.5;
+// d.input0.scale = 0.5;
 //     -> erro: scale é somente leitura
 
 // q = ai_model("models/hello_world_int8.tflite", 3000);
-// q.input[0].raw = {int16(0):1};
+// q.input0.raw = {int16(0):1};
 //     -> erro: visão .raw de tensor int8 recebeu vetor int16
 
-// q.input[0].raw = {0, 0};
-//     -> erro: tensor de entrada 0 tem 1 elemento, vetor .raw tem 2
+// q.input0.raw = {0, 0};
+//     -> erro: tensor input0 tem 1 elemento, vetor .raw tem 2
 
 // fl = ai_model("models/hello_world_float.tflite", 3000);
-// fl.input[0].raw = {1};
+// fl.input0.raw = {1};
 //     -> erro: visão .raw de tensor float32 recebeu vetor int8
 //        (para tensor float, use a visão padrão)
 
@@ -559,9 +588,9 @@ int16 usa_tipo_proprio() {
 //     -> DEPENDE: este modelo exige 9 custom ops (SignalRfft, SignalWindow,
 //        SignalFilterBank, SignalPCAN, SignalEnergy, SignalFftAutoScale,
 //        SignalFilterBankLog, SignalFilterBankSquareRoot,
-//        SignalFilterBankSpectralSubtraction). Se o wrapper não os expuser,
-//        tem que ser erro de compilação nomeando o kernel que falta -- não
-//        falha em runtime como acontece hoje.
+//        SignalFilterBankSpectralSubtraction). O wrapper expõe os 9 hoje; um
+//        kernel sem função no wrapper tem que ser erro de compilação nomeando
+//        o kernel que falta -- não falha em runtime.
 
 
 /* =========================================================================
@@ -585,22 +614,27 @@ int16 usa_tipo_proprio() {
  * arena. Nenhum dos 7 modelos de validação faz isso. Se o caso aparecer,
  * resolve-se depois com uma operação explícita, sem inventar destrutor.
  *
- * O modo biblioteca (ai.tflm) mantém DestroyInterpreter, então nada muda para
- * o código existente.
+ * O modo biblioteca (ai.tflm) mantém tflm_free_model, então nada muda para o
+ * código existente.
  * ========================================================================= */
 
 
 /* =========================================================================
- * 9. Decisões ainda em aberto
+ * 9. Decisões
+ *
+ * Em aberto:
  *
  * - O nome `ai_model`. Substituiu `model`, genérico demais (modelo 3D, modelo
- *   de dados); aguarda confirmação do orientador. Não bloqueia o compilador:
- *   o nome aparece num único ponto da análise semântica.
+ *   de dados). Não bloqueia o compilador: o nome aparece num único ponto da
+ *   análise semântica.
  *
- * - Resolução do caminho em ai_model("..."): relativo ao diretório do .rob
- *   que contém a chamada, às pastas passadas com -I (como o `use`), ou os dois
- *   em sequência, como o #include "..." do C? Necessária na tarefa 3.3.
+ * Decididas na orientação de 2026-10-05:
+ *   tensores como membros numerados, inputN/outputN (seção 0) -- proposta
+ *   com base 1, trocada depois para base 0;
+ *   contadores input_count/output_count no modelo (3, 5);
+ *   caminho relativo ao .rob, depois as pastas -I (1);
+ *   arena manual na fase 1, medição como caminho da fase 2 (6).
  *
- * Decididas nesta especificação: .count (seção 5), subgrafos (5b), arena (6),
- * status do invoke (1), visão .raw (4b), ausência de destruição (8b).
+ * Decididas antes: subgrafos (5b), status do invoke (1), visão .raw (4b),
+ * ausência de destruição (8b).
  * ========================================================================= */
