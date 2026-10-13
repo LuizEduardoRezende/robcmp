@@ -10,6 +10,7 @@ extern Program *program;
 int errorsfound = 0;
 
 vector<filesystem::path> includeDirs;
+vector<filesystem::path> cmdlineIncludeDirs;
 vector<filesystem::path> buildStack;
 stack<filesystem::path> useStack;
 vector<yyscan_t> buildStackScanner;

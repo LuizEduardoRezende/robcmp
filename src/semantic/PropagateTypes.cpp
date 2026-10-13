@@ -3,6 +3,7 @@
 #include "ConstructorCall.h"
 #include "Scalar.h"
 #include "Program.h"
+#include "tinyml/AiModel.h"
 
 void PropagateTypes::propagateChildren(Node& n, std::function<void(Node&)> lambda) {
     for (auto it = n.node_children.begin(); it != n.node_children.end(); ++it) {
@@ -317,6 +318,10 @@ Node* PropagateTypes::visit(Return& n) {
 
 Node* PropagateTypes::visit(FunctionCall& fc) {
     propagateChildren(fc);
+
+    // ai_model(path, arena) declares a TinyML model; the name is reserved
+    if (AiModel::isBuiltinCall(fc))
+        return AiModel::fromCall(fc);
     
     // if the function name is the name of a primitive or complex type,
     // replace the function call node by a more specific one

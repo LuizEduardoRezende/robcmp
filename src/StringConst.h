@@ -20,6 +20,10 @@ public:
         return dt;
     }
 
+    const string& getString() const {
+        return str;
+    }
+
     virtual DataType getElementDataType() override {
 		return tchar;
 	}

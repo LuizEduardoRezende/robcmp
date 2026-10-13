@@ -216,15 +216,29 @@ int8 tflm_add_ethos_u(uint64 resolver_handle);
 //                  modelo: a saída de um modelo que alimenta outro, ou dados de
 //                  sensor já em int8
 //
-// Correspondência com a sintaxe nativa:
-//   tflm_input(m, i)            m.input[i]
-//   tflm_set_values(t, v)       m.input[i] = v
-//   tflm_get_values(t, v)       v = m.output[i]
-//   tflm_set_value(t, j, x)     m.input[i][j] = x
-//   tflm_get_value(t, j)        x = m.output[i][j]
-//   tflm_set_raw_int8(t, v)     m.input[i].raw = v
-//   tflm_get_raw_int8(t, v)     v = m.output[i].raw
-//   tflm_tensor_size(t)         m.input[i].size
+// Correspondência com a sintaxe nativa (test/tflm/native-syntax.rob), em que
+// cada tensor é um membro do modelo com o número no nome, a partir de 0:
+//
+//   tflm_create_resolver(),
+//   tflm_add_*(r) por kernel,
+//   tflm_create_model(r, ...)   m = ai_model("modelo.tflite", arena)
+//   tflm_invoke(m)              m.invoke()
+//   tflm_free_model(m)          sem equivalente: não há destruição
+//   tflm_input(m, 0)            m.input0
+//   tflm_output(m, 1)           m.output1
+//   tflm_input_count(m)         m.input_count
+//   tflm_output_count(m)        m.output_count
+//   tflm_tensor_size(t)         m.input0.size
+//   tflm_set_values(t, v)       m.input0 = v
+//   tflm_get_values(t, v)       v = m.output0
+//   tflm_set_value(t, j, x)     m.input0[j] = x
+//   tflm_get_value(t, j)        x = m.output0[j]
+//   tflm_set_raw_int8(t, v)     m.input0.raw = v
+//   tflm_get_raw_int8(t, v)     v = m.output0.raw
+//
+// Na sintaxe nativa, os kernels, os contadores, o tamanho, o scale e o
+// zero_point vêm do .tflite em tempo de compilação: viram constantes, não
+// chamadas.
 // ---------------------------------------------------------------------------
 
 // Tensor de entrada ou de saída de índice `index`. Devolve 0 se o índice não

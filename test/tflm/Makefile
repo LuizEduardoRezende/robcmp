@@ -3,8 +3,8 @@
 #   make              compila o tflite_info (inspetor estático de .tflite)
 #   make analyze      inspeciona todos os modelos de models/
 #   make check        validação completa: wrapper (C++), testes do TCC em RL,
-#                     assinaturas RL x C em x86_64 e Cortex-M e o módulo de
-#                     análise de .tflite do compilador
+#                     assinaturas RL x C em x86_64 e Cortex-M, o módulo de
+#                     análise de .tflite do compilador e o ai_model(...)
 #
 # Depende do submódulo third-party/tflite-micro. Na primeira vez, `make check`
 # compila a libtensorflow-microlite.a e baixa as dependências do TFLM (demora
@@ -150,9 +150,14 @@ abi:
 tflite: tflite_info $(OUT)/tflite_info_asan
 	@python3 check_tflite.py ./tflite_info $(OUT)/tflite_info_asan
 
-check: validate rob abi tflite
+# ai_model(...) na semântica do compilador: erros da seção 8 de native-syntax.rob
+# que dependem só da declaração, busca do arquivo e retrocompatibilidade (7a).
+ai_model: $(ROBCMP)
+	@python3 check_ai_model.py $(ROBCMP)
+
+check: validate rob abi tflite ai_model
 
 clean:
 	rm -rf tflite_info $(OUT)
 
-.PHONY: all analyze validate rob abi tflite check clean
+.PHONY: all analyze validate rob abi tflite ai_model check clean

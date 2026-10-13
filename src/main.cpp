@@ -78,8 +78,10 @@ int main(int argc, char *argv[]) {
 				build_outputfilename = argv[++i];
 		}
 		else if (strncmp(argv[i], "-I", 2) == 0) { // include dirs
-			if (i+1 < argc)
+			if (i+1 < argc) {
 				includeDirs.push_back(argv[++i]);
+				cmdlineIncludeDirs.push_back(argv[i]);
+			}
 		}
 		else if (strncmp(argv[i], "-s", 2) == 0) {
 			spec_filename = argv[++i];

@@ -282,10 +282,11 @@ afirmação. O trabalho é semântico, não sintático.
 
 O parser sempre emite `FunctionCall` (`src/Language.y:476`). É a análise
 semântica que reescreve para `ConstructorCall` ou `ForcedCast`, em
-`src/semantic/PropagateTypes.cpp:338`, conforme o nome seja tipo ou função.
+`src/semantic/PropagateTypes.cpp:344`, conforme o nome seja tipo ou função.
 
-É nesse mesmo ponto que entra a regra de precedência que preserva
-retrocompatibilidade: **função definida pelo usuário vence o tipo embutido**.
+É nesse mesmo ponto que a 3.3 reconhece `ai_model(...)`
+(`PropagateTypes.cpp:324`). A regra de precedência prevista aqui — função do
+usuário vence o embutido — foi trocada pela reserva do nome (5.2.13).
 
 **Serve para:** demonstrar que a extensão se encaixa num mecanismo existente do
 compilador, não cria um paralelo.
@@ -550,6 +551,82 @@ classificação de extensão minimamente intrusiva (Mernik/Heering/Sloane):
 **nenhuma mudança sintática**, todo o trabalho na semântica. A comparação com o
 desenho indexado (três produções, 5.2.1) mostra que a escolha de desenho, e não
 só a implementação, determina o quanto a extensão é intrusiva.
+
+### 5.2.13 `ai_model` é nome reservado — na semântica, não no léxico
+
+**O problema.** A especificação previa (seção 7a) que uma função do usuário
+chamada `ai_model` vencesse o embutido. Implementada assim na 3.3, a regra
+mostrou o seu alcance: funções de topo são globais, então **num programa que
+define `ai_model`, a sintaxe nativa some em todos os pontos** — inclusive se a
+definição vier de uma biblioteca em `use`. O próprio `native-syntax.rob`
+definia a função do 7a, e compilado com o robcmp da 3.3 **nenhuma** das 9
+chamadas `ai_model("...", N)` dele era reconhecida: todas viravam chamadas à
+função do 7a. O arquivo nunca poderia compilar por inteiro, como a 3.9 exige.
+
+**A decisão (orientação).** `ai_model` passa a ser nome reservado: declarar
+função, método, tipo, campo, variável (local ou global), parâmetro, interface
+ou enum com ele é erro de compilação (`ai_model is a reserved name: it declares
+a TinyML model.`). O orientador sugeriu fazer pela lista de palavras reservadas
+do léxico (`src/Language.l`); foi feito na análise semântica, com o mesmo efeito
+para quem escreve código, porque:
+
+- no léxico, `ai_model(...)` deixaria de ser chamada de função para o parser e
+  exigiria uma produção de gramática nova — desfazendo o resultado de 5.2.12;
+- o erro seria de sintaxe genérico (`unexpected TOK_AI_MODEL`), e não um que
+  diz o motivo.
+
+A checagem fica em `AiModel::checkNotReserved`, chamada no ponto em que todo
+nome declarado vira símbolo (`SymbolizeTree::visit(Node&)`,
+`src/semantic/SymbolizeTree.h`). Parâmetros não são filhos da função na AST, e
+são conferidos ali mesmo, a partir da função.
+
+**Só `ai_model`.** Reservar os nomes dos membros não é viável nem necessário:
+
+- `m.input0.scale` é **um** token só, identificador pontilhado
+  (`{ID}(\.{ID})+`, `src/Language.l:111`): uma palavra reservada `scale` nem o
+  enxergaria;
+- `size` já é membro de vetores e strings (15 arquivos `.rob` do repositório);
+- `inputN` é uma família infinita;
+- seria recriar o defeito do TCC que a 5.2 manda corrigir — tokens
+  `.input`/`.output` colidindo com atributos do usuário (5.2.3).
+
+Os membros são resolvidos pelo valor e não colidem: o 7b da especificação (tipo
+do usuário com `input0`, `input()` e `output()`) segue compilando e rodando.
+
+**Custo:** quebra programas que já usassem o nome. Nenhum `.rob` do repositório
+o usa, e o nome foi criado para esta extensão. O IR dos 65 programas de
+`test/general` é idêntico byte a byte.
+
+**Serve para:** a 5.2, ao descrever a retrocompatibilidade: uma palavra
+reservada nova é a mudança clássica e mínima de evolução de linguagem, aqui
+restrita a um nome e sem tocar na gramática. E como registro de método: a
+especificação executável expôs a contradição antes de ela chegar ao usuário.
+
+### 5.2.14 Nós criados na análise semântica herdavam o arquivo errado
+
+Cada `SourceLocation` guarda o número do arquivo que estava sendo lido quando
+foi construído (`src/SourceLocation.h`, `buildStackCurrent`). Um nó criado
+**depois** do parse, como o `AiModel` que substitui o `FunctionCall`, ficava com
+o arquivo principal. Numa chamada dentro de uma biblioteca compilada com
+`-bdep`, o modelo era encontrado no lugar certo (a pasta da biblioteca, porque o
+caminho usa o arquivo do `FunctionCall`), mas o erro saía com o nome do `.rob`
+principal e a linha/coluna da biblioteca:
+
+```
+antes:  …/usa.rob:2:7: semantic error: model '…/lib/sub/m.tflite' ...
+depois: …/lib/sub/carrega.rob:2:7: semantic error: model '…/lib/sub/m.tflite' ...
+```
+
+Corrigido com `SourceLocation::setFileOf`, que copia o arquivo do nó
+substituído. O `ConstructorCall` criado no mesmo ponto
+(`PropagateTypes.cpp:354`) tem o mesmo mecanismo; não foi alterado, porque o
+erro não foi observado nele e o caso está fora do escopo de TinyML. O teste
+`chamada em arquivo de use` de `check_ai_model.py` falha sem a correção
+(verificado removendo-a).
+
+**Serve para:** a 5.2 e a 5.4, como exemplo de defeito que só o teste da
+mensagem de erro — arquivo, linha e coluna — pega: o comportamento (achar o
+modelo) estava certo.
 
 ---
 
@@ -1177,6 +1254,70 @@ tensor. Corrigidas na especificação a API citada
 no modo biblioteca (ainda dizia `InitializeInterpreter`) e a origem dos kernels
 (5.2.10). O commit `4dd5c68` (P1–P3) foi revertido: a gramática é a original.
 
+### 2026-10-13 — Etapa 3.3: `ai_model(...)` na análise semântica
+
+Novo nó `AiModel` (`src/tinyml/AiModel.{h,cpp}`), a declaração do modelo — o
+primeiro dos módulos que substituem o `ModelNode` do TCC. Em
+`PropagateTypes::visit(FunctionCall)` (`PropagateTypes.cpp:324`), toda chamada a
+`ai_model` é trocada por ele; o nome é reservado (5.2.13). O nó:
+
+- confere a aridade (arena ausente tem mensagem própria), o caminho literal
+  (`StringConst`, que ganhou `getString()`) e a arena: constante inteira
+  positiva — literal, `const` nomeada ou `+ - *` sobre elas. O `-5` precisou
+  disso: o parser o constrói como `5 * -1` (`Language.y:462`);
+- procura o arquivo na pasta do `.rob` da chamada e depois nas `-I`, na ordem
+  dada. As `-I` passaram a ser guardadas também à parte (`cmdlineIncludeDirs`,
+  `src/Scanner.cpp`), porque `includeDirs` as mistura com as pastas dos fontes e
+  é percorrida de trás para frente. A pasta de trabalho não entra;
+- lê o modelo com `TfliteModel::load` e o guarda no nó (`getModel()`), com a
+  arena (`getArenaSize()`).
+
+Todo erro substitui a chamada mesmo assim, por um nó marcado inválido, para que
+ela não seja reportada de novo como função inexistente. Um modelo aceito para na
+geração de código com `model '...' was read, but the code generation of ai_model
+is not implemented yet.` — a fronteira até a 3.6.
+
+Teste novo, `make -C test/tflm ai_model` (`check_ai_model.py`), dentro do
+`check`: 33 casos — os 11 erros de declaração da seção 8 e 3 de arena aceita,
+em arquivo, linha e coluna; a ordem de busca (7 casos, inclusive `-I`
+invertidas e chamada em arquivo de `use`); o nome reservado em 11 formas de
+declaração; e o 7b (tipo do usuário com `input0`, `input()` e `output()`,
+compilado, ligado e executado). O LLVM IR dos 65 programas de
+`test/general` é idêntico byte a byte antes e depois; `make -C test/tflm check`
+passa por inteiro.
+
+Achados: 5.2.13 (a precedência da função do usuário desligava a sintaxe no
+programa inteiro; trocada pela reserva do nome) e 5.2.14 (arquivo errado nos
+nós criados na semântica, corrigido). Especificação atualizada (7a vira nome
+reservado, e o caso entra na seção 8). `lib/ai/tflm.rob`: a tabela de
+correspondência com a sintaxe nativa ainda era do desenho indexado
+(`m.input[i]`, `m.output[i][j]`); reescrita com os membros e completada com
+criação, `invoke`, contadores e liberação.
+
+Notado, pré-existente (do upstream, `d957142`): um erro semântico reportado na
+**primeira** declaração do arquivo sai na posição errada. São dois defeitos
+somados:
+
+1. `update_loc` (`src/Language.l:165`) faz cada token começar onde o anterior
+   terminou; o primeiro token do arquivo não tem anterior e fica com `0:0`.
+2. A regra `globals : global` (`src/Language.y:62`) sobrescreve a posição da
+   primeira declaração (a do nome, `@id`) com `@global`, o início da declaração
+   inteira — o tipo, que é o primeiro token. A regra `globals : globals global`
+   não faz isso, por isso só a primeira é afetada.
+
+Com a mesma declaração `int16 ai_model(...)`: o arquivo começando direto no
+código dá `0:0`; começando com linha em branco ou comentário, dá `2:1` (o
+`int16`, não o nome); o certo seria `2:7`. Corrigir só o léxico não basta. Não
+corrigido — fora do escopo de TinyML; os casos de nome reservado do teste põem
+uma declaração antes.
+
+Notado, pré-existente: escrever num elemento de símbolo inexistente aborta o
+robcmp (`Assertion 'tid != -1 && "Undefined type"'` em `BuildTypes::isEnum`),
+também com índice simples — `nada[7] = 0.42;` num `main` vazio basta. O caminho
+é `PropagateTypes::visit(UpdateArray)` (`PropagateTypes.cpp:429`), que coage o
+valor para o tipo do elemento sem conferir se ele existe. A nota da 3.2 só
+registrava o duplo índice.
+
 ---
 
 ## Roteiro — o que foi feito e o que vem
@@ -1263,7 +1404,7 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 | 3.0 | Fechar as decisões de `test/tflm/native-syntax.rob` | **feito** — decisões da orientação de 2026-10-05 aplicadas (5.2.12); só o nome `ai_model` segue em aberto |
 | 3.1 | Migrar a leitura do `.tflite` para um módulo em `src/`, como fase de elaboração prévia | **feito** — `src/tinyml/TfliteModel` (5.2.9, 5.2.10) |
 | 3.2 | Gramática | **dispensada** — o desenho com membros não exige produção (5.2.12); P1–P3 (`4dd5c68`) revertidas |
-| 3.3 | `ai_model(...)` na semântica (`PropagateTypes::visit(FunctionCall)`): precedência da função do usuário, caminho literal resolvido relativo ao `.rob` e depois nas pastas `-I`, arena obrigatória, `TfliteModel::load` |
+| 3.3 | `ai_model(...)` na semântica (`PropagateTypes::visit(FunctionCall)`): nome reservado (antes: precedência da função do usuário), caminho literal resolvido relativo ao `.rob` e depois nas pastas `-I`, arena obrigatória, `TfliteModel::load` | **feito** — nó `AiModel`; `make -C test/tflm ai_model` (5.2.13, 5.2.14) |
 | 3.4 | Membros do modelo derivados do `.tflite`: `inputN`/`outputN` (vetores tipados), `input_count`/`output_count`, e por tensor `.size`/`.scale`/`.zero_point`/`.raw`. Interceptar os nós que o parser já gera: `Load`, `LoadArray`, `UpdateArray`, `Scalar`, `Array`, e `FunctionCall` para `m.invoke()` |
 | 3.5 | Visão `.raw`: verificação de tipo e tamanho em tempo de compilação, inclusive `.raw[k]` |
 | 3.6 | Geração de código: modelo e arena como globais alinhados a 16 (5.2.8), um `tflm_add_*` por kernel detectado, e as chamadas da API `tflm_` (5.1.7) |
@@ -1292,35 +1433,36 @@ A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
   confere que ela cobre exatamente as funções do header e que cada custom op é
   um nome registrado pelo resolver do TFLM.
 
-**Notas para começar a 3.3** (levantadas em 2026-10-13):
+**Interface deixada pela 3.3** (`src/tinyml/AiModel.h`), para a 3.4 em diante:
 
-- **Onde:** `PropagateTypes::visit(FunctionCall)`
-  (`src/semantic/PropagateTypes.cpp`, ~linha 318), o ponto que já troca
-  `FunctionCall` por `ConstructorCall`/`ForcedCast`. A precedência da função do
-  usuário se verifica ali mesmo: se `ai_model` resolve para um `FunctionBase`
-  (`calledIdent.getSymbol`), a chamada fica como está.
-- **Argumentos:** o caminho tem de ser um `StringConst` (`src/StringConst.h`) e a
-  arena uma constante (`isConstExpr()`); senão, os erros da seção 8.
-- **Caminho do modelo — não reaproveitar `includeDirs` como está.** A decisão é:
-  primeiro a pasta do `.rob` que contém a chamada, depois as `-I` na ordem dada.
-  A pasta do arquivo da chamada vem de `SourceLocation::getFile()`
-  (`src/SourceLocation.h:48`) — vale também para chamadas dentro de um arquivo
-  de `use`. A lista global `includeDirs` (`src/Scanner.cpp:12`) tem outra
-  ordem: o `use` a percorre de trás para frente (`Scanner.cpp:116`), o que dá
-  pasta do `use` atual, pasta de trabalho (`./`), pasta do `.rob` principal e
-  as `-I` da última para a primeira. Montar a ordem decidida explicitamente.
-- **Erro:** `TfliteModel::load` devolve a mensagem pronta; emitir com
-  `yyerrorcpp(erro, &no)`, que acrescenta arquivo, linha e coluna.
-- **O resultado precisa ser guardado** no nó do modelo: a 3.4 usa
-  `inputs`/`outputs` para tipar os membros e a 3.6 usa `bytes` e `kernels`.
-- **Teste:** os erros da seção 8 de `native-syntax.rob` que dependem só da 3.3
-  (caminho não literal, arena ausente, arquivo inexistente, não-`.tflite`,
-  truncado) e o caso 7a (função do usuário chamada `ai_model`). Precisam de um
-  alvo que confira a mensagem de erro, porque `test/general` só testa
-  programas que compilam e rodam.
+- `AiModel::checkNotReserved` — chamada pelo `SymbolizeTree` para todo nome
+  declarado; é o único lugar que conhece a reserva.
+- `AiModel` substitui o `FunctionCall` em `PropagateTypes`; é um `Constructor`
+  (tem `setLeftValue`), sem filhos — os argumentos já foram consumidos.
+- `isValid()` — falso se algum erro foi reportado; os passos seguintes devem
+  ignorar um nó inválido, para não somar erros em cascata.
+- `getModel()` — o `TfliteModel` lido (`inputs`, `outputs`, `kernels`, `bytes`,
+  e `path`, o caminho como encontrado); `getArenaSize()` — a arena, já conferida.
+- `getDataType()` ainda é `undefinedType`, e `generate()` só reporta que a
+  geração não existe. Os dois mudam na 3.4 e na 3.6; o `check_ai_model.py`
+  confere essa mensagem nos casos de sucesso e precisa ser ajustado junto.
 
-O caminho de `ai_model("...")` foi decidido na orientação de 2026-10-05:
-relativo ao `.rob`, depois as pastas `-I`.
+**Notas para começar a 3.4** (levantadas em 2026-10-13):
+
+- **Por onde os membros chegam à variável:** `PropagateTypes::visit(Scalar)`
+  copia `getExpr()->getSymbols()` para o `Scalar` (`PropagateTypes.cpp:522`)
+  — é assim que o `ConstructorCall` expõe os campos do tipo. Se o `AiModel`
+  devolver em `getSymbols()` os membros derivados do modelo (`input_count` e
+  `output_count` como `NamedConst`, e um nó por tensor com `size`, `scale`,
+  `zero_point` e `raw`), `m.input_count` deve resolver sem tocar no `Load`.
+  Hoje, `x = m.output0;` dá `Symbol m.output0 not found`, e `m.invoke()` dá
+  `Function m.invoke not defined`.
+- **Crash a evitar:** `m.input1[0] = 1.0` num modelo de uma entrada cai no
+  abort pré-existente de `visit(UpdateArray)` (registro de 2026-10-13), em vez
+  do erro "input1 não existe" da seção 8. A 3.4/3.7 precisa interceptar antes.
+- **Especificação:** compilada hoje, `native-syntax.rob` já tem as chamadas
+  reconhecidas e para no abort acima, em `classifier.input0[7] = 0.42;`
+  (linha 194).
 
 ---
 
@@ -1357,6 +1499,9 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
   host (`test/achados/arena`). Falta saber se o valor do host cobre o do
   Cortex-M — decide-se com as medições no STM32 da Etapa 4.
 
+Decidida em orientação posterior a 2026-10-05: `ai_model` é nome reservado,
+na análise semântica (5.2.13) — substitui a precedência da função do usuário.
+
 Decididas na orientação de 2026-10-05: tensores como membros numerados
 (5.2.12), a partir de 0 — a base 1 proposta foi trocada depois; `input_count`/`output_count` no modelo; caminho do modelo relativo
 ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
@@ -1366,6 +1511,6 @@ ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
 ## Estado do repositório
 
 Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento:
-3.0 e 3.1 concluídas, 3.2 dispensada, próxima a 3.3. `make -C test/tflm check`
-passa por inteiro; `make -C test/achados` reproduz os achados 5.2.7, 5.2.8 e
-5.2.11.
+3.0, 3.1 e 3.3 concluídas, 3.2 dispensada, próxima a 3.4. `make -C test/tflm
+check` passa por inteiro, incluindo o alvo `ai_model`; `make -C test/achados`
+reproduz os achados 5.2.7, 5.2.8 e 5.2.11.

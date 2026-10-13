@@ -478,21 +478,24 @@ int16 exemplo_arena() {
  * 7. Retrocompatibilidade -- tudo abaixo DEVE continuar compilando
  * ========================================================================= */
 
-// 7a. Função do usuário chamada "ai_model".
+// 7a. O nome "ai_model" é RESERVADO.
 //
-// A regra: função definida pelo usuário VENCE o tipo embutido. O lugar dessa
-// decisão já existe -- é o mesmo ponto onde o compilador escolhe entre a
-// leitura "tipo" e a leitura "função" de nome(args),
-// PropagateTypes::visit(FunctionCall). Num programa que define isto, a sintaxe
-// de TinyML simplesmente não está disponível, e o código antigo segue idêntico.
-
-int16 ai_model(int16 valor) {
-    return valor * 2;
-}
-
-int16 usa_funcao_propria() {
-    return ai_model(21);   // continua sendo a função acima. 42.
-}
+// DECISÃO (orientação): declarar função, método, tipo, campo, variável,
+// parâmetro, interface ou enum chamado ai_model é erro de compilação (seção 8).
+// A reserva é feita na análise semântica, não no léxico: ai_model segue sendo
+// um identificador para o parser, e ai_model(...) segue sendo uma chamada --
+// nenhuma produção de gramática é acrescentada (seção 0), e o erro diz o motivo
+// ("ai_model is a reserved name") em vez de um erro de sintaxe genérico.
+//
+// Substitui a regra anterior, em que uma função do usuário chamada ai_model
+// vencia o embutido. Aquela regra desligava a sintaxe nativa no PROGRAMA
+// INTEIRO -- inclusive neste arquivo, que a demonstrava aqui mesmo.
+//
+// O custo é quebrar programas que já usassem o nome. Nenhum arquivo .rob do
+// repositório o usa, e o nome é novo, criado para esta extensão.
+//
+// Só ai_model é reservado. Os nomes dos membros (inputN, outputN, size, scale,
+// zero_point, raw, invoke, input_count, output_count) não são: ver 7b.
 
 // 7b. Tipo do usuário com membros chamados como os de um modelo.
 //
@@ -538,6 +541,10 @@ int16 usa_tipo_proprio() {
  * compilação é um dos objetivos. Ficam comentados porque este
  * arquivo, quando o frontend existir, deve compilar por inteiro.
  * ========================================================================= */
+
+// int16 ai_model(int16 valor) { return valor * 2; }
+//     -> erro: ai_model é nome reservado (7a); vale também para método, tipo,
+//        campo, variável, parâmetro, interface e enum
 
 // caminho = "models/hello_world_float.tflite";
 // a = ai_model(caminho, 3000);
@@ -625,8 +632,9 @@ int16 usa_tipo_proprio() {
  * Em aberto:
  *
  * - O nome `ai_model`. Substituiu `model`, genérico demais (modelo 3D, modelo
- *   de dados). Não bloqueia o compilador: o nome aparece num único ponto da
- *   análise semântica.
+ *   de dados). Não bloqueia o compilador: o nome aparece num único ponto do
+ *   compilador (src/tinyml/AiModel.cpp), que reconhece a chamada e reserva o
+ *   nome.
  *
  * Decididas na orientação de 2026-10-05:
  *   tensores como membros numerados, inputN/outputN (seção 0) -- proposta
@@ -634,6 +642,9 @@ int16 usa_tipo_proprio() {
  *   contadores input_count/output_count no modelo (3, 5);
  *   caminho relativo ao .rob, depois as pastas -I (1);
  *   arena manual na fase 1, medição como caminho da fase 2 (6).
+ *
+ * Decidida em orientação posterior: ai_model é nome reservado, na análise
+ * semântica (7a) -- substitui a precedência da função do usuário.
  *
  * Decididas antes: subgrafos (5b), status do invoke (1), visão .raw (4b),
  * ausência de destruição (8b).

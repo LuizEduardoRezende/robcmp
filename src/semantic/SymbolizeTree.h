@@ -10,6 +10,7 @@
 #include "Scalar.h"
 #include "Enum.h"
 #include "semantic/Visitor.h"
+#include "tinyml/AiModel.h"
 
 class SymbolizeTree: public Visitor {
 public:
@@ -19,7 +20,14 @@ public:
         for(auto* c : n.children()) {
             c->setScope(&n);
             if (c->hasName()) {
-		        n.addSymbol(dynamic_cast<NamedNode*>(c));
+                NamedNode *named = dynamic_cast<NamedNode*>(c);
+                AiModel::checkNotReserved(named);
+                // parameters are symbols of the function, not its children
+                if (auto *func = dynamic_cast<FunctionBase*>(named)) {
+                    for(auto* p : func->getParameters().getParameters())
+                        AiModel::checkNotReserved(p);
+                }
+		        n.addSymbol(named);
             }
         }
         for(auto* c : n.children()) {

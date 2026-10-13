@@ -41,6 +41,12 @@ public:
 		sloc = s->sloc;
 	}
 
+	// for nodes created after parsing in place of another one: the file
+	// being parsed then is no longer the file of the replaced node
+	void setFileOf(const SourceLocation *s) {
+		fileNo = s->fileNo;
+	}
+
 	virtual location_t getLoc() {
 		return sloc;
 	}
