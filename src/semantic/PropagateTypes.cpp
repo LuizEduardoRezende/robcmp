@@ -428,29 +428,6 @@ Node* PropagateTypes::visit(UpdateArray& n) {
     return NULL;
 }
 
-// Forms after an indexed element (ElementAccess.h). ai_model tensors are
-// their only meaning; until they are recognized here, every use is an error.
-Node* PropagateTypes::visit(UpdateElementArray& n) {
-    propagateChildren(n);
-    yyerrorcpp(string_format("Assigning an array literal to %s is only valid on ai_model tensors.",
-        n.describe().c_str()), &n);
-    return NULL;
-}
-
-Node* PropagateTypes::visit(LoadElementMember& n) {
-    propagateChildren(n);
-    yyerrorcpp(string_format("Member access %s is only valid on ai_model tensors.",
-        n.describe().c_str()), &n);
-    return NULL;
-}
-
-Node* PropagateTypes::visit(UpdateElementMember& n) {
-    propagateChildren(n);
-    yyerrorcpp(string_format("Member access %s is only valid on ai_model tensors.",
-        n.describe().c_str()), &n);
-    return NULL;
-}
-
 Node* PropagateTypes::visit(UserType& n) {
     // Visit variables first, to propagate their types
     for (auto it = n.node_children.begin(); it != n.node_children.end(); ++it) {

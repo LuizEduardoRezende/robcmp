@@ -37,9 +37,6 @@ class NamedConst;
 class MemCopy;
 class Enum;
 class BitCast;
-class UpdateElementArray;
-class LoadElementMember;
-class UpdateElementMember;
 
 #define VISITOR_DECLAREP(T, P) \
 	virtual Node *visit(T& n) { return visit((P&)n); } \
@@ -92,9 +89,6 @@ public:
 	VISITOR_DECLARE(Enum)
 	VISITOR_DECLARE(UpdateArray)
 	VISITOR_DECLARE(BitCast)
-	VISITOR_DECLARE(UpdateElementArray)
-	VISITOR_DECLARE(LoadElementMember)
-	VISITOR_DECLARE(UpdateElementMember)
 
 };
 

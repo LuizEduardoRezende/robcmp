@@ -327,17 +327,6 @@ stmt : ident_or_xident '+' '+' ';'					{ $$ = new Scalar($1, new BinaryOp(new Lo
 	 | ident_or_xident '&' '=' expr ';'				{ $$ = new Scalar($1, new BinaryOp(new Load($1, @1), '&', $4)); }
 	 | ident_or_xident '^' '=' expr ';'				{ $$ = new Scalar($1, new BinaryOp(new Load($1, @1), '^', $4)); }
 	 | ident_or_xident '[' expr ']' '=' expr ';'	{ $$ = new UpdateArray($1, $3, $6, @1);}
-
-	 // Forms that continue after an indexed element (src/ElementAccess.h).
-	 // Only ai_model tensors give them meaning; the semantic analysis rejects
-	 // every other use.
-	 | ident_or_xident[id] '[' expr[pos] ']' '=' array ';'	{ $$ = new UpdateElementArray($id, $pos, $array, @id); }
-	 | ident_or_xident[id] '[' expr[pos] ']' '.' TOK_IDENTIFIER[member] '=' expr[e] ';'	{
-			$$ = new UpdateElementMember($id, $pos, $member, $e, @id);
-	   }
-	 | ident_or_xident[id] '[' expr[pos] ']' '.' TOK_IDENTIFIER[member] '=' array ';'	{
-			$$ = new UpdateElementMember($id, $pos, $member, $array, @id);
-	   }
 	 
 	 | ident_or_xident '[' expr ']' '[' expr ']' '=' expr ';'	{ $$ = new UpdateMatrix($1, $3, $6, $9, @1); }
 	 | ident_or_xident[id] '[' expr[e1] ']' '[' expr[e2] ']' '&' '=' expr[e3] ';'	{
@@ -464,7 +453,6 @@ factor : '(' expr ')' 			{ $$ = $2; }
 	   | TOK_STRING				{ $$ = new StringConst("conststr", $1, @1); }
 	   | ident_or_xident[id] '[' expr ']'				{ $$ = new LoadArray($1, $3, @id);} 
 	   | ident_or_xident[id] '[' expr ']' '[' expr ']'	{ $$ = new LoadMatrix($1, $3, $6, @id);}
-	   | ident_or_xident[id] '[' expr[pos] ']' '.' TOK_IDENTIFIER[member]	{ $$ = new LoadElementMember($id, $pos, $member, @id); }
 	   | call_or_cast
 	   | unary
 	   ;

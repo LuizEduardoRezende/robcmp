@@ -40,7 +40,6 @@
 #include "StringConst.h"
 #include "UpdateArray.h"
 #include "UpdateMatrix.h"
-#include "ElementAccess.h"
 #include "Array.h"
 #include "StringConst.h"
 #include "While.h"
