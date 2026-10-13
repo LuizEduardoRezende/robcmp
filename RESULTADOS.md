@@ -1292,8 +1292,35 @@ A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
   confere que ela cobre exatamente as funções do header e que cada custom op é
   um nome registrado pelo resolver do TFLM.
 
-Continua em aberto (seção 9 de `native-syntax.rob`): como resolver o caminho de
-`ai_model("...")` — necessário na 3.3.
+**Notas para começar a 3.3** (levantadas em 2026-10-13):
+
+- **Onde:** `PropagateTypes::visit(FunctionCall)`
+  (`src/semantic/PropagateTypes.cpp`, ~linha 318), o ponto que já troca
+  `FunctionCall` por `ConstructorCall`/`ForcedCast`. A precedência da função do
+  usuário se verifica ali mesmo: se `ai_model` resolve para um `FunctionBase`
+  (`calledIdent.getSymbol`), a chamada fica como está.
+- **Argumentos:** o caminho tem de ser um `StringConst` (`src/StringConst.h`) e a
+  arena uma constante (`isConstExpr()`); senão, os erros da seção 8.
+- **Caminho do modelo — não reaproveitar `includeDirs` como está.** A decisão é:
+  primeiro a pasta do `.rob` que contém a chamada, depois as `-I` na ordem dada.
+  A pasta do arquivo da chamada vem de `SourceLocation::getFile()`
+  (`src/SourceLocation.h:48`) — vale também para chamadas dentro de um arquivo
+  de `use`. A lista global `includeDirs` (`src/Scanner.cpp:12`) tem outra
+  ordem: o `use` a percorre de trás para frente (`Scanner.cpp:116`), o que dá
+  pasta do `use` atual, pasta de trabalho (`./`), pasta do `.rob` principal e
+  as `-I` da última para a primeira. Montar a ordem decidida explicitamente.
+- **Erro:** `TfliteModel::load` devolve a mensagem pronta; emitir com
+  `yyerrorcpp(erro, &no)`, que acrescenta arquivo, linha e coluna.
+- **O resultado precisa ser guardado** no nó do modelo: a 3.4 usa
+  `inputs`/`outputs` para tipar os membros e a 3.6 usa `bytes` e `kernels`.
+- **Teste:** os erros da seção 8 de `native-syntax.rob` que dependem só da 3.3
+  (caminho não literal, arena ausente, arquivo inexistente, não-`.tflite`,
+  truncado) e o caso 7a (função do usuário chamada `ai_model`). Precisam de um
+  alvo que confira a mensagem de erro, porque `test/general` só testa
+  programas que compilam e rodam.
+
+O caminho de `ai_model("...")` foi decidido na orientação de 2026-10-05:
+relativo ao `.rob`, depois as pastas `-I`.
 
 ---
 
