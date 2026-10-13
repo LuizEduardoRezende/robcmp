@@ -79,3 +79,4 @@ test/tflm/tflite_info
 
 # Artefatos da validacao do wrapper (test/tflm)
 test/tflm/out/
+test/achados/out/

@@ -1,0 +1,5 @@
+contador = 5;
+
+int16 dobro(int16 v) {
+    return v * 2;
+}

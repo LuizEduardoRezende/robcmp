@@ -1,0 +1,15 @@
+int16 dobro(int16 v) {
+    return v * 2;
+}
+
+// O único motivo de esta biblioteca falhar no modo padrão do `use`: um literal
+// de array no corpo de uma função. Sem esta linha, ela funciona
+// (veja ../literal-controle).
+int16 usa_literal() {
+    a = {1.0, 2.0};
+    return 0;
+}
+
+int16 triplo(int16 v) {
+    return v * 3;
+}

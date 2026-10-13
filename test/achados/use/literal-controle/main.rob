@@ -1,0 +1,8 @@
+use minhalib;
+
+int16 main() {
+    if dobro(21) == 42 and triplo(2) == 6 {
+        return 0;
+    }
+    return 1;
+}

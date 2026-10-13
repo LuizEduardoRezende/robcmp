@@ -1,0 +1,14 @@
+int16 dobro(int16 v) {
+    return v * 2;
+}
+
+// Igual a ../literal/minhalib.rob, trocando só o literal de array por um
+// escalar. A função continua tendo corpo -- e o `use` funciona.
+int16 usa_literal() {
+    a = 1.0;
+    return 0;
+}
+
+int16 triplo(int16 v) {
+    return v * 3;
+}

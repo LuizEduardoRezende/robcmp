@@ -1,0 +1,23 @@
+/*
+ * A RL passa -1 (int8) para uma função C e espera -1 de volta.
+ *
+ * O robcmp declara o parâmetro como `i8`, sem `signext`: não promete nem faz a
+ * extensão de sinal. O -1 vai no registrador como 0x000000FF, e uma função C que
+ * confia na extensão (clang) lê 255.
+ */
+int32 amplia(int8 v);
+void mostra(int32 x);
+
+int8 menos_um() {
+	return -1;
+}
+
+int16 main() {
+	v = menos_um();
+	x = amplia(v);
+	mostra(x);
+	if x == -1 {
+		return 0;
+	}
+	return 1;
+}

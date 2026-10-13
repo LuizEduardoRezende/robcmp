@@ -127,10 +127,11 @@ def main():
             print("  TIPOS    %-28s RL %-40s C %s" % (n, rl.get(n, ("ausente",))[0], c.get(n, ("ausente",))[0]))
             falhou = True
         if ext_dif:
-            # Aviso, nao falha: o robcmp marca zeroext em todo retorno inteiro,
-            # inclusive int8 com sinal, e o C marca signext. Comparacoes em i8
-            # funcionam (verificado); o risco e latente, em conversoes que
-            # ampliam o valor. Correcao pertence ao compilador (RESULTADOS.md).
+            # Aviso, nao falha: o robcmp nao marca signext em int8/int16 com
+            # sinal (so marca zeroext nos sem sinal), e o C marca. Os padroes
+            # abaixo juntam os atributos da assinatura inteira. Na API do
+            # wrapper nao ha parametro int8/int16 escalar, mas o erro e real:
+            # test/achados (make signext). Correcao: tarefa 3.8 (RESULTADOS.md).
             pares = sorted({(rl[n][1], c[n][1]) for n in ext_dif})
             print("  aviso: extensão divergente em %d funções; padrões: %s"
                   % (len(ext_dif), "; ".join("RL %s x C %s" % p for p in pares)))
