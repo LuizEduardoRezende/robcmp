@@ -46,6 +46,10 @@ public:
 	// The model held by a variable declared as m = ai_model(...), or NULL.
 	static AiModel *heldBy(Node *symbol);
 
+	// The variable is declared as m = ai_model(...), but PropagateTypes has
+	// not reached the declaration yet: the call is still a FunctionCall.
+	static bool isPendingDeclaration(Node *symbol);
+
 	// Checks the arguments and reads the model. An error is reported at the
 	// call, and the node returned is marked invalid; it still replaces the
 	// call, so that it is not reported again as an undefined function.

@@ -31,6 +31,12 @@ bool AiModel::isBuiltinCall(FunctionCall& fc) {
 	return fc.getName() == builtinName;
 }
 
+bool AiModel::isPendingDeclaration(Node *symbol) {
+	Variable *variable = dynamic_cast<Variable*>(symbol);
+	FunctionCall *call = variable ? dynamic_cast<FunctionCall*>(variable->getExpr()) : NULL;
+	return call && isBuiltinCall(*call);
+}
+
 static set<const FunctionCall*> declarations;
 
 void AiModel::markDeclaration(FunctionCall& fc) {

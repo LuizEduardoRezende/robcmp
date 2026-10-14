@@ -86,7 +86,7 @@ static Node *checkVector(const ModelMember& mm, Node *value, Node& n) {
 }
 
 Node *ModelUse::load(Load& n, PropagateTypes& pt) {
-	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope());
+	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope(), pt);
 	switch (mm.kind) {
 		case ModelMember::None:
 			return NULL;
@@ -100,7 +100,7 @@ Node *ModelUse::load(Load& n, PropagateTypes& pt) {
 }
 
 Node *ModelUse::loadArray(LoadArray& n, PropagateTypes& pt) {
-	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope());
+	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope(), pt);
 	if (mm.kind == ModelMember::None)
 		return NULL;
 	if (mm.kind != ModelMember::Tensor)
@@ -111,7 +111,7 @@ Node *ModelUse::loadArray(LoadArray& n, PropagateTypes& pt) {
 }
 
 Node *ModelUse::updateArray(UpdateArray& n, PropagateTypes& pt) {
-	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope());
+	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope(), pt);
 	if (mm.kind == ModelMember::None)
 		return NULL;
 	if (mm.kind != ModelMember::Tensor)
@@ -148,7 +148,12 @@ Node *ModelUse::scalar(Scalar& n, PropagateTypes& pt) {
 		return NULL;
 	}
 
-	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope());
+	// A global declaration visited earlier, when a use further up in the
+	// file needed it (ModelMember::resolve)
+	if (dynamic_cast<AiModel*>(n.getExpr()))
+		return NULL;
+
+	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope(), pt);
 	if (mm.kind == ModelMember::None)
 		return NULL;
 	if (Node *error = writable(mm, n))
@@ -161,7 +166,7 @@ Node *ModelUse::scalar(Scalar& n, PropagateTypes& pt) {
 }
 
 Node *ModelUse::array(Array& n, PropagateTypes& pt) {
-	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope());
+	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope(), pt);
 	if (mm.kind == ModelMember::None)
 		return NULL;
 	if (Node *error = writable(mm, n))
@@ -185,7 +190,7 @@ Node *ModelUse::array(Array& n, PropagateTypes& pt) {
 }
 
 Node *ModelUse::call(FunctionCall& n, PropagateTypes& pt) {
-	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope());
+	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope(), pt);
 	if (mm.kind == ModelMember::None)
 		return NULL;
 	if (mm.kind != ModelMember::Invoke)

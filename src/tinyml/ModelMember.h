@@ -25,6 +25,7 @@
 
 class AiModel;
 class Variable;
+class PropagateTypes;
 
 // A tensor of a model, in one of its two views.
 struct TensorRef {
@@ -60,7 +61,9 @@ struct ModelMember {
 	string property;				// "size", "scale", "zero_point", "input_count", "output_count"
 	string error;
 
-	static ModelMember resolve(const string& name, Node *scope);
+	// pt visits a global model declared further down in the file, so that
+	// its uses do not depend on the order of the declarations.
+	static ModelMember resolve(const string& name, Node *scope, PropagateTypes& pt);
 
 	// For Error: reports the error at loc, unless it is empty.
 	void report(SourceLocation *loc) const;

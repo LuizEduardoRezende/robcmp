@@ -3,6 +3,8 @@
 #include "Variable.h"
 #include "Float.h"
 #include "Scanner.h"
+#include "Program.h"
+#include "semantic/PropagateTypes.h"
 
 #include <regex>
 
@@ -49,7 +51,7 @@ static string tensorList(const vector<TfliteTensor>& tensors, const char *role) 
 	return r;
 }
 
-ModelMember ModelMember::resolve(const string& name, Node *scope) {
+ModelMember ModelMember::resolve(const string& name, Node *scope, PropagateTypes& pt) {
 	ModelMember mm;
 	mm.name = name;
 
@@ -60,6 +62,22 @@ ModelMember ModelMember::resolve(const string& name, Node *scope) {
 	for (size_t k = 1; k <= parts.size() && !mm.tensor.model; k++) {
 		Identifier stem(join(parts, 0, k), {0, 0, 0, 0});
 		Node *symbol = stem.getSymbol(scope, false);
+
+		// The declaration was not visited yet. A global one is declared
+		// further down in the file, and is visited now: globals exist before
+		// any function runs, whatever their order. A local one is used
+		// before it exists, as any local variable would be.
+		if (AiModel::isPendingDeclaration(symbol)) {
+			if (!dynamic_cast<Program*>(symbol->getScope())) {
+				mm.kind = Error;
+				mm.error = string_format("%s is used before its declaration: declare the "
+					"model, %s = ai_model(...), before using it.", stem.getFullName().c_str(),
+					stem.getFullName().c_str());
+				return mm;
+			}
+			symbol->accept(pt);
+		}
+
 		if (AiModel *model = AiModel::heldBy(symbol)) {
 			mm.tensor.model = model;
 			mm.tensor.variable = dynamic_cast<Variable*>(symbol);

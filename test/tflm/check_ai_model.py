@@ -351,6 +351,34 @@ def checa_membros(robcmp, tmp):
     else:
         print(f"  ok  {rotulo}")
 
+    # Ordem das declarações: um modelo global vale em todo o arquivo, como
+    # qualquer global, mesmo declarado depois da função que o usa; um local
+    # só vale depois da sua declaração.
+    usa = ('int8 a() {\n    m.input0 = {1.0};\n    return m.invoke();\n}\n'
+           'int8 b() {\n    m.input0[0] = 1.0;\n    return 0;\n}\n')
+    declara = 'm = ai_model("hello_world_int8.tflite", 3000);\n'
+    main = 'int16 main() {\n    return a() + b();\n}\n'
+    fonte.write_text(usa + declara + main)
+    checa("global declarado depois das funções que o usam", robcmp, fonte, LIDO, 9, 5, cwd=tmp)
+    fonte.write_text(usa.replace("m.input0[0]", "m.input1[0]") + declara + main)
+    saida_ordem = compila(robcmp, fonte, cwd=tmp)[1]
+    erros = re.findall(r"^.*?:(\d+):(\d+): semantic error: (.*)$", saida_ordem, re.M)
+    outros = [e for e in erros if LIDO not in e[2]]
+    if (len(erros) != 2 or len(outros) != 1 or outros[0][:2] != ("6", "5")
+            or "input1 does not exist" not in outros[0][2]):
+        falha(f"erro de membro em global declarado depois: obtido {saida_ordem.strip()!r}")
+    else:
+        print("  ok  erro de membro em global declarado depois, uma vez só")
+
+    fonte.write_text(programa("m.input0 = {1.0};", declara.strip()))
+    codigo, saida = compila(robcmp, fonte, cwd=tmp)
+    erros = re.findall(r"^.*?:(\d+):(\d+): semantic error: (.*)$", saida, re.M)
+    outros = [e for e in erros if LIDO not in e[2]]
+    if len(outros) != 1 or outros[0][:2] != ("2", "5") or "used before its declaration" not in outros[0][2]:
+        falha(f"local usado antes da declaração: obtido {saida.strip()!r}")
+    else:
+        print("  ok  local usado antes da declaração")
+
 
 def main():
     if len(sys.argv) != 2:

@@ -678,6 +678,47 @@ compilador, estava errado pela regra que o cercava; corrigido para
 lê, e não como texto, encontra a contradição no primeiro uso. É o segundo caso
 (o primeiro foi a 5.2.13).
 
+### 5.2.17 Como a semântica do TinyML entra no compilador: quatro alternativas comparadas
+
+Depois da implementação dos membros, um teste mostrou um defeito de ordem: uma
+função que usa um modelo **global declarado mais abaixo** no arquivo falhava
+com erros sem sentido (`Symbol ai_model not found`), enquanto uma global comum
+na mesma posição compila. Causa: o `PropagateTypes` percorre o arquivo em
+ordem, e o modelo só existia quando a visita chegava à declaração. A correção
+abriu a pergunta de onde a semântica do TinyML deve morar. Quatro alternativas,
+comparadas antes de escolher (2026-10-14):
+
+| | Linhas no núcleo | Cita TinyML no núcleo | Corrige a ordem | TinyML numa fase só, com tipos |
+|---|---|---|---|---|
+| **A** ganchos no `PropagateTypes` + declaração sob demanda | 36 (já existentes) | sim, 7 pontos | sim | sim |
+| **B** fases próprias, antes e depois do `PropagateTypes` | 2 (`Program.cpp`) | só as chamadas | sim | não |
+| **C** ponto de extensão genérico no `PropagateTypes` | ~15 | não | só com A | sim |
+| **D** membros como símbolos, tratados em `Load`, `Scalar`... | muitas, espalhadas | sim, em muitos arquivos | sim | sim |
+
+Escolhida a **A**. A **B** parecia a menos intrusiva em linhas, mas o
+`PropagateTypes` é onde os tipos passam a existir, e o TinyML depende de tipo o
+tempo todo (`float[]` contra `int8[]`, conversão de valores, `.raw`): uma fase
+antes dele não sabe tipos, e a semântica do TinyML ficaria dividida em duas.
+Além disso, ela teria de percorrer por conta própria todo lugar onde há
+expressão — inclusive os elementos de vetor literal, que não são filhos do nó —,
+duplicando conhecimento do compilador de forma silenciosa. A **C** cria um
+mecanismo de extensão para um único cliente; a **D** espalha o TinyML pelo
+núcleo, inclusive pela geração de código, como o compilador faz com
+registradores.
+
+A **A** usa o mesmo lugar e o mesmo mecanismo com que o compilador já troca
+`FunctionCall` por `ConstructorCall`/`ForcedCast` (5.2.2), e os pontos de
+entrada ficam explícitos. A ordem é corrigida dentro de `src/tinyml`, sem
+nenhuma linha nova no núcleo: quando o resolvedor encontra um uso cuja
+declaração ainda não foi visitada, um modelo global é visitado naquele momento
+(as globais existem antes de qualquer função rodar, em qualquer ordem); um
+local usado antes da sua declaração é erro, como seria qualquer local.
+
+**Serve para:** a 5.2, como justificativa da arquitetura da extensão — por que a
+semântica do TinyML está dentro da propagação de tipos e não numa fase à
+parte — e como registro de que a alternativa de menor número de linhas não era a
+menos intrusiva.
+
 ---
 
 ## Seção 5.4 — Validação e métricas
@@ -1415,6 +1456,25 @@ Fica para depois: tamanho do vetor contra o do tensor e índice constante fora
 do tensor (3.5, 3.7) — `d.input0 = {1.0, 2.0}` ainda passa; kernel sem suporte
 (3.7).
 
+### 2026-10-14 — Ordem das declarações de modelo; arquitetura revista
+
+Defeito encontrado ao revisar a integração: modelo global declarado depois da
+função que o usa não compilava. Comparadas quatro formas de integrar a
+semântica do TinyML ao compilador (5.2.17); mantida a dos ganchos no
+`PropagateTypes`, com a declaração resolvida sob demanda:
+`AiModel::isPendingDeclaration` reconhece a declaração ainda não visitada, e
+`ModelMember::resolve` (que agora recebe o `PropagateTypes`) a visita na hora,
+se for global, ou dá `m is used before its declaration`, se for local. Uma
+declaração já visitada assim não é processada de novo quando a visita normal
+chega a ela.
+
+Regra registrada na seção 4c da especificação (onde o modelo vale), e o caso do
+local na seção 8. Teste: 3 casos novos (72 no total) — global depois de duas
+funções que o usam, lido uma vez só; erro de membro nesse global, reportado
+uma vez; local usado antes. Retirar a visita sob demanda faz os dois primeiros
+falharem. IR de `test/general` idêntico ao do commit anterior;
+`make -C test/tflm check` passa.
+
 ---
 
 ## Roteiro — o que foi feito e o que vem
@@ -1557,6 +1617,9 @@ A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
   `m.input0`) ou qualquer expressão de vetor. `ModelInvoke(modelo)`.
 - Os `generate()` dos três devolvem `NULL`, e o do `AiModel` também; nenhum é
   alcançado enquanto o aviso da semântica existir (`AiModel::fromCall`).
+- Uma declaração global pode ser visitada antes da sua vez, por um uso acima
+  dela no arquivo (5.2.17). Na 3.6, a geração dos globais precisa acontecer
+  antes da das funções que os usam — como já acontece com as globais comuns.
 
 **Notas para a 3.5 e a 3.6** (levantadas em 2026-10-13):
 

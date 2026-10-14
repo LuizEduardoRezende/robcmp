@@ -389,6 +389,11 @@ int16 exemplo_raw_pipeline() {
  * m = ai_model(...): f(ai_model(...)), return ai_model(...) e a chamada solta
  * são erro de compilação.
  *
+ * Onde o modelo vale: como qualquer variável. Um modelo GLOBAL vale no arquivo
+ * inteiro, inclusive em funções escritas acima da declaração -- as globais
+ * existem antes de qualquer função rodar. Um modelo LOCAL só vale depois da sua
+ * declaração; usá-lo antes é erro de compilação.
+ *
  * Um modelo é um intérprete do TFLM com a sua arena, criado uma vez. Copiá-lo
  * ou trocá-lo exigiria definir o que acontece com o intérprete antigo -- o
  * mesmo problema da destruição, que a seção 8b deixa de fora.
@@ -657,6 +662,10 @@ int16 usa_tipo_proprio() {
 
 // f(ai_model("models/hello_world_float.tflite", 3000));
 //     -> erro: ai_model(...) só inicializa uma variável nova (4c)
+
+// l.input0 = {1.0};
+// l = ai_model("models/hello_world_float.tflite", 3000);
+//     -> erro: modelo local usado antes da sua declaração (4c)
 
 // q = ai_model("models/hello_world_int8.tflite", 3000);
 // q.input0.raw = {int16(0):1};
