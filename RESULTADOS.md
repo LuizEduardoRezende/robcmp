@@ -628,6 +628,56 @@ erro não foi observado nele e o caso está fora do escopo de TinyML. O teste
 mensagem de erro — arquivo, linha e coluna — pega: o comportamento (achar o
 modelo) estava certo.
 
+### 5.2.15 Membros do modelo resolvidos contra o `.tflite`, não como símbolos
+
+Os membros de um modelo (`input0`, `output0.raw`, `input0.scale`,
+`input_count`, `invoke`…) não são registrados como símbolos. Um resolvedor
+único, `ModelMember::resolve` (`src/tinyml/ModelMember.cpp`), interpreta o nome
+pontilhado contra o modelo lido: acha o trecho inicial do nome que guarda um
+modelo (`m`, `self.m`, `r.m`) e lê o resto contra o `.tflite`. Três efeitos:
+
+- **O erro diz o que existe.** Em vez de `Symbol d.input1 not found`:
+  `Model d has 1 input tensor (input0): input1 does not exist. Tensors are
+  numbered from 0.`; em vez de símbolo inexistente, `Tensor input0 of model d
+  is not quantized: it has no scale.` Cada regra de membro tem uma mensagem
+  própria; 26 casos de erro testados.
+- **Propriedades viram literais.** `m.input0.size`, `.scale`, `.zero_point`,
+  `input_count` e `output_count` são trocados por um nó literal na análise
+  semântica; valem até onde a RL exige constante. O teste usa isso: como
+  arena, `q.input0.zero_point` dá `must be positive, not -128` — o valor do
+  `hello_world_int8.tflite`, lido em tempo de compilação.
+- **Nenhuma produção de gramática.** Os nós que o parser já gera (`Load`,
+  `LoadArray`, `UpdateArray`, `Scalar`, `Array`, `FunctionCall`) são trocados no
+  `PropagateTypes` por um nó por operação: `TensorRead`, `TensorWrite`,
+  `ModelInvoke` (`src/tinyml/`). A mudança fora de `src/tinyml` são 36 linhas:
+  um gancho de duas a quatro linhas em cada visita, e um `accept` em
+  `LoadArray`, que não despachava para a própria visita (nenhum visitor a
+  tratava; o comportamento dos demais não muda).
+
+Evidência: `native-syntax.rob` inteiro passa pela análise semântica — os únicos
+erros são o aviso de geração não implementada, um por modelo, e o modelo
+hipotético de várias entradas da seção 5, que não existe em `models/`. O LLVM
+IR dos 65 programas de `test/general` é idêntico byte a byte.
+
+**Serve para:** a 5.2, como o mecanismo que torna a extensão minimamente
+intrusiva na semântica também, não só na gramática; e como exemplo de
+verificação deslocada para tempo de compilação, com a mensagem como parte do
+resultado.
+
+### 5.2.16 A especificação executável pegou um exemplo que violava a própria regra
+
+A seção 4b de `native-syntax.rob` diz que a visão `.raw` exige o tipo exato do
+tensor. O exemplo da imagem do person_detect fazia `imagem = {0x0b:9216};
+detector.input0.raw = imagem;` — e o compilador da 3.4 o recusou: `The raw view
+detector.input0.raw takes int8[], the type of the tensor, not uint8[].` Na RL,
+literal hexadecimal é sem sinal (`0x0b` é `uint8`). O exemplo, escrito antes do
+compilador, estava errado pela regra que o cercava; corrigido para
+`{int8(0x0b):9216}`.
+
+**Serve para:** a metodologia — a especificação como arquivo que o compilador
+lê, e não como texto, encontra a contradição no primeiro uso. É o segundo caso
+(o primeiro foi a 5.2.13).
+
 ---
 
 ## Seção 5.4 — Validação e métricas
@@ -1318,6 +1368,53 @@ também com índice simples — `nada[7] = 0.42;` num `main` vazio basta. O cami
 valor para o tipo do elemento sem conferir se ele existe. A nota da 3.2 só
 registrava o duplo índice.
 
+### 2026-10-13 — Etapa 3.4: membros do modelo na análise semântica
+
+Antes do código, quatro lacunas da especificação, fechadas em
+`native-syntax.rob` (decididas ao começar a tarefa):
+
+- tensor sem quantização não tem `.scale` nem `.zero_point`: ler é erro (seção 3);
+- a visão padrão é sempre `float`, para todo tipo de tensor; a `.raw` tem o tipo
+  do tensor e só existe para `int8` e `int16`, os tipos com `tflm_*_raw_*` no
+  wrapper (4b);
+- tensores de saída são somente leitura; o modelo não é um valor — `x = m`,
+  `f(m)`, declará-lo de novo, atribuir a ele, e `ai_model(...)` fora de
+  `m = ai_model(...)` são erro (4c, nova).
+
+Implementação em `src/tinyml/`: `ModelMember` (o resolvedor, 5.2.15),
+`ModelUse` (as seis trocas, chamadas do `PropagateTypes`), e um nó por
+operação — `TensorRead`, `TensorWrite`, `ModelInvoke` —, como a seção 5.2 do
+`CLAUDE.md` pede no lugar do `ModelNode`. Tipos: o tensor inteiro é `float[]`
+(ou `int8[]`/`int16[]` na `.raw`), com `.size`, e o elemento é escalar;
+`invoke()` é `int8`. O modelo em si tem o tipo `uint64`, o handle do
+intérprete, como no modo biblioteca — nunca visível como número, porque o modelo
+não é valor.
+
+Duas mudanças no `AiModel` por causa da geração ainda ausente:
+
+- o aviso "code generation ... not implemented yet" passou da geração para a
+  análise semântica. Na geração, os nós novos não devolvem valor, e
+  `return m.invoke()` derrubava o robcmp (conversão `int8`→`int16` sobre nulo).
+  Reportado na semântica, o erro impede a geração de rodar. Mesma mensagem,
+  mesma posição; a 3.6 o remove;
+- modelo como campo de tipo é recusado com mensagem própria (decisão em aberto,
+  abaixo). Antes, dava `The type of m is undefined`.
+
+`lib/ai/tflm.rob` já tinha sido corrigido na 3.3; o mesmo comentário com o
+desenho indexado (`m.input[i]`) estava no wrapper (`tflm_wrapper.{h,cpp}`) e foi
+reescrito com os membros. Só comentários.
+
+Teste: `check_ai_model.py` ganhou a etapa de membros — 36 casos (69 no total):
+a especificação inteira pela semântica, 4 constantes com o valor do `.tflite`, 4
+tipos de visão expostos pela mensagem de tipo errado, 26 erros em linha e
+coluna e o modelo como campo de tipo. A regra "saída é somente leitura",
+retirada à mão, faz 3 casos falharem. IR de `test/general` idêntico;
+`make -C test/tflm check` passa.
+
+Fica para depois: tamanho do vetor contra o do tensor e índice constante fora
+do tensor (3.5, 3.7) — `d.input0 = {1.0, 2.0}` ainda passa; kernel sem suporte
+(3.7).
+
 ---
 
 ## Roteiro — o que foi feito e o que vem
@@ -1405,10 +1502,10 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 | 3.1 | Migrar a leitura do `.tflite` para um módulo em `src/`, como fase de elaboração prévia | **feito** — `src/tinyml/TfliteModel` (5.2.9, 5.2.10) |
 | 3.2 | Gramática | **dispensada** — o desenho com membros não exige produção (5.2.12); P1–P3 (`4dd5c68`) revertidas |
 | 3.3 | `ai_model(...)` na semântica (`PropagateTypes::visit(FunctionCall)`): nome reservado (antes: precedência da função do usuário), caminho literal resolvido relativo ao `.rob` e depois nas pastas `-I`, arena obrigatória, `TfliteModel::load` | **feito** — nó `AiModel`; `make -C test/tflm ai_model` (5.2.13, 5.2.14) |
-| 3.4 | Membros do modelo derivados do `.tflite`: `inputN`/`outputN` (vetores tipados), `input_count`/`output_count`, e por tensor `.size`/`.scale`/`.zero_point`/`.raw`. Interceptar os nós que o parser já gera: `Load`, `LoadArray`, `UpdateArray`, `Scalar`, `Array`, e `FunctionCall` para `m.invoke()` |
-| 3.5 | Visão `.raw`: verificação de tipo e tamanho em tempo de compilação, inclusive `.raw[k]` |
+| 3.4 | Membros do modelo derivados do `.tflite`: `inputN`/`outputN` (vetores tipados), `input_count`/`output_count`, e por tensor `.size`/`.scale`/`.zero_point`/`.raw`. Interceptar os nós que o parser já gera: `Load`, `LoadArray`, `UpdateArray`, `Scalar`, `Array`, e `FunctionCall` para `m.invoke()` | **feito** — `ModelMember`, `ModelUse`, `TensorRead`/`TensorWrite`/`ModelInvoke` (5.2.15, 5.2.16) |
+| 3.5 | Visão `.raw`: verificação de tipo e tamanho em tempo de compilação, inclusive `.raw[k]` | tipo **feito na 3.4**; falta o tamanho |
 | 3.6 | Geração de código: modelo e arena como globais alinhados a 16 (5.2.8), um `tflm_add_*` por kernel detectado, e as chamadas da API `tflm_` (5.1.7) |
-| 3.7 | Erros de compilação da seção 8 da especificação: caminho não literal, arena ausente, arquivo inválido, tamanho incompatível, tensor inexistente (como `input1` num modelo de uma entrada), índice de elemento constante fora do tensor, escrita em `.scale`, `.raw` com tipo ou tamanho errado, kernel sem suporte |
+| 3.7 | Erros de compilação da seção 8 da especificação: caminho não literal, arena ausente, arquivo inválido, tamanho incompatível, tensor inexistente (como `input1` num modelo de uma entrada), índice de elemento constante fora do tensor, escrita em `.scale`, `.raw` com tipo ou tamanho errado, kernel sem suporte | feitos na 3.3/3.4 os de declaração, membro, tipo e escrita; faltam tamanho incompatível, índice constante fora do tensor e kernel sem suporte |
 | 3.8 | `signext` em `int8`/`int16` com sinal, em parâmetros e retornos (5.2.7) |
 | 3.9 | Fazer `test/tflm/native-syntax.rob` compilar e rodar, com o mesmo resultado do modo biblioteca |
 
@@ -1447,22 +1544,34 @@ A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
   geração não existe. Os dois mudam na 3.4 e na 3.6; o `check_ai_model.py`
   confere essa mensagem nos casos de sucesso e precisa ser ajustado junto.
 
-**Notas para começar a 3.4** (levantadas em 2026-10-13):
+**Interface deixada pela 3.4** (`src/tinyml/`), para a 3.5 em diante:
 
-- **Por onde os membros chegam à variável:** `PropagateTypes::visit(Scalar)`
-  copia `getExpr()->getSymbols()` para o `Scalar` (`PropagateTypes.cpp:522`)
-  — é assim que o `ConstructorCall` expõe os campos do tipo. Se o `AiModel`
-  devolver em `getSymbols()` os membros derivados do modelo (`input_count` e
-  `output_count` como `NamedConst`, e um nó por tensor com `size`, `scale`,
-  `zero_point` e `raw`), `m.input_count` deve resolver sem tocar no `Load`.
-  Hoje, `x = m.output0;` dá `Symbol m.output0 not found`, e `m.invoke()` dá
-  `Function m.invoke not defined`.
-- **Crash a evitar:** `m.input1[0] = 1.0` num modelo de uma entrada cai no
-  abort pré-existente de `visit(UpdateArray)` (registro de 2026-10-13), em vez
-  do erro "input1 não existe" da seção 8. A 3.4/3.7 precisa interceptar antes.
-- **Especificação:** compilada hoje, `native-syntax.rob` já tem as chamadas
-  reconhecidas e para no abort acima, em `classifier.input0[7] = 0.42;`
-  (linha 194).
+- `ModelMember::resolve(nome, escopo)` — o que um nome pontilhado é num modelo:
+  `None` (não é de modelo), `Model`, `Tensor`, `Property`, `Invoke` ou `Error`
+  (mensagem pronta; vazia se a declaração já tinha erro). O `TensorRef` diz o
+  modelo, a variável que o guarda, entrada/saída, índice e visão, e dá
+  `elementType()`/`vectorType()`.
+- `TensorRead(tensor, elemento)` e `TensorWrite(tensor, elemento, valor)` —
+  elemento `NULL` = o tensor inteiro. O valor da escrita inteira é um vetor já
+  tipado: um `Array` literal (o próprio nó do parser, ainda com o nome
+  `m.input0`) ou qualquer expressão de vetor. `ModelInvoke(modelo)`.
+- Os `generate()` dos três devolvem `NULL`, e o do `AiModel` também; nenhum é
+  alcançado enquanto o aviso da semântica existir (`AiModel::fromCall`).
+
+**Notas para a 3.5 e a 3.6** (levantadas em 2026-10-13):
+
+- **Tamanhos (3.5/3.7):** o tamanho do literal está no `Array`
+  (`getSize()`); o de um vetor em variável, no seu `.size`. O índice constante
+  do elemento está em `TensorRead/TensorWrite::getElement()`.
+- **Geração (3.6):** tirar o aviso de `AiModel::fromCall` e ajustar o
+  `check_ai_model.py`, que o usa como marca de modelo aceito. O `Array` literal
+  da escrita precisa ser gerado como temporário — hoje ele se chama `m.input0`.
+- **Função chamada várias vezes (3.6):** `ai_model(...)` dentro de uma função
+  cria o intérprete a cada chamada, sobre a mesma arena global. Decidir junto
+  com o armazenamento de modelo e arena.
+- **Seção 5 da especificação (3.9):** o modelo de várias entradas é hipotético.
+  Para a 3.9 compilar o arquivo inteiro, usar uma fixture do TFLM com duas
+  entradas (o `simple_add_model`, citado na seção 5) ou comentar o exemplo.
 
 ---
 
@@ -1498,6 +1607,13 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
 - Arena automática (fase 2): o caminho é medir na compilação, rodando o TFLM do
   host (`test/achados/arena`). Falta saber se o valor do host cobre o do
   Cortex-M — decide-se com as medições no STM32 da Etapa 4.
+- Modelo como campo de tipo (`type robo { m = ai_model(...); }`): fora da
+  especificação; recusado com erro próprio. Duas instâncias do tipo dividiriam
+  o modelo e a arena — decide-se com o armazenamento, na 3.6.
+
+Decididas ao começar a 3.4 (2026-10-13): tensor sem quantização não tem
+`scale`/`zero_point`; visão padrão sempre `float` e `.raw` só para `int8` e
+`int16`; saídas somente leitura; o modelo não é um valor.
 
 Decidida em orientação posterior a 2026-10-05: `ai_model` é nome reservado,
 na análise semântica (5.2.13) — substitui a precedência da função do usuário.
@@ -1511,6 +1627,6 @@ ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
 ## Estado do repositório
 
 Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento:
-3.0, 3.1 e 3.3 concluídas, 3.2 dispensada, próxima a 3.4. `make -C test/tflm
-check` passa por inteiro, incluindo o alvo `ai_model`; `make -C test/achados`
+3.0, 3.1, 3.3 e 3.4 concluídas, 3.2 dispensada, próxima a 3.5. `make -C
+test/tflm check` passa por inteiro, incluindo o alvo `ai_model`; `make -C test/achados`
 reproduz os achados 5.2.7, 5.2.8 e 5.2.11.

@@ -4,6 +4,7 @@
 #include "Scalar.h"
 #include "Program.h"
 #include "tinyml/AiModel.h"
+#include "tinyml/ModelUse.h"
 
 void PropagateTypes::propagateChildren(Node& n, std::function<void(Node&)> lambda) {
     for (auto it = n.node_children.begin(); it != n.node_children.end(); ++it) {
@@ -322,6 +323,10 @@ Node* PropagateTypes::visit(FunctionCall& fc) {
     // ai_model(path, arena) declares a TinyML model; the name is reserved
     if (AiModel::isBuiltinCall(fc))
         return AiModel::fromCall(fc);
+
+    // m.invoke()
+    if (Node *invoke = ModelUse::call(fc, *this))
+        return invoke;
     
     // if the function name is the name of a primitive or complex type,
     // replace the function call node by a more specific one
@@ -403,6 +408,10 @@ Node* PropagateTypes::visit(Matrix& n) {
 }
 
 Node* PropagateTypes::visit(Array& n) {
+    // m.input0 = {...}
+    if (Node *write = ModelUse::array(n, *this))
+        return write;
+
     // visit elements to propagate their types
     for(ArrayElement *ae : n.getElements()) {
         Node *aux = ae->value->accept(*this);
@@ -423,6 +432,10 @@ Node* PropagateTypes::visit(Array& n) {
 }
 
 Node* PropagateTypes::visit(UpdateArray& n) {
+    // m.input0[k] = x
+    if (Node *write = ModelUse::updateArray(n, *this))
+        return write;
+
     propagateChildren(n);
     // find the array type, based on elements
     DataType edt = n.getElementDataType();
@@ -510,6 +523,9 @@ Node* PropagateTypes::visit(Variable& n) {
 }
 
 Node* PropagateTypes::visit(Scalar& n) {
+    // m.input0 = v
+    if (Node *write = ModelUse::scalar(n, *this))
+        return write;
     
     Node *result = visit((Variable&)n);
     
@@ -528,6 +544,10 @@ Node* PropagateTypes::visit(Load& n) {
     if (n.getName() == "_parent")
         return NULL;
 
+    // m.output0, m.input0.size, ...
+    if (Node *read = ModelUse::load(n, *this))
+        return read;
+
     // although this should be done on SymbolizeTree,
     // some type propagation in the tree changes symbols
     // for scalars (e.g. FunctionCall -> ConstructorCall)
@@ -535,6 +555,15 @@ Node* PropagateTypes::visit(Load& n) {
     Node *identSymbol = n.getIdentSymbol(false);
     if (identSymbol)
         n.symbols = identSymbol->getSymbols();
+    return NULL;
+}
+
+Node* PropagateTypes::visit(LoadArray& n) {
+    // m.output0[k]
+    if (Node *read = ModelUse::loadArray(n, *this))
+        return read;
+
+    visit((Node&)n);
     return NULL;
 }
 

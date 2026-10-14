@@ -14,10 +14,14 @@ Valida o reconhecimento de ai_model(...) na análise semântica do compilador
   4. Retrocompatibilidade (seção 7b): os nomes dos membros de um modelo não
      são reservados, e um tipo do usuário com input0, input() e output() segue
      compilando e rodando.
+  5. Membros do modelo (tarefa 3.4): native-syntax.rob inteiro passa pela
+     análise semântica; as propriedades são constantes com os valores do
+     .tflite; as duas visões têm os tipos das seções 3 e 4b; e cada erro das
+     seções 3, 4b, 4c e 8 que depende só dos membros sai na posição certa.
 
-Enquanto a geração de código (3.6) não existe, um modelo aceito para na
-geração com a mensagem "was read, but the code generation ... is not
-implemented yet", que nomeia o arquivo lido. É ela que os casos de sucesso
+Enquanto a geração de código (3.6) não existe, um modelo aceito dá, na
+análise semântica, o erro "was read, but the code generation ... is not
+implemented yet", que nomeia o arquivo lido. É ele que os casos de sucesso
 conferem.
 
 Uso: check_ai_model.py ROBCMP   (a partir de test/tflm)
@@ -221,6 +225,133 @@ def checa_retrocompatibilidade(robcmp, tmp):
     print(f"  ok  {rotulo}")
 
 
+# Os modelos dos casos de membros, declarados nas linhas 2 a 5 do main.
+MODELOS_MEMBROS = [
+    ("d", "hello_world_float", 3000),         # float32, sem quantização
+    ("q", "hello_world_int8", 3000),          # int8 quantizado, zero_point -128
+    ("sp", "spam", 4096),                     # entrada int32
+    ("pre", "audio_preprocessor_int8", 12288),  # entrada int16, saída int8 sem escala
+]
+
+
+def programa_membros(*linhas):
+    """Um main com os quatro modelos declarados; a primeira linha dada é a 6.
+    A função f, depois do main, recebe um valor qualquer."""
+    decl = [f'{v} = ai_model("{n}.tflite", {a});' for v, n, a in MODELOS_MEMBROS]
+    return programa(*decl, *linhas) + "int16 f(int16 v) {\n    return v;\n}\n"
+
+
+def checa_unico(rotulo, robcmp, fonte, esperado, linha, coluna, cwd):
+    """Além do aviso de geração de cada modelo, exatamente um erro."""
+    codigo, saida = compila(robcmp, fonte, cwd=cwd)
+    erros = re.findall(r"^.*?:(\d+):(\d+): semantic error: (.*)$", saida, re.M)
+    lidos = [e for e in erros if LIDO in e[2]]
+    outros = [e for e in erros if LIDO not in e[2]]
+    if len(lidos) != len(MODELOS_MEMBROS) or len(outros) != 1:
+        falha(f"{rotulo}: esperado 1 erro além dos modelos lidos, obtido {saida.strip()!r}")
+        return
+    l, c, msg = outros[0]
+    if esperado not in msg or (int(l), int(c)) != (linha, coluna):
+        falha(f"{rotulo}: esperado {esperado!r} em {linha}:{coluna}, obtido {l}:{c} {msg!r}")
+        return
+    print(f"  ok  {rotulo}")
+
+
+def checa_membros(robcmp, tmp):
+    print("== membros do modelo (3.4)")
+
+    # A especificação inteira: todo erro é o aviso de geração, exceto o modelo
+    # hipotético de várias entradas da seção 5, que não existe em models/.
+    raiz = Path(__file__).resolve().parent
+    codigo, saida = compila(robcmp, raiz / "native-syntax.rob", cwd=raiz)
+    erros = re.findall(r"semantic error: (.*)$", re.sub(r"\x1b\[[0-9;]*m", "", saida), re.M)
+    outros = [e for e in erros if LIDO not in e and "algum_modelo_multi_entrada" not in e]
+    if outros or not erros:
+        falha(f"native-syntax.rob: erros além dos esperados: {outros!r}")
+    else:
+        print(f"  ok  native-syntax.rob passa pela análise semântica "
+              f"({len(erros) - 1} modelos lidos)")
+
+    for _, nome, _ in MODELOS_MEMBROS:
+        shutil.copy(MODELOS / f"{nome}.tflite", tmp / f"{nome}.tflite")
+    fonte = tmp / "m.rob"
+
+    # Propriedades são constantes de compilação: valem como arena, e a
+    # verificação da arena mostra o valor -- zero_point -128, size 1,
+    # input_count 1, size 40 da saída do audio_preprocessor.
+    constantes = [
+        ("zero_point é constante", "q.input0.zero_point", "not -128"),
+        ("size é constante", "q.output0.size - 1", "not 0"),
+        ("input_count é constante", "q.input_count - 1", "not 0"),
+        ("size de tensor grande", "pre.output0.size - 40", "not 0"),
+    ]
+    for rotulo, expr, esperado in constantes:
+        fonte.write_text(programa_membros(f'x = ai_model("hello_world_int8.tflite", {expr});'))
+        checa_unico(rotulo, robcmp, fonte, esperado, 6, 45, tmp)
+
+    # Tipos das visões, expostos pela mensagem de tipo errado.
+    tipos = [
+        ("leitura padrão é float[]", ["v = q.output0;", "q.input0.raw = v;"],
+         "takes int8[], the type of the tensor, not float[]", 7, 5),
+        (".raw de saída int8 é int8[]", ["c = pre.output0.raw;", "pre.input0.raw = c;"],
+         "takes int16[], the type of the tensor, not int8[]", 7, 5),
+        ("escrita padrão pede float[]", ["v = {int8(1):1};", "q.input0 = v;"],
+         "takes a vector of real values, float[], not int8[]", 7, 5),
+        (".raw exige o tipo exato", ["q.input0.raw = {int16(0):1};"],
+         "takes int8[], the type of the tensor, not int16[]", 6, 5),
+    ]
+    for rotulo, linhas, esperado, linha, coluna in tipos:
+        fonte.write_text(programa_membros(*linhas))
+        checa_unico(rotulo, robcmp, fonte, esperado, linha, coluna, tmp)
+
+    erros = [
+        ("tensor inexistente", "d.input1 = {1.0};", "has 1 input tensor (input0): input1 does not exist", 5),
+        ("tensor inexistente, elemento", "x = d.input1[0];", "input1 does not exist", 9),
+        ("tensor inexistente, escrita de elemento", "d.input1[0] = 1.0;", "input1 does not exist", 5),
+        ("scale somente leitura", "q.input0.scale = 0.5;", "q.input0.scale is read-only", 5),
+        ("input_count somente leitura", "q.input_count = 2;", "q.input_count is read-only", 5),
+        ("float32 sem scale", "s = d.input0.scale;", "is not quantized: it has no scale", 9),
+        ("int32 sem zero_point", "z = sp.input0.zero_point;", "is not quantized: it has no zero_point", 9),
+        ("saída int8 sem escala", "s = pre.output0.scale;", "is not quantized: it has no scale", 9),
+        ("saída somente leitura", "d.output0 = {1.0};", "is an output tensor: it is read-only", 5),
+        ("elemento de saída", "d.output0[0] = 1.0;", "is an output tensor: it is read-only", 5),
+        ("saída .raw", "q.output0.raw = {int8(0):1};", "is an output tensor: it is read-only", 5),
+        ("modelo copiado", "x = d;", "d is a model, not a value", 9),
+        ("modelo passado a função", "f(d);", "d is a model, not a value", 7),
+        ("modelo declarado de novo", 'd = ai_model("hello_world_int8.tflite", 3000);', "d already exists", 5),
+        ("modelo atribuído", "d = 1;", "d already holds a model", 5),
+        (".raw de float32", "d.input0.raw = {1};", "is float32: it has no raw view", 5),
+        (".raw de int32", "v = sp.input0.raw;", "is int32: it has no raw view", 9),
+        ("membro inexistente", "x = d.foo;", "Model d has no member foo", 9),
+        ("membro de tensor inexistente", "x = d.input0.foo;", "has no member foo", 9),
+        ("método inexistente", "d.run();", "Model d has no member run", 5),
+        ("invoke com argumento", "d.invoke(1);", "d.invoke() takes no arguments", 5),
+        ("invoke sem chamar", "x = d.invoke;", "call it as d.invoke()", 9),
+        ("propriedade indexada", "x = d.input0.size[0];", "d.input0.size is not a vector", 9),
+        ("tensor chamado", "x = d.input0();", "the only method of a model is invoke()", 9),
+        ("ai_model passado a função", 'x = f(ai_model("hello_world_int8.tflite", 3000));',
+         "it is used only to initialize a new variable", 11),
+        ("ai_model solto", 'ai_model("hello_world_int8.tflite", 3000);',
+         "it is used only to initialize a new variable", 5),
+    ]
+    for rotulo, linha_rob, esperado, coluna in erros:
+        fonte.write_text(programa_membros(linha_rob))
+        checa_unico(rotulo, robcmp, fonte, esperado, 6, coluna, tmp)
+
+    # Modelo como campo de tipo: fora da especificação; recusado até a 3.6
+    # decidir como guardar modelo e arena por instância.
+    rotulo = "modelo como campo de tipo"
+    fonte.write_text('type robo {\n    m = ai_model("hello_world_int8.tflite", 3000);\n}\n'
+                     'int16 main() {\n    return 0;\n}\n')
+    codigo, saida = compila(robcmp, fonte, cwd=tmp)
+    erros = re.findall(r"^.*?:(\d+):(\d+): semantic error: (.*)$", saida, re.M)
+    outros = [e for e in erros if LIDO not in e[2]]
+    if len(outros) != 1 or outros[0][:2] != ("2", "5") or "field of a type" not in outros[0][2]:
+        falha(f"{rotulo}: obtido {saida.strip()!r}")
+    else:
+        print(f"  ok  {rotulo}")
+
+
 def main():
     if len(sys.argv) != 2:
         print(__doc__)
@@ -229,7 +360,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         for etapa in (checa_erros, checa_busca, checa_reservado,
-                      checa_retrocompatibilidade):
+                      checa_retrocompatibilidade, checa_membros):
             pasta = tmp / etapa.__name__
             pasta.mkdir()
             etapa(robcmp, pasta)

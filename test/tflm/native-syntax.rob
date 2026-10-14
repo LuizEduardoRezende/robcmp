@@ -148,6 +148,20 @@ int16 exemplo_quantizado() {
  *
  * .size é do TENSOR (quantos elementos ele tem); .input_count é do MODELO
  * (quantos tensores de entrada ele tem). Por isso não existe input0.count.
+ *
+ * Todas as cinco são somente leitura: atribuir a qualquer uma é erro de
+ * compilação (seção 8).
+ *
+ * DECISÃO: tensor SEM quantização não tem .scale nem .zero_point. Ler um deles
+ * é erro de compilação, nomeando o tensor. São os tensores float32, e também
+ * inteiros que o modelo usa sem escala: a entrada int32 do spam (índices de
+ * palavras), a entrada int16 e a saída int8 do audio_preprocessor_int8. A
+ * alternativa -- devolver 0 ou 1 -- daria um valor sem sentido que passaria
+ * calado para a conta de quem o usasse.
+ *
+ * Os tipos: .size, .input_count e .output_count são inteiros sem sinal, como o
+ * .size dos vetores; .scale é float; .zero_point é inteiro com sinal. Os
+ * inteiros têm o tamanho do valor, como os literais (-128 é int8).
  * ========================================================================= */
 
 int16 exemplo_propriedades() {
@@ -238,6 +252,22 @@ int16 exemplo_elemento_e_vetor() {
  * a visão padrão SEMPRE significa valor real, qualquer que seja o tipo do
  * literal, e .raw SEMPRE significa código.
  *
+ * DECISÃO: tipos das duas visões.
+ *
+ *   visão padrão   SEMPRE float, qualquer que seja o tipo do tensor: o tensor
+ *                  inteiro é float[N], o elemento é float. O wrapper converte
+ *                  de e para todos os tipos (float32, int8, uint8, int16,
+ *                  int32, int64); num tensor inteiro sem quantização a
+ *                  conversão é só o arredondamento -- os índices de palavras
+ *                  do spam (int32) são escritos como float e chegam exatos até
+ *                  2^24.
+ *
+ *   visão .raw     o tipo do PRÓPRIO tensor, e só existe para int8 e int16 --
+ *                  os tipos para os quais o wrapper tem tflm_set_raw_* e
+ *                  tflm_get_raw_*. Em tensor float32 a visão padrão já é o
+ *                  código; nos demais tipos (int32, uint8, ...) o wrapper não
+ *                  tem a função. Nos dois casos, .raw é erro de compilação.
+ *
  * Regras da visão .raw, verificadas em tempo de compilação -- o compilador
  * conhece tipo e tamanho de cada tensor pelo .tflite:
  *
@@ -265,7 +295,10 @@ int16 exemplo_elemento_e_vetor() {
 int16 exemplo_raw_imagem() {
     detector = ai_model("models/person_detect.tflite", 90000);
 
-    imagem = {0x0b:9216};                // viria da câmera, já em int8
+    // viria da câmera, já em int8. O int8(...) é necessário: literal
+    // hexadecimal na RL é sem sinal (0x0b é uint8), e a visão .raw exige o
+    // tipo exato do tensor.
+    imagem = {int8(0x0b):9216};
     detector.input0.raw = imagem;        // códigos entram como estão
 
     detector.invoke();
@@ -331,6 +364,35 @@ int16 exemplo_raw_pipeline() {
 
     return 0;
 }
+
+
+/* =========================================================================
+ * 4c. O que se lê e o que se escreve
+ *
+ * DECISÃO: tensores de SAÍDA são somente leitura. Escrever em outputN -- o
+ * vetor, um elemento ou a visão .raw -- é erro de compilação. O valor seria
+ * sobrescrito na próxima inferência; escrever ali só pode ser engano, quase
+ * sempre input trocado por output.
+ *
+ * Tensores de ENTRADA podem ser lidos, nas duas visões: serve para depuração
+ * (conferir o que de fato chegou ao modelo depois da quantização).
+ *
+ * DECISÃO: o modelo NÃO é um valor. Ele só é usado pelos seus membros --
+ * tensores, propriedades e invoke(). São erro de compilação:
+ *
+ *     x = m;              copiar o modelo
+ *     f(m);               passá-lo a uma função
+ *     m = ai_model(...);  declará-lo de novo na mesma variável
+ *     m = 1;              atribuir outra coisa a ela
+ *
+ * Pela mesma razão, ai_model(...) só aparece inicializando uma variável nova,
+ * m = ai_model(...): f(ai_model(...)), return ai_model(...) e a chamada solta
+ * são erro de compilação.
+ *
+ * Um modelo é um intérprete do TFLM com a sua arena, criado uma vez. Copiá-lo
+ * ou trocá-lo exigiria definir o que acontece com o intérprete antigo -- o
+ * mesmo problema da destruição, que a seção 8b deixa de fora.
+ * ========================================================================= */
 
 
 /* =========================================================================
@@ -577,7 +639,24 @@ int16 usa_tipo_proprio() {
 //         runtime pelo wrapper)
 
 // d.input0.scale = 0.5;
-//     -> erro: scale é somente leitura
+//     -> erro: scale é somente leitura (vale para zero_point, size,
+//        input_count e output_count)
+
+// s = d.input0.scale;
+//     -> erro: input0 não é quantizado, não tem scale (seção 3); idem
+//        zero_point
+
+// d.output0 = {1.0};
+// d.output0[0] = 1.0;
+//     -> erro: output0 é tensor de saída, somente leitura (seção 4c)
+
+// x = d;
+// f(d);
+// d = ai_model("models/hello_world_int8.tflite", 3000);
+//     -> erro: o modelo não é um valor; só os seus membros são usados (4c)
+
+// f(ai_model("models/hello_world_float.tflite", 3000));
+//     -> erro: ai_model(...) só inicializa uma variável nova (4c)
 
 // q = ai_model("models/hello_world_int8.tflite", 3000);
 // q.input0.raw = {int16(0):1};
@@ -590,6 +669,10 @@ int16 usa_tipo_proprio() {
 // fl.input0.raw = {1};
 //     -> erro: visão .raw de tensor float32 recebeu vetor int8
 //        (para tensor float, use a visão padrão)
+
+// sp = ai_model("models/spam.tflite", 4096);
+// v = sp.input0.raw;
+//     -> erro: tensor int32 não tem visão .raw; só int8 e int16 (4b)
 
 // f = ai_model("models/audio_preprocessor_int8.tflite", 12288);
 //     -> DEPENDE: este modelo exige 9 custom ops (SignalRfft, SignalWindow,
@@ -645,6 +728,10 @@ int16 usa_tipo_proprio() {
  *
  * Decidida em orientação posterior: ai_model é nome reservado, na análise
  * semântica (7a) -- substitui a precedência da função do usuário.
+ *
+ * Decididas ao começar a tarefa 3.4 (2026-10-13): tensor sem quantização não
+ * tem scale nem zero_point (3); visão padrão sempre float e .raw só para int8
+ * e int16 (4b); saídas somente leitura e modelo que não é valor (4c).
  *
  * Decididas antes: subgrafos (5b), status do invoke (1), visão .raw (4b),
  * ausência de destruição (8b).

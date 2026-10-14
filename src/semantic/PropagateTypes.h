@@ -13,6 +13,7 @@
 #include "FunctionCall.h"
 #include "Enum.h"
 #include "Load.h"
+#include "LoadArray.h"
 #include "MemCopy.h"
 #include "BitCast.h"
 #include "semantic/Visitor.h"
@@ -205,6 +206,7 @@ public:
     virtual Node* visit(Variable& n) override;
     virtual Node* visit(Scalar& n) override;
     virtual Node* visit(Load& n) override;
+    virtual Node* visit(LoadArray& n) override;
     virtual Node* visit(MemCopy& n) override;
 
     virtual Node* visit(Array& n) override;

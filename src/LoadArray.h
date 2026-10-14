@@ -3,6 +3,7 @@
 
 #include "Node.h"
 #include "Identifier.h"
+#include "semantic/Visitor.h"
 
 class BaseArrayOper: public Node {
 protected:
@@ -48,4 +49,8 @@ public:
 	virtual Value *generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) override;
 
 	virtual DataType getDataType() override;
+
+	virtual Node* accept(Visitor& v) override {
+		return v.visit(*this);
+	}
 };

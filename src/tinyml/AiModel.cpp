@@ -22,8 +22,19 @@ bool AiModel::checkNotReserved(NamedNode *declared) {
 	return false;
 }
 
+AiModel *AiModel::heldBy(Node *symbol) {
+	Variable *variable = dynamic_cast<Variable*>(symbol);
+	return variable ? dynamic_cast<AiModel*>(variable->getExpr()) : NULL;
+}
+
 bool AiModel::isBuiltinCall(FunctionCall& fc) {
 	return fc.getName() == builtinName;
+}
+
+static set<const FunctionCall*> declarations;
+
+void AiModel::markDeclaration(FunctionCall& fc) {
+	declarations.insert(&fc);
 }
 
 /*
@@ -93,6 +104,12 @@ AiModel *AiModel::fromCall(FunctionCall& fc) {
 	node->setFileOf(&fc);
 	node->setScope(fc.getScope());
 
+	if (!declarations.count(&fc)) {
+		yyerrorcpp(string_format("%s(...) declares a model: it is used only to initialize "
+			"a new variable, as m = %s(...).", builtinName, builtinName), node);
+		return node;
+	}
+
 	auto& args = fc.getParameters();
 	if (args.size() == 1) {
 		yyerrorcpp(string_format("The arena size of %s is missing: "
@@ -101,7 +118,7 @@ AiModel *AiModel::fromCall(FunctionCall& fc) {
 	}
 	if (args.size() != 2) {
 		yyerrorcpp(string_format("%s takes 2 arguments, the model path and the arena size, "
-			"but was called with %d.", builtinName, args.size()), node);
+			"but was called with %d.", builtinName, (int)args.size()), node);
 		return node;
 	}
 
@@ -150,11 +167,17 @@ AiModel *AiModel::fromCall(FunctionCall& fc) {
 	}
 
 	node->valid = true;
+
+	// Until the code generation exists (task 3.6), no program with a model
+	// may reach it: the nodes that use the model generate nothing, and the
+	// code around them would get no value. Reported here, in the semantic
+	// analysis, the error stops the compilation before the generation.
+	yyerrorcpp(string_format("model '%s' was read, but the code generation of %s "
+		"is not implemented yet.", node->model.path.c_str(), builtinName), node);
 	return node;
 }
 
 Value *AiModel::generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) {
-	yyerrorcpp(string_format("model '%s' was read, but the code generation of %s "
-		"is not implemented yet.", model.path.c_str(), builtinName), this);
+	// task 3.6; never reached until then (see fromCall)
 	return NULL;
 }

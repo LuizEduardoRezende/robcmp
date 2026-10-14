@@ -189,14 +189,14 @@ int8_t tflm_add_ethos_u(uint64_t resolver_handle);
  * Acesso aos tensores -- espelha a sintaxe nativa.
  * -------------------------------------------------------------------------*/
 
-// m.input[i] e m.output[i]. Devolvem 0 se o indice nao existir no modelo.
+// m.input0, m.output0, ... Devolvem 0 se o indice nao existir no modelo.
 uint64_t tflm_input(uint64_t model_handle, uint64_t index);
 uint64_t tflm_output(uint64_t model_handle, uint64_t index);
 
 uint64_t tflm_input_count(uint64_t model_handle);
 uint64_t tflm_output_count(uint64_t model_handle);
 
-// Numero de elementos do tensor (m.input[i].size).
+// Numero de elementos do tensor (m.input0.size).
 uint64_t tflm_tensor_size(uint64_t tensor_handle);
 
 // Valores reais, com conversao automatica:
@@ -210,7 +210,7 @@ float tflm_get_value(uint64_t tensor_handle, uint64_t index);
 int8_t tflm_set_values(uint64_t tensor_handle, const float *values, int32_t values_len);
 int8_t tflm_get_values(uint64_t tensor_handle, float *values, int32_t values_len);
 
-// Codigos crus, sem conversao (m.input[i].raw). Tipo do vetor igual ao do
+// Codigos crus, sem conversao (m.input0.raw). Tipo do vetor igual ao do
 // tensor e values_len igual ao numero de elementos; senao -1 sem copiar nada.
 int8_t tflm_set_raw_int8(uint64_t tensor_handle, const int8_t *values, int32_t values_len);
 int8_t tflm_get_raw_int8(uint64_t tensor_handle, int8_t *values, int32_t values_len);

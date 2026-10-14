@@ -955,17 +955,18 @@ void tflm_free_model(uint64_t handle) {
 }
 
 /* ---------------------------------------------------------------------------
- * Acesso aos tensores -- espelha a sintaxe nativa.
+ * Acesso aos tensores -- espelha a sintaxe nativa (test/tflm/native-syntax.rob),
+ * em que cada tensor e um membro do modelo, numerado a partir de 0.
  *
- *   tflm_input(m, i)            m.input[i]
- *   tflm_output(m, i)           m.output[i]
- *   tflm_set_values(t, v)       m.input[i] = v           valores reais
- *   tflm_get_values(t, v)       v = m.output[i]
- *   tflm_set_value(t, j, x)     m.input[i][j] = x
- *   tflm_get_value(t, j)        x = m.output[i][j]
- *   tflm_set_raw_int8(t, v)     m.input[i].raw = v       codigos crus
- *   tflm_get_raw_int8(t, v)     v = m.output[i].raw
- *   tflm_tensor_size(t)         m.input[i].size
+ *   tflm_input(m, 0)            m.input0
+ *   tflm_output(m, 0)           m.output0
+ *   tflm_set_values(t, v)       m.input0 = v             valores reais
+ *   tflm_get_values(t, v)       v = m.output0
+ *   tflm_set_value(t, j, x)     m.input0[j] = x
+ *   tflm_get_value(t, j)        x = m.output0[j]
+ *   tflm_set_raw_int8(t, v)     m.input0.raw = v         codigos crus
+ *   tflm_get_raw_int8(t, v)     v = m.output0.raw
+ *   tflm_tensor_size(t)         m.input0.size
  * -------------------------------------------------------------------------*/
 
 static TfLiteTensor *tensor_de(uint64_t handle) {
