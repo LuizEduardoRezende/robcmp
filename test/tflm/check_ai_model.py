@@ -18,6 +18,10 @@ Valida o reconhecimento de ai_model(...) na análise semântica do compilador
      análise semântica; as propriedades são constantes com os valores do
      .tflite; as duas visões têm os tipos das seções 3 e 4b; e cada erro das
      seções 3, 4b, 4c e 8 que depende só dos membros sai na posição certa.
+  6. Tamanhos: vetor de tamanho conhecido escrito no tensor inteiro, índice
+     constante de elemento e tensor lido para uma variável que já existe, nas
+     duas visões (seções 4b e 8); vetor de tamanho desconhecido e índice
+     variável ficam para o wrapper.
 
 Enquanto a geração de código (3.6) não existe, um modelo aceito dá, na
 análise semântica, o erro "was read, but the code generation ... is not
@@ -380,6 +384,72 @@ def checa_membros(robcmp, tmp):
         print("  ok  local usado antes da declaração")
 
 
+def checa_aceito(rotulo, robcmp, fonte, cwd, modelos=len(MODELOS_MEMBROS)):
+    """Nenhum erro além do aviso de geração de cada modelo."""
+    codigo, saida = compila(robcmp, fonte, cwd=cwd)
+    erros = re.findall(r"semantic error: (.*)$", saida, re.M)
+    if len(erros) != modelos or any(LIDO not in e for e in erros):
+        falha(f"{rotulo}: esperados só os {modelos} modelos lidos, obtido {saida.strip()!r}")
+    else:
+        print(f"  ok  {rotulo}")
+
+
+def checa_tamanhos(robcmp, tmp):
+    print("== tamanhos e índices (seções 4b e 8)")
+    for _, nome, _ in MODELOS_MEMBROS:
+        shutil.copy(MODELOS / f"{nome}.tflite", tmp / f"{nome}.tflite")
+    fonte = tmp / "t.rob"
+
+    # sp: entrada 20, saída 2; pre: entrada int16 480, saída int8 40
+    erros = [
+        ("literal maior que o tensor", ["d.input0 = {1.0, 2.0};"],
+         "d.input0 has 1 element; the vector has 2.", 6, 5),
+        ("literal na .raw", ["q.input0.raw = {int8(0), int8(0)};"],
+         "q.input0.raw has 1 element; the vector has 2.", 6, 5),
+        ("variável que guarda um literal", ["v = {0.0:3};", "d.input0 = v;"],
+         "d.input0 has 1 element; the vector has 3.", 7, 5),
+        ("outro tensor lido inteiro", ["sp.input0 = pre.output0;"],
+         "sp.input0 has 20 elements; the vector has 40.", 6, 5),
+        ("índice além do fim", ["x = sp.output0[2];"],
+         "sp.output0 has 2 elements: index 2 is out of the tensor.", 6, 9),
+        ("índice negativo", ["x = sp.output0[-1];"], "index -1 is out of the tensor", 6, 9),
+        ("índice constante nomeado", ["const K = 2;", "x = sp.output0[K];"],
+         "index 2 is out of the tensor", 7, 9),
+        ("escrita de elemento na .raw", ["pre.input0.raw[480] = int16(0);"],
+         "pre.input0.raw has 480 elements: index 480 is out of the tensor.", 6, 5),
+        ("leitura de elemento na .raw", ["x = pre.output0.raw[40];"],
+         "index 40 is out of the tensor", 6, 9),
+        ("leitura para variável de outro tamanho", ["saida = {0.0:3};", "saida = sp.output0;"],
+         "sp.output0 has 2 elements, and saida, which receives it, has 3.", 7, 5),
+        ("leitura .raw para variável de outro tipo", ["c = {int16(0):40};", "c = pre.output0.raw;"],
+         "pre.output0.raw is int8[], and c, which receives it, is int16[].", 7, 5),
+        ("leitura para variável escalar", ["x = 1;", "x = sp.output0;"],
+         "sp.output0 is float[], and x, which receives it, is int8.", 7, 5),
+    ]
+    for rotulo, linhas, esperado, linha, coluna in erros:
+        fonte.write_text(programa_membros(*linhas))
+        checa_unico(rotulo, robcmp, fonte, esperado, linha, coluna, tmp)
+
+    aceitos = [
+        ("literal do tamanho do tensor", ["sp.input0 = {0.0:20};"]),
+        ("último elemento", ["x = sp.output0[1];", "pre.input0.raw[479] = int16(0);"]),
+        ("índice variável", ["i = 7;", "x = pre.output0[i];"]),
+        ("tensor lido inteiro, mesmo tamanho", ["v = q.output0;", "d.input0 = v;"]),
+        ("leitura para buffer reservado", ["saida = {0.0:2};", "saida = sp.output0;",
+                                            "c = {int8(0):40};", "c = pre.output0.raw;"]),
+        ("buffer relido de outro modelo, mesmo tamanho", ["s = d.output0;", "s = q.output0;"]),
+        ("leitura no laço", ["i = 0;", "while i < 3 {", "    s = sp.output0;", "    i = i + 1;", "}"]),
+    ]
+    for rotulo, linhas in aceitos:
+        fonte.write_text(programa_membros(*linhas))
+        checa_aceito(rotulo, robcmp, fonte, tmp)
+
+    fonte.write_text('d = ai_model("hello_world_float.tflite", 3000);\n'
+                     'int8 escreve(float[] v) {\n    d.input0 = v;\n    return d.invoke();\n}\n'
+                     'int16 main() {\n    v = {1.0};\n    return escreve(v);\n}\n')
+    checa_aceito("vetor de tamanho desconhecido (parâmetro)", robcmp, fonte, tmp, modelos=1)
+
+
 def main():
     if len(sys.argv) != 2:
         print(__doc__)
@@ -388,7 +458,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         for etapa in (checa_erros, checa_busca, checa_reservado,
-                      checa_retrocompatibilidade, checa_membros):
+                      checa_retrocompatibilidade, checa_membros, checa_tamanhos):
             pasta = tmp / etapa.__name__
             pasta.mkdir()
             etapa(robcmp, pasta)

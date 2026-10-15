@@ -273,10 +273,30 @@ int16 exemplo_elemento_e_vetor() {
  *
  *   - o tipo do elemento do vetor precisa ser o do tensor
  *     (int8[] para tensor int8, int16[] para tensor int16);
- *   - quando o vetor tem tamanho fixo, precisa ter exatamente o número de
- *     elementos do tensor;
  *   - na leitura, a variável recebe o tipo do tensor;
  *   - .raw[k] é o código do elemento k, com o tipo do tensor.
+ *
+ * Tamanhos, nas DUAS visões, verificados em tempo de compilação:
+ *
+ *   - um vetor escrito no tensor inteiro precisa ter exatamente o número de
+ *     elementos do tensor, quando o seu tamanho é conhecido na compilação --
+ *     um literal ({1.0, 2.0}), uma variável que guarda um, ou outro tensor
+ *     lido inteiro. Um vetor de tamanho desconhecido (parâmetro float[] de
+ *     uma função) é conferido pelo wrapper em tempo de execução;
+ *   - um índice de elemento constante (m.output0[5], m.input0.raw[k] com k
+ *     constante) precisa estar dentro do tensor, de 0 a size - 1. Um índice
+ *     variável é conferido pelo wrapper em tempo de execução;
+ *   - DECISÃO: o tensor lido inteiro para uma variável que JÁ EXISTE é
+ *     copiado para ela -- o buffer reservado uma vez e reaproveitado a cada
+ *     inferência, padrão em firmware. A variável precisa ter o tipo da visão
+ *     e, quando o seu tamanho é conhecido, o número de elementos do tensor.
+ *     Numa variável nova, o tamanho vem do tensor.
+ *
+ *         saida = {0.0:4};          // reservado uma vez
+ *         while 1 {
+ *             m.invoke();
+ *             saida = m.output0;    // copiado para o mesmo buffer
+ *         }
  *
  * Mapeamento para o wrapper: escrita em .raw -> tflm_set_raw_int8/int16, leitura
  * -> tflm_get_raw_int8/int16, escolhidas pelo tipo do tensor. Como .raw[k] é
@@ -673,6 +693,13 @@ int16 usa_tipo_proprio() {
 
 // q.input0.raw = {0, 0};
 //     -> erro: tensor input0 tem 1 elemento, vetor .raw tem 2
+
+// saida = {0.0:3};
+// saida = d.output0;
+//     -> erro: output0 tem 1 elemento, e saida, que o recebe, tem 3 (4b)
+// codigos = {int16(0):1};
+// codigos = q.output0.raw;
+//     -> erro: q.output0.raw é int8[], e codigos, que o recebe, é int16[]
 
 // fl = ai_model("models/hello_world_float.tflite", 3000);
 // fl.input0.raw = {1};

@@ -719,6 +719,27 @@ semântica do TinyML está dentro da propagação de tipos e não numa fase à
 parte — e como registro de que a alternativa de menor número de linhas não era a
 menos intrusiva.
 
+### 5.2.18 Atribuir um vetor a outro já existente grava um ponteiro dentro dele
+
+Defeito da RL, não de TinyML, encontrado ao decidir o que `saida = m.output0`
+faz quando `saida` já existe. Com dois vetores comuns:
+
+```
+a = {1, 2};          %a = alloca [2 x i8]
+b = {5, 6};          %b = alloca [2 x i8]
+b = a;               store ptr %a, ptr %b      <- 8 bytes num espaço de 2
+```
+
+Não há cópia nem erro: o endereço de `a` (8 bytes no x86_64) é escrito sobre o
+conteúdo de `b` (2 bytes) — escrita fora dos limites na pilha. O programa de
+teste devolve `b[0] == 9` depois de `a[0] = 9`, o que parece aliasing, mas o
+comportamento é indefinido. Acontece com tamanhos iguais e diferentes. Não
+investigado além disso; fora do escopo de TinyML.
+
+**Serve para:** a 5.2, como restrição que a extensão precisa contornar — a
+leitura de um tensor inteiro para uma variável existente não pode se apoiar na
+atribuição de vetores da RL (decisão pendente, abaixo).
+
 ---
 
 ## Seção 5.4 — Validação e métricas
@@ -1475,6 +1496,40 @@ uma vez; local usado antes. Retirar a visita sob demanda faz os dois primeiros
 falharem. IR de `test/general` idêntico ao do commit anterior;
 `make -C test/tflm check` passa.
 
+### 2026-10-14 — Etapa 3.5: tamanhos e índices em tempo de compilação
+
+Nas duas visões, não só na `.raw`: o mecanismo é o mesmo, e a seção 8 da
+especificação já trazia o caso da visão padrão (`d.input0 = {1.0, 2.0}`). A
+seção 4b passou a dizer isso explicitamente.
+
+- **Vetor escrito no tensor inteiro:** quando o tamanho é conhecido na
+  compilação — literal, variável que guarda um, outro tensor lido inteiro —
+  precisa ser o do tensor: `d.input0 has 1 element; the vector has 2.` Vetor de
+  tamanho desconhecido (parâmetro `float[]`) fica para o wrapper.
+- **Índice constante de elemento:** de 0 a `size - 1`, inclusive constante
+  nomeada e negativo: `m4.output0 has 4 elements: index 5 is out of the tensor.`
+  Índice variável fica para o wrapper.
+
+O cálculo de constante inteira saiu do `AiModel.cpp` para
+`src/tinyml/IntegerConstant.{h,cpp}`, junto com `staticSize`, que lê o `.size`
+constante de um vetor — o mesmo `NamedConst` que literais, variáveis que os
+guardam e `TensorRead` já expõem.
+
+- **Tensor lido para variável que já existe** (decidido ao fim da tarefa): é
+  copiado para ela — o buffer reservado uma vez e reaproveitado a cada
+  inferência. A variável precisa ter o tipo da visão (`q.output0.raw is int8[],
+  and c, which receives it, is int16[].`) e, quando conhecido, o tamanho do
+  tensor (`sp.output0 has 2 elements, and saida, which receives it, has 3.`).
+  Não se apoia na atribuição de vetores da RL, que grava um ponteiro dentro do
+  vetor de destino (5.2.18). Regra e exemplos na seção 4b e na seção 8.
+
+Teste: etapa nova no `check_ai_model.py`, 20 casos (92 no total) — 12 erros em
+linha e coluna e 8 casos que precisam passar (tamanho certo, último elemento,
+índice variável, tensor lido de mesmo tamanho, parâmetro de tamanho
+desconhecido, buffer reservado, buffer relido de outro modelo, leitura no
+laço). IR de `test/general` idêntico ao do commit anterior;
+`make -C test/tflm check` passa.
+
 ---
 
 ## Roteiro — o que foi feito e o que vem
@@ -1563,9 +1618,9 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 | 3.2 | Gramática | **dispensada** — o desenho com membros não exige produção (5.2.12); P1–P3 (`4dd5c68`) revertidas |
 | 3.3 | `ai_model(...)` na semântica (`PropagateTypes::visit(FunctionCall)`): nome reservado (antes: precedência da função do usuário), caminho literal resolvido relativo ao `.rob` e depois nas pastas `-I`, arena obrigatória, `TfliteModel::load` | **feito** — nó `AiModel`; `make -C test/tflm ai_model` (5.2.13, 5.2.14) |
 | 3.4 | Membros do modelo derivados do `.tflite`: `inputN`/`outputN` (vetores tipados), `input_count`/`output_count`, e por tensor `.size`/`.scale`/`.zero_point`/`.raw`. Interceptar os nós que o parser já gera: `Load`, `LoadArray`, `UpdateArray`, `Scalar`, `Array`, e `FunctionCall` para `m.invoke()` | **feito** — `ModelMember`, `ModelUse`, `TensorRead`/`TensorWrite`/`ModelInvoke` (5.2.15, 5.2.16) |
-| 3.5 | Visão `.raw`: verificação de tipo e tamanho em tempo de compilação, inclusive `.raw[k]` | tipo **feito na 3.4**; falta o tamanho |
+| 3.5 | Visão `.raw`: verificação de tipo e tamanho em tempo de compilação, inclusive `.raw[k]` | **feito** — tipo na 3.4; tamanho e índice nas duas visões; leitura para variável existente |
 | 3.6 | Geração de código: modelo e arena como globais alinhados a 16 (5.2.8), um `tflm_add_*` por kernel detectado, e as chamadas da API `tflm_` (5.1.7) |
-| 3.7 | Erros de compilação da seção 8 da especificação: caminho não literal, arena ausente, arquivo inválido, tamanho incompatível, tensor inexistente (como `input1` num modelo de uma entrada), índice de elemento constante fora do tensor, escrita em `.scale`, `.raw` com tipo ou tamanho errado, kernel sem suporte | feitos na 3.3/3.4 os de declaração, membro, tipo e escrita; faltam tamanho incompatível, índice constante fora do tensor e kernel sem suporte |
+| 3.7 | Erros de compilação da seção 8 da especificação: caminho não literal, arena ausente, arquivo inválido, tamanho incompatível, tensor inexistente (como `input1` num modelo de uma entrada), índice de elemento constante fora do tensor, escrita em `.scale`, `.raw` com tipo ou tamanho errado, kernel sem suporte | feitos na 3.3–3.5 os de declaração, membro, tipo, escrita, tamanho e índice; falta kernel sem suporte |
 | 3.8 | `signext` em `int8`/`int16` com sinal, em parâmetros e retornos (5.2.7) |
 | 3.9 | Fazer `test/tflm/native-syntax.rob` compilar e rodar, com o mesmo resultado do modo biblioteca |
 
@@ -1617,6 +1672,11 @@ A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
   `m.input0`) ou qualquer expressão de vetor. `ModelInvoke(modelo)`.
 - Os `generate()` dos três devolvem `NULL`, e o do `AiModel` também; nenhum é
   alcançado enquanto o aviso da semântica existir (`AiModel::fromCall`).
+- Leitura para variável que já existe (`saida = m.output0`, com `saida`
+  declarada antes): a 3.6 gera a cópia para o buffer existente
+  (`tflm_get_values`/`tflm_get_raw_*` sobre ele), e não a atribuição de
+  vetores da RL, que é defeituosa (5.2.18). Numa variável nova, o `TensorRead`
+  gera o próprio buffer.
 - Uma declaração global pode ser visitada antes da sua vez, por um uso acima
   dela no arquivo (5.2.17). Na 3.6, a geração dos globais precisa acontecer
   antes da das funções que os usam — como já acontece com as globais comuns.
@@ -1674,6 +1734,9 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
   especificação; recusado com erro próprio. Duas instâncias do tipo dividiriam
   o modelo e a arena — decide-se com o armazenamento, na 3.6.
 
+Decidida na 3.5 (2026-10-14): tensor lido inteiro para variável que já existe
+é copiado para ela; tipo e, quando conhecido, tamanho precisam ser os do tensor.
+
 Decididas ao começar a 3.4 (2026-10-13): tensor sem quantização não tem
 `scale`/`zero_point`; visão padrão sempre `float` e `.raw` só para `int8` e
 `int16`; saídas somente leitura; o modelo não é um valor.
@@ -1690,6 +1753,6 @@ ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
 ## Estado do repositório
 
 Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento:
-3.0, 3.1, 3.3 e 3.4 concluídas, 3.2 dispensada, próxima a 3.5. `make -C
+3.0, 3.1, 3.3, 3.4 e 3.5 concluídas, 3.2 dispensada, próxima a 3.6. `make -C
 test/tflm check` passa por inteiro, incluindo o alvo `ai_model`; `make -C test/achados`
 reproduz os achados 5.2.7, 5.2.8 e 5.2.11.

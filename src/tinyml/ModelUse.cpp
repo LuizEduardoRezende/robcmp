@@ -4,6 +4,7 @@
 #include "tinyml/TensorRead.h"
 #include "tinyml/TensorWrite.h"
 #include "tinyml/ModelInvoke.h"
+#include "tinyml/IntegerConstant.h"
 #include "semantic/PropagateTypes.h"
 #include "Scalar.h"
 #include "UserType.h"
@@ -85,6 +86,63 @@ static Node *checkVector(const ModelMember& mm, Node *value, Node& n) {
 		mm.name.c_str(), buildTypes->name(edt), typeName(vdt)));
 }
 
+static const char *plural(uint64_t n) {
+	return n == 1 ? "" : "s";
+}
+
+// A vector whose size is known at compile time must have exactly the number
+// of elements of the tensor (specification, sections 4b and 8). A vector of
+// unknown size, a parameter float[], is checked by the wrapper at run time.
+static Node *checkSize(const ModelMember& mm, Node *value, Node& n) {
+	int64_t size;
+	uint64_t elements = mm.tensor.info().elements;
+	if (!staticSize(value, size) || (uint64_t)size == elements)
+		return NULL;
+	return fail(n, string_format("%s has %llu element%s; the vector has %lld.", mm.name.c_str(),
+		(unsigned long long)elements, plural(elements), (long long)size));
+}
+
+// A constant element index must be inside the tensor (specification, section
+// 4). A variable index is checked by the wrapper at run time.
+static Node *checkIndex(const ModelMember& mm, Node *element, Node& n) {
+	int64_t index;
+	uint64_t elements = mm.tensor.info().elements;
+	if (!integerConstant(element, index) || (index >= 0 && (uint64_t)index < elements))
+		return NULL;
+	return fail(n, string_format("%s has %llu element%s: index %lld is out of the tensor.",
+		mm.name.c_str(), (unsigned long long)elements, plural(elements), (long long)index));
+}
+
+// saida = m.output0 where saida already exists: the tensor is copied into the
+// existing vector (specification, section 4b), which must have the type of the
+// view and, when known, the number of elements of the tensor.
+static Node *checkReadInto(Scalar& n, PropagateTypes& pt) {
+	Load *load = dynamic_cast<Load*>(n.getExpr());
+	if (!load)
+		return NULL;
+	Node *target = n.getIdent().getSymbol(n.getScope(), false);
+	if (!target || target == &n)
+		return NULL;	// a new variable takes the size of the tensor
+
+	ModelMember read = ModelMember::resolve(load->getName(), load->getScope(), pt);
+	if (read.kind != ModelMember::Tensor)
+		return NULL;
+
+	DataType vdt = read.tensor.vectorType(load);
+	DataType tdt = target->getDataType();
+	if (tdt != vdt)
+		return fail(n, string_format("%s is %s, and %s, which receives it, is %s.",
+			read.name.c_str(), typeName(vdt), n.getName().c_str(), typeName(tdt)));
+
+	int64_t size;
+	uint64_t elements = read.tensor.info().elements;
+	if (staticSize(target, size) && (uint64_t)size != elements)
+		return fail(n, string_format("%s has %llu element%s, and %s, which receives it, has %lld.",
+			read.name.c_str(), (unsigned long long)elements, plural(elements),
+			n.getName().c_str(), (long long)size));
+	return NULL;
+}
+
 Node *ModelUse::load(Load& n, PropagateTypes& pt) {
 	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope(), pt);
 	switch (mm.kind) {
@@ -107,6 +165,8 @@ Node *ModelUse::loadArray(LoadArray& n, PropagateTypes& pt) {
 		return notThere(mm, n, "a vector");
 
 	Node *element = propagated(n.getPosition(), pt);
+	if (Node *error = checkIndex(mm, element, n))
+		return error;
 	return placed(new TensorRead(mm.tensor, element, n.getLoc()), n);
 }
 
@@ -120,6 +180,8 @@ Node *ModelUse::updateArray(UpdateArray& n, PropagateTypes& pt) {
 		return error;
 
 	Node *element = propagated(n.getPosition(), pt);
+	if (Node *error = checkIndex(mm, element, n))
+		return error;
 	Node *value = PropagateTypes::coerceTo(propagated(n.getExpr(), pt), mm.tensor.elementType());
 	if (!value)
 		return invalid(n);
@@ -155,12 +217,14 @@ Node *ModelUse::scalar(Scalar& n, PropagateTypes& pt) {
 
 	ModelMember mm = ModelMember::resolve(n.getName(), n.getScope(), pt);
 	if (mm.kind == ModelMember::None)
-		return NULL;
+		return checkReadInto(n, pt);
 	if (Node *error = writable(mm, n))
 		return error;
 
 	Node *value = propagated(n.getExpr(), pt);
 	if (Node *error = checkVector(mm, value, n))
+		return error;
+	if (Node *error = checkSize(mm, value, n))
 		return error;
 	return placed(new TensorWrite(mm.tensor, NULL, value, n.getLoc()), n);
 }
@@ -185,6 +249,8 @@ Node *ModelUse::array(Array& n, PropagateTypes& pt) {
 		}
 	}
 	if (Node *error = checkVector(mm, &n, n))
+		return error;
+	if (Node *error = checkSize(mm, &n, n))
 		return error;
 	return placed(new TensorWrite(mm.tensor, NULL, &n, n.getLoc()), n);
 }
