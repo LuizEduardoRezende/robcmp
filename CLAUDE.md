@@ -204,6 +204,11 @@ hyperfine --warmup 10 -m 100 './firmware'
 > repositório antes de qualquer automação, pois podem ter mudado entre a
 > branch usada no TCC e a branch atual do Robcmp.
 
+> **Sessões na nuvem (Claude Code):** antes de compilar ou testar, rode
+> `robcmp-preparar` na raiz do repositório. O comando é instalado pelo setup
+> script do ambiente: inicializa o submódulo do TFLM, copia o TFLM
+> pré-compilado de `/opt/tflm` e compila `build/robcmp` (~1min30s).
+
 ---
 
 ## 8. Fora de escopo deste arquivo
