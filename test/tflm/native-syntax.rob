@@ -748,12 +748,12 @@ int16 usa_tipo_proprio() {
 /* =========================================================================
  * 9. Decisões
  *
- * Em aberto:
+ * Em aberto: nenhuma.
  *
- * - O nome `ai_model`. Substituiu `model`, genérico demais (modelo 3D, modelo
- *   de dados). Não bloqueia o compilador: o nome aparece num único ponto do
- *   compilador (src/tinyml/AiModel.cpp), que reconhece a chamada e reserva o
- *   nome.
+ * Confirmado (registrado em 2026-10-16): o nome `ai_model`. Substituiu
+ * `model`, genérico demais (modelo 3D, modelo de dados). O nome aparece num
+ * único ponto do compilador (src/tinyml/AiModel.cpp), que reconhece a chamada
+ * e reserva o nome.
  *
  * Decididas na orientação de 2026-10-05:
  *   tensores como membros numerados, inputN/outputN (seção 0) -- proposta

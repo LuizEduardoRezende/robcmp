@@ -1613,7 +1613,7 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 
 | # | Tarefa |
 |---|---|
-| 3.0 | Fechar as decisões de `test/tflm/native-syntax.rob` | **feito** — decisões da orientação de 2026-10-05 aplicadas (5.2.12); só o nome `ai_model` segue em aberto |
+| 3.0 | Fechar as decisões de `test/tflm/native-syntax.rob` | **feito** — decisões da orientação de 2026-10-05 aplicadas (5.2.12); nome `ai_model` confirmado |
 | 3.1 | Migrar a leitura do `.tflite` para um módulo em `src/`, como fase de elaboração prévia | **feito** — `src/tinyml/TfliteModel` (5.2.9, 5.2.10) |
 | 3.2 | Gramática | **dispensada** — o desenho com membros não exige produção (5.2.12); P1–P3 (`4dd5c68`) revertidas |
 | 3.3 | `ai_model(...)` na semântica (`PropagateTypes::visit(FunctionCall)`): nome reservado (antes: precedência da função do usuário), caminho literal resolvido relativo ao `.rob` e depois nas pastas `-I`, arena obrigatória, `TfliteModel::load` | **feito** — nó `AiModel`; `make -C test/tflm ai_model` (5.2.13, 5.2.14) |
@@ -1725,14 +1725,14 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
 
 ## Decisões ainda em aberto
 
-- Nome do construtor na sintaxe nativa: `ai_model` (aplicado em
-  `native-syntax.rob`).
 - Arena automática (fase 2): o caminho é medir na compilação, rodando o TFLM do
   host (`test/achados/arena`). Falta saber se o valor do host cobre o do
   Cortex-M — decide-se com as medições no STM32 da Etapa 4.
 - Modelo como campo de tipo (`type robo { m = ai_model(...); }`): fora da
   especificação; recusado com erro próprio. Duas instâncias do tipo dividiriam
   o modelo e a arena — decide-se com o armazenamento, na 3.6.
+
+Confirmado (registrado em 2026-10-16): o nome do construtor é `ai_model`.
 
 Decidida na 3.5 (2026-10-14): tensor lido inteiro para variável que já existe
 é copiado para ela; tipo e, quando conhecido, tamanho precisam ser os do tensor.
