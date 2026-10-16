@@ -510,6 +510,9 @@ dentro da gramática simplificada não foi investigado.
 caso. Levado à orientação de 2026-10-05 como pergunta: corrigir na branch,
 reportar ao upstream ou só documentar.
 
+**Decidido (2026-10-16): só documentar.** Fora do escopo da pesquisa; programas
+com a sintaxe nativa compilam com `-bdep`.
+
 ### 5.2.12 Com tensores como membros nomeados, a sintaxe nativa não exige nenhuma produção
 
 Proposta do orientador (2026-10-05): cada tensor é um membro do modelo, com
@@ -1756,3 +1759,11 @@ Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento:
 3.0, 3.1, 3.3, 3.4 e 3.5 concluídas, 3.2 dispensada, próxima a 3.6. `make -C
 test/tflm check` passa por inteiro, incluindo o alvo `ai_model`; `make -C test/achados`
 reproduz os achados 5.2.7, 5.2.8 e 5.2.11.
+
+**Pendência (fazer no laptop):** os dados de teste `test/tflm/data/*.bin` nunca
+foram commitados — o `*.bin` do `.gitignore` os ignora. Existem só no laptop;
+num clone novo (inclusive nas sessões na nuvem) o `make -C test/tflm check` para
+no `tcc_person_detect`. Corrigir acrescentando `!test/tflm/data/*.bin` ao
+`.gitignore`, logo abaixo de `*.bin`, e commitando os 5 arquivos
+(`git add test/tflm/data/*.bin`). Não remover o `*.bin`: ele evita commitar
+firmware gerado (`hack/stm32`, PlatformIO).
