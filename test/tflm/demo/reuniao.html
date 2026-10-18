@@ -331,14 +331,6 @@ int8 main() {
     </div>
 
     <div class="finding">
-      <div class="ref"><span class="pill ok">verificado</span></div>
-      <div>
-        <h3>A sintaxe nativa recusou na compilação um vetor que o modo biblioteca aceitava</h3>
-        <p>O teste do TCC entregava a imagem como <code>uint8[]</code> (literais hexadecimais) a <code>tflm_set_raw_int8(int8[])</code>, sem aviso. Na sintaxe nativa, o tipo do tensor vem do <code>.tflite</code>, e o mesmo código dá <em>“takes int8[], the type of the tensor, not uint8[]”</em>. É um exemplo concreto de verificação movida da execução para a compilação.</p>
-      </div>
-    </div>
-
-    <div class="finding">
       <div class="ref"><span class="pill warn">em aberto</span></div>
       <div>
         <h3>No máximo 4 modelos, e o quinto falha calado</h3>
