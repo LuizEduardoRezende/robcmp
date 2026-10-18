@@ -332,7 +332,10 @@ void Program::generate() {
 		if (global_init) {
 			Function *mainf = mainmodule->getFunction("main");
 			BasicBlock *entryBlock = &mainf->getEntryBlock();
-			Builder->SetInsertPoint(entryBlock->end()->getPrevNode()); // before br
+			// after the allocas: before the br to the body or, when main has
+			// no local variable and the body is the entry, before its first
+			// statement
+			Builder->SetInsertPoint(entryBlock, entryBlock->getFirstNonPHIOrDbgOrAlloca());
 			Builder->CreateCall(global_init_type, global_init);
 		}
 	}
