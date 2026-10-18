@@ -5,7 +5,7 @@
 #   make -C test/tflm/demo erros     erros que a sintaxe nativa pega na compilação
 #   make -C test/tflm/demo testes    os 5 testes do TCC nos dois modos
 #   make -C test/tflm/demo memoria   onde o modelo fica no binário, em cada modo
-#   make -C test/tflm/demo tudo      tudo acima, em ordem
+#   make -C test/tflm/demo sinal     a falta de extensão de sinal em int8 na chamada RL -> C
 #
 # O roteiro da reunião, com estes comandos e as saídas esperadas, está em
 # reuniao.html (abrir no navegador: xdg-open test/tflm/demo/reuniao.html).
@@ -66,9 +66,19 @@ memoria: | $(OUT) $(WRAPPER)
 	@size ../out/tcc_person_detect ../out/nativo_person_detect | awk 'NR==1{printf "  %-10s %-10s %-10s %s\n", "text", "data", "bss", "programa"} NR>1{n=split($$6,p,"/"); printf "  %-10s %-10s %-10s %s\n", $$1, $$2, $$3, p[n]}'
 	@echo "  (data ocupa flash E RAM num microcontrolador; o STM32F407 tem 192 KB de RAM)"
 
-tudo: exemplo ir erros testes memoria
+sinal: | $(OUT)
+	$(call titulo,"extensão de sinal: a RL passa o código -1 a funções C")
+	@$(ROBCMP) -o $(OUT)/chama.o sinal/chama.rob
+	@printf "  robcmp declara:  "; $(ROBCMP) -Od sinal/chama.rob 2>/dev/null | grep '^declare.*@recebe_int8' | sed 's/ #.*//'
+	@printf "  clang declara:   "; clang -O2 -S -emit-llvm -o - sinal/recebe.c | grep '^define.*@recebe_int8' | sed -E 's/ local_unnamed_addr.*//; s/^define dso_local (range\([^)]*\) )?/define /'
+	@echo "  (o clang marca signext: espera que quem chama estenda o sinal; o robcmp não marca nem estende)"
+	@for cc in clang gcc; do \
+		$$cc -O2 -c sinal/recebe.c -o $(OUT)/recebe_$$cc.o && \
+		cc -no-pie $(OUT)/chama.o $(OUT)/recebe_$$cc.o -o $(OUT)/sinal_$$cc && \
+		echo "  funções C compiladas pelo $$cc:" && ./$(OUT)/sinal_$$cc; \
+	done
 
 clean:
 	rm -rf $(OUT) erros/lsh.tflite
 
-.PHONY: exemplo ir erros testes memoria tudo clean
+.PHONY: exemplo ir erros testes memoria sinal clean

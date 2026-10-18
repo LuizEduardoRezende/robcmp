@@ -1,0 +1,21 @@
+/*
+ * A RL passa o código -1 a duas funções C e espera -1 de volta das duas.
+ * As funções estão em recebe.c.
+ */
+int32 recebe_int8(int8 v);
+int32 recebe_int32(int32 v);
+void mostra_int8(int32 x);
+void mostra_int32(int32 x);
+
+// O -1 vem de uma função, para ser um valor calculado em execução e não uma
+// constante que o compilador pudesse escrever direto no registrador.
+int8 menos_um() {
+    return -1;
+}
+
+int8 main() {
+    c = menos_um();
+    mostra_int8(recebe_int8(c));
+    mostra_int32(recebe_int32(int32(c)));
+    return 0;
+}

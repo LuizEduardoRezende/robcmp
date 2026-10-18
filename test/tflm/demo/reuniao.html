@@ -285,7 +285,7 @@ int8 main() {
           <li><strong>Nada no hardware.</strong> O ARM foi só compilado. Falta o suporte ao STM32F407: linker script, descrição dos periféricos e o build do PlatformIO.</li>
           <li><strong>Mais de 4 modelos</strong> num programa: do quinto em diante falham na execução, sem aviso (ver Achados).</li>
           <li><strong>A especificação <code>native-syntax.rob</code> inteira</strong> ainda não compila, por causa de um exemplo com um modelo hipotético de várias entradas, que não existe em arquivo.</li>
-          <li><strong>Extensão de sinal de int8/int16</strong> nas chamadas ao wrapper, e a medição de tempo de execução.</li>
+          <li><strong>Extensão de sinal (<code>signext</code>) de int8/int16</strong> nas chamadas da RL para funções C: o Robcmp não a faz (passo 6 da demonstração). O wrapper evita o problema; a correção no compilador falta. Também falta a medição de tempo de execução.</li>
         </ul>
       </div>
     </div>
@@ -376,7 +376,7 @@ int8 main() {
     <span class="eyebrow">Ao vivo</span>
     <h2>Roteiro de demonstração</h2>
     <p>Comandos para rodar no terminal do VS Code, a partir da raiz do repositório. Esta página está no repositório em <code>test/tflm/demo/reuniao.html</code>. Cada passo é independente. Os botões copiam o comando.</p>
-    <p class="note"><strong>Antes da reunião:</strong> rode o passo de preparação uma vez. Ele compila o compilador, o wrapper e os testes, e evita esperas durante a apresentação. Os passos 1 a 5 levam segundos.</p>
+    <p class="note"><strong>Antes da reunião:</strong> rode o passo de preparação uma vez. Ele compila o compilador, o wrapper e os testes, e evita esperas durante a apresentação. Os passos 1 a 6 levam segundos cada.</p>
 
     <div class="steps">
       <div class="step">
@@ -477,8 +477,21 @@ int8 main() {
       </div>
 
       <div class="step">
-        <div class="head"><span class="k">tudo</span><h3>Todos os passos em sequência</h3></div>
-        <div class="cmd"><code id="c6">make -s -C test/tflm/demo tudo</code><button type="button" data-copy="c6">copiar</button></div>
+        <div class="head"><span class="k">passo 6</span><h3>Extensão de sinal: o defeito que ainda falta corrigir</h3></div>
+        <p>Um <code>int8</code> com valor −1 é o byte <code>0xFF</code>. Para passá-lo a uma função C, quem chama precisa estendê-lo até o registrador inteiro (<code>0xFFFFFFFF</code>) e marcar isso como <code>signext</code>. O Robcmp não faz nem marca isso. Uma função C compilada pelo clang confia que foi feito e lê 255; o gcc estende de novo por conta própria e esconde o erro. No ARM a convenção obriga quem chama a estender, então lá o erro é o esperado.</p>
+        <p>O programa RL (<code>demo/sinal/chama.rob</code>) passa −1 a duas funções C (<code>demo/sinal/recebe.c</code>): uma com parâmetro <code>int8</code>, como seria uma função ingênua do wrapper, e outra com <code>int32</code>, como o wrapper faz para não depender disso.</p>
+        <div class="cmd"><code id="c6">make -s -C test/tflm/demo sinal</code><button type="button" data-copy="c6">copiar</button></div>
+        <details><summary>Saída esperada</summary>
+<pre>  robcmp declara:  declare i32 @recebe_int8(i8)
+  clang declara:   define i32 @recebe_int8(i8 noundef signext %0)
+  funções C compiladas pelo clang:
+    recebe_int8(-1)    devolveu 255  <span class="del">ERRADO</span>
+    recebe_int32(-1)   devolveu -1   correto
+  funções C compiladas pelo gcc:
+    recebe_int8(-1)    devolveu -1   correto
+    recebe_int32(-1)   devolveu -1   correto</pre>
+        </details>
+        <p>Por isso nenhuma função do wrapper recebe <code>int8</code> ou <code>int16</code> como valor solto: o TinyML não é afetado hoje. A correção no compilador é marcar <code>signext</code> nos inteiros com sinal; ela ainda não foi feita.</p>
       </div>
     </div>
 
