@@ -1717,8 +1717,9 @@ Fora do recorte, ficam para a sequência da 3.6:
 
 - **Quantização com constantes** (seção 2 da especificação): hoje a conversão
   float ↔ int8 é a do wrapper, em tempo de execução, com `scale`/`zero_point`
-  lidos do tensor. O resultado é o mesmo (5.4.20); a especificação promete a
-  conversão emitida pelo compilador, sem divisão em runtime.
+  lidos do tensor. O resultado é o mesmo (5.4.20); a especificação prometia a
+  conversão emitida pelo compilador, sem divisão em runtime. Decidido depois,
+  no mesmo dia: fica no wrapper (ver as decisões).
 - **Limite de modelos** em tempo de compilação (5.4.23).
 
 ---
@@ -1810,7 +1811,7 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 | 3.3 | `ai_model(...)` na semântica (`PropagateTypes::visit(FunctionCall)`): nome reservado (antes: precedência da função do usuário), caminho literal resolvido relativo ao `.rob` e depois nas pastas `-I`, arena obrigatória, `TfliteModel::load` | **feito** — nó `AiModel`; `make -C test/tflm ai_model` (5.2.13, 5.2.14) |
 | 3.4 | Membros do modelo derivados do `.tflite`: `inputN`/`outputN` (vetores tipados), `input_count`/`output_count`, e por tensor `.size`/`.scale`/`.zero_point`/`.raw`. Interceptar os nós que o parser já gera: `Load`, `LoadArray`, `UpdateArray`, `Scalar`, `Array`, e `FunctionCall` para `m.invoke()` | **feito** — `ModelMember`, `ModelUse`, `TensorRead`/`TensorWrite`/`ModelInvoke` (5.2.15, 5.2.16) |
 | 3.5 | Visão `.raw`: verificação de tipo e tamanho em tempo de compilação, inclusive `.raw[k]` | **feito** — tipo na 3.4; tamanho e índice nas duas visões; leitura para variável existente |
-| 3.6 | Geração de código: modelo e arena como globais alinhados a 16 (5.2.8), um `tflm_add_*` por kernel detectado, e as chamadas da API `tflm_` (5.1.7) | **feito** — os 5 modelos rodam, valores idênticos ao modo biblioteca (5.4.20); falta a quantização com constantes (seção 2) |
+| 3.6 | Geração de código: modelo e arena como globais alinhados a 16 (5.2.8), um `tflm_add_*` por kernel detectado, e as chamadas da API `tflm_` (5.1.7) | **feito** — os 5 modelos rodam, valores idênticos ao modo biblioteca (5.4.20); conversão float ↔ quantizado mantida no wrapper (decisão) |
 | 3.7 | Erros de compilação da seção 8 da especificação: caminho não literal, arena ausente, arquivo inválido, tamanho incompatível, tensor inexistente (como `input1` num modelo de uma entrada), índice de elemento constante fora do tensor, escrita em `.scale`, `.raw` com tipo ou tamanho errado, kernel sem suporte | **feito** — kernel sem suporte na 3.6 |
 | 3.8 | `signext` em `int8`/`int16` com sinal, em parâmetros e retornos (5.2.7) |
 | 3.9 | Fazer `test/tflm/native-syntax.rob` compilar e rodar, com o mesmo resultado do modo biblioteca |
@@ -1921,10 +1922,6 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
   número fixado no compilador igual ao do wrapper; ou o compilador informar o
   número ao wrapper; ou só documentar. O número só tem sentido com as `.a`
   pré-compiladas da Etapa 4, que fixam o `TFLM_MAX_MODELS`.
-- Quantização (seção 2 da especificação): emitir a conversão com `scale` e
-  `zero_point` como constantes, como a especificação diz, ou registrar que a
-  conversão do wrapper basta. A diferença é de desempenho (uma divisão por
-  elemento), a medir na Etapa 5.
 
 - Arena automática (fase 2): o caminho é medir na compilação, rodando o TFLM do
   host (`test/achados/arena`). Falta saber se o valor do host cobre o do
@@ -1935,7 +1932,12 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
 
 Decididas na 3.6 (2026-10-18): o modelo é criado uma vez, também quando
 declarado numa função que roda de novo; `.raw[k]` por função própria no
-wrapper, com o código em `int32`.
+wrapper, com o código em `int32`; a conversão float ↔ quantizado fica no
+wrapper, em tempo de execução, e não é emitida pelo compilador com `scale` e
+`zero_point` constantes (seção 2 da especificação). Motivos: o ganho é por
+elemento de entrada e saída, pequeno diante da inferência; multiplicar pelo
+inverso da escala não arredonda igual a dividir, e os dois modos deixariam de
+dar resultados idênticos (5.4.20); e a regra ficaria em dois lugares.
 
 Confirmado (registrado em 2026-10-16): o nome do construtor é `ai_model`.
 
@@ -1958,8 +1960,7 @@ ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
 ## Estado do repositório
 
 Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento:
-3.0, 3.1 e 3.3 a 3.7 concluídas, 3.2 dispensada; faltam 3.8, 3.9 e a
-quantização com constantes da 3.6. A sintaxe nativa compila e roda os cinco
+3.0, 3.1 e 3.3 a 3.7 concluídas, 3.2 dispensada; faltam 3.8 e 3.9. A sintaxe nativa compila e roda os cinco
 modelos de validação. `make -C test/tflm check` passa por inteiro, incluindo os
 alvos `nativo` e `ai_model`; `make -C test/achados` reproduz os achados 5.2.7,
 5.2.8 e 5.2.11.

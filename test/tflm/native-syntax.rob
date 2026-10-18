@@ -116,15 +116,23 @@ int16 exemplo_minimo() {
 int16 exemplo_quantizado() {
     classifier = ai_model("models/hello_world_int8.tflite", 3000);
 
-    // O usuário escreve float. O compilador conhece scale e zero_point em
-    // tempo de compilação, então emite a conversão q = round(f/scale + zp)
-    // com as constantes já resolvidas -- sem divisão em runtime.
+    // O usuário escreve float. A conversão q = round(f/scale) + zp é feita
+    // pelo wrapper, em tempo de execução, com o scale e o zero_point do
+    // tensor.
+    //
+    // DECISÃO (2026-10-18): a conversão fica no wrapper. O compilador conhece
+    // scale e zero_point e poderia emitir a conta com eles como constantes,
+    // trocando a divisão por uma multiplicação. Não emite: o ganho é por
+    // elemento de entrada e saída, pequeno diante da inferência; multiplicar
+    // pelo inverso não arredonda igual a dividir, e os dois modos deixariam de
+    // dar resultados idênticos; e a regra ficaria em dois lugares, já que o
+    // modo biblioteca continua precisando dela no wrapper.
     classifier.input0 = {1.57};
 
     classifier.invoke();
 
-    // Desquantização no caminho inverso, f = scale * (q - zp), também com
-    // constantes resolvidas. O usuário recebe float e nunca vê o int8.
+    // Desquantização no caminho inverso, f = scale * (q - zp), também pelo
+    // wrapper. O usuário recebe float e nunca vê o int8.
     saida = classifier.output0;
 
     return 0;
