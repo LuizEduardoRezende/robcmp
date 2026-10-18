@@ -32,7 +32,7 @@ exemplo: | $(OUT) $(WRAPPER)
 	$(call titulo,"seno.rob na sintaxe nativa: entrada x e as saídas dos modelos float e int8")
 	@$(ROBCMP) -I $(ROOT)/lib -o $(OUT)/seno.o seno.rob
 	@$(LINK) $(OUT)/seno.o $(WRAPPER) $(TFLM_LIB) -o $(OUT)/seno
-	@$(OUT)/seno 2>&1 | paste - - - | awk '{printf "  x = %-9s float: %-10s int8: %s\n", $$1, $$2, $$3}'
+	@$(OUT)/seno 2>&1 | tr -d '\r' | paste - - - | awk '{printf "  x = %-9s float: %-10s int8: %s\n", $$1, $$2, $$3}'
 
 ir: | $(OUT)
 	$(call titulo,"gerado pelo compilador a partir do .tflite (IR antes da otimização)")
