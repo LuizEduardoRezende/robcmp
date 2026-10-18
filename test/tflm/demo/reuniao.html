@@ -340,14 +340,10 @@ int8 main() {
     </div>
 
     <div class="finding">
-      <div class="ref"><span class="pill info">base da RL</span></div>
+      <div class="ref"><span class="pill ok">corrigido</span></div>
       <div>
-        <h3>Três defeitos da RL, não do TinyML</h3>
-        <ul class="plain">
-          <li><strong><code>__globals_init</code> rodava depois do código</strong> de um <code>main</code> sem variáveis locais, e o global era lido antes de inicializado. <span class="pill ok">corrigido</span></li>
-          <li><strong>O literal <code>-128</code> é <code>int16</code></strong>, porque é lido como <code>-(128)</code>; um só valor desses faz o vetor inteiro virar <code>int16[]</code>. <span class="pill warn">contornado</span></li>
-          <li><strong><code>if 1 != 1 or 2 != 2</code> derruba o compilador</strong> (signal 11). As propriedades constantes do modelo levaram a esse caso. <span class="pill warn">contornado</span></li>
-        </ul>
+        <h3>Um defeito da RL, não do TinyML, corrigido</h3>
+        <p>A inicialização dos globais (<code>__globals_init</code>) rodava depois do código de um <code>main</code> sem variáveis locais, e o global era lido antes de inicializado. O defeito existe em RL pura; o modelo global da sintaxe nativa só o expôs. A correção é a única mudança no núcleo do compilador (ver a próxima seção).</p>
       </div>
     </div>
   </section>
