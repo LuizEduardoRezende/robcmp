@@ -7,6 +7,9 @@
 #   make -C test/tflm/demo memoria   onde o modelo fica no binário, em cada modo
 #   make -C test/tflm/demo tudo      tudo acima, em ordem
 #
+# O roteiro da reunião, com estes comandos e as saídas esperadas, está em
+# reuniao.html (abrir no navegador: xdg-open test/tflm/demo/reuniao.html).
+#
 # Usa o compilador de build/ e o wrapper e o TFLM de test/tflm (make -C test/tflm
 # check os prepara).
 
