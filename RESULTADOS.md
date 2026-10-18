@@ -1760,10 +1760,7 @@ Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento:
 test/tflm check` passa por inteiro, incluindo o alvo `ai_model`; `make -C test/achados`
 reproduz os achados 5.2.7, 5.2.8 e 5.2.11.
 
-**Pendência (fazer no laptop):** os dados de teste `test/tflm/data/*.bin` nunca
-foram commitados — o `*.bin` do `.gitignore` os ignora. Existem só no laptop;
-num clone novo (inclusive nas sessões na nuvem) o `make -C test/tflm check` para
-no `tcc_person_detect`. Corrigir acrescentando `!test/tflm/data/*.bin` ao
-`.gitignore`, logo abaixo de `*.bin`, e commitando os 5 arquivos
-(`git add test/tflm/data/*.bin`). Não remover o `*.bin`: ele evita commitar
-firmware gerado (`hack/stm32`, PlatformIO).
+Os dados de teste `test/tflm/data/*.bin` estão versionados desde 2026-10-18: o
+`.gitignore` mantém `*.bin` (firmware gerado em `hack/stm32` e pelo PlatformIO)
+e abre exceção para `test/tflm/data/*.bin`. Um clone novo roda o `make -C
+test/tflm check` inteiro.

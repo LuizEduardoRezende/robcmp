@@ -52,6 +52,7 @@ src/*_l.cpp
 .vscode/**
 *.tar.gz
 *.bin
+!test/tflm/data/*.bin
 *.elf
 stm32flash
 ld.lld
