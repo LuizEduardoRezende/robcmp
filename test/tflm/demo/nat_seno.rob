@@ -1,0 +1,11 @@
+// O mesmo programa de lib_seno.rob, na sintaxe nativa.
+m = ai_model("../models/hello_world_float.tflite", 3000);
+int8 main() {
+    m.input0 = {1.57};
+    m.invoke();
+    saida = m.output0;
+    if saida[0] < 0.5 or saida[0] > 1.5 {
+        return 1;
+    }
+    return 0;
+}

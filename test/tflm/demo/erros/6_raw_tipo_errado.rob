@@ -1,0 +1,6 @@
+imagem = {0x0b, 0x10, 0x12};
+d = ai_model("../../models/person_detect.tflite", 90000);
+int8 main() {
+    d.input0.raw = imagem;
+    return 0;
+}

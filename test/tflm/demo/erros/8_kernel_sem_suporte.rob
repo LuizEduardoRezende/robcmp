@@ -1,0 +1,4 @@
+int8 main() {
+    m = ai_model("lsh.tflite", 3000);
+    return 0;
+}

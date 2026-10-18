@@ -1,0 +1,19 @@
+// O mesmo programa de nat_seno.rob, no modo biblioteca: o modelo é um
+// vetor de bytes embutido pelo rob_embed.py, e os kernels são registrados à mão.
+use ai.tflm;
+// @modelo@
+arena = {0u:3000};
+int8 main() {
+    r = tflm_create_resolver();
+    tflm_add_fully_connected(r);
+    h = tflm_create_model(r, modelo, arena);
+    entrada = {1.57};
+    tflm_set_values(tflm_input(h, 0), entrada);
+    tflm_invoke(h);
+    saida = {0.0};
+    tflm_get_values(tflm_output(h, 0), saida);
+    if saida[0] < 0.5 or saida[0] > 1.5 {
+        return 1;
+    }
+    return 0;
+}

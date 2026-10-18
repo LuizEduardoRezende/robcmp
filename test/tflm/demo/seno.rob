@@ -1,0 +1,31 @@
+/*
+ * Demonstração: o hello world do TinyML na sintaxe nativa.
+ *
+ * O compilador lê o .tflite na compilação: tipa os tensores, registra o
+ * kernel FULLY_CONNECTED e embute o modelo. O programa só usa o modelo.
+ * tflm_print_float vem do modo biblioteca (use ai.tflm): os dois modos
+ * convivem no mesmo programa.
+ */
+use ai.tflm;
+
+seno = ai_model("../models/hello_world_float.tflite", 3000);
+seno_int8 = ai_model("../models/hello_world_int8.tflite", 3000);
+
+void mostra(float x) {
+    seno.input0 = {x};
+    seno.invoke();
+    seno_int8.input0 = {x};
+    seno_int8.invoke();
+    tflm_print_float(x);
+    tflm_print_float(seno.output0[0]);
+    tflm_print_float(seno_int8.output0[0]);
+}
+
+int8 main() {
+    mostra(0.0);
+    mostra(0.78);
+    mostra(1.57);
+    mostra(3.14);
+    mostra(4.71);
+    return 0;
+}

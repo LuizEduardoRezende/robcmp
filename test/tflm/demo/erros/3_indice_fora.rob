@@ -1,0 +1,5 @@
+m = ai_model("../../models/hello_world_float.tflite", 3000);
+int8 main() {
+    x = m.output0[5];
+    return 0;
+}
