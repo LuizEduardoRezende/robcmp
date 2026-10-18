@@ -32,7 +32,7 @@ ALVOS = [
     ("Cortex-M3 (stm32f1)", ["-a", "stm32f1"], "thumbv7m-none-eabi"),
 ]
 
-ARGS_RL = {"uint64": "0", "int8": "0", "float": "0.0",
+ARGS_RL = {"uint64": "0", "int8": "0", "int32": "0", "float": "0.0",
            "uint8[]": "v_u8", "int8[]": "v_i8", "int16[]": "v_i16", "float[]": "v_f"}
 
 

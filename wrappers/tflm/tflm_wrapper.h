@@ -217,6 +217,14 @@ int8_t tflm_get_raw_int8(uint64_t tensor_handle, int8_t *values, int32_t values_
 int8_t tflm_set_raw_int16(uint64_t tensor_handle, const int16_t *values, int32_t values_len);
 int8_t tflm_get_raw_int16(uint64_t tensor_handle, int16_t *values, int32_t values_len);
 
+// Codigo cru de um elemento (m.input0.raw[k]), para tensor int8 ou int16. O
+// valor trafega como int32 nos dois sentidos: um int8/int16 escalar dependeria
+// de quem estende o sinal, e o robcmp nao marca signext (RESULTADOS.md, 5.2.7).
+// Indice fora do tensor ou tensor de outro tipo: escrita ignorada, leitura
+// devolve 0. Valor fora da faixa do tipo: saturado.
+void tflm_set_raw_value(uint64_t tensor_handle, uint64_t index, int32_t value);
+int32_t tflm_get_raw_value(uint64_t tensor_handle, uint64_t index);
+
 // Utilitario: imprime um float pelo log do TFLM (stderr no x86, UART no MCU).
 void tflm_print_float(float value);
 

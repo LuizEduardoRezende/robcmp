@@ -235,6 +235,8 @@ int8 tflm_add_ethos_u(uint64 resolver_handle);
 //   tflm_get_value(t, j)        x = m.output0[j]
 //   tflm_set_raw_int8(t, v)     m.input0.raw = v
 //   tflm_get_raw_int8(t, v)     v = m.output0.raw
+//   tflm_set_raw_value(t, j, c) m.input0.raw[j] = c
+//   tflm_get_raw_value(t, j)    c = m.output0.raw[j]
 //
 // Na sintaxe nativa, os kernels, os contadores, o tamanho, o scale e o
 // zero_point vêm do .tflite em tempo de compilação: viram constantes, não
@@ -273,6 +275,13 @@ int8 tflm_set_raw_int8(uint64 tensor_handle, int8[] values);
 int8 tflm_get_raw_int8(uint64 tensor_handle, int8[] values);
 int8 tflm_set_raw_int16(uint64 tensor_handle, int16[] values);
 int8 tflm_get_raw_int16(uint64 tensor_handle, int16[] values);
+
+// Códigos crus, um elemento, em tensor int8 ou int16. O código trafega como
+// int32 nos dois sentidos. Índice fora do tensor ou tensor de outro tipo: a
+// escrita é ignorada e a leitura devolve 0. Código fora da faixa do tipo do
+// tensor: saturado.
+void tflm_set_raw_value(uint64 tensor_handle, uint64 index, int32 value);
+int32 tflm_get_raw_value(uint64 tensor_handle, uint64 index);
 
 
 // ---------------------------------------------------------------------------

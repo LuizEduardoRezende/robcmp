@@ -966,6 +966,8 @@ void tflm_free_model(uint64_t handle) {
  *   tflm_get_value(t, j)        x = m.output0[j]
  *   tflm_set_raw_int8(t, v)     m.input0.raw = v         codigos crus
  *   tflm_get_raw_int8(t, v)     v = m.output0.raw
+ *   tflm_set_raw_value(t, j, c) m.input0.raw[j] = c
+ *   tflm_get_raw_value(t, j)    c = m.output0.raw[j]
  *   tflm_tensor_size(t)         m.input0.size
  * -------------------------------------------------------------------------*/
 
@@ -1172,6 +1174,30 @@ int8_t tflm_get_raw_int16(uint64_t tensor_handle, int16_t *values, int32_t value
     if (!t || !values) return -1;
     memcpy(values, t->data.i16, (size_t)values_len * sizeof(int16_t));
     return 0;
+}
+
+// Um elemento, int8 ou int16. O valor e int32 para nao depender de extensao
+// de sinal na chamada (ver o header).
+static TfLiteTensor *tensor_cru_elemento(uint64_t handle, uint64_t index) {
+    TfLiteTensor *t = handle ? tensor_de(handle) : nullptr;
+    if (!t || !t->data.data || index >= elementos(t)) return nullptr;
+    if (t->type != kTfLiteInt8 && t->type != kTfLiteInt16) return nullptr;
+    return t;
+}
+
+void tflm_set_raw_value(uint64_t tensor_handle, uint64_t index, int32_t value) {
+    TfLiteTensor *t = tensor_cru_elemento(tensor_handle, index);
+    if (!t) return;
+    if (t->type == kTfLiteInt8)
+        t->data.int8[index] = (int8_t)clamp64(value, -128, 127);
+    else
+        t->data.i16[index] = (int16_t)clamp64(value, -32768, 32767);
+}
+
+int32_t tflm_get_raw_value(uint64_t tensor_handle, uint64_t index) {
+    const TfLiteTensor *t = tensor_cru_elemento(tensor_handle, index);
+    if (!t) return 0;
+    return t->type == kTfLiteInt8 ? t->data.int8[index] : t->data.i16[index];
 }
 
 void tflm_print_float(float value) {
