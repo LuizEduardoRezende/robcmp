@@ -3,7 +3,7 @@
 /*
  * Running the inference, in place of the FunctionCall the parser builds for
  * m.invoke(). Returns int8: 0 on success, -1 on failure (specification,
- * section 1). The code generation is task 3.6.
+ * section 1).
  */
 
 #include "Node.h"
@@ -26,8 +26,5 @@ public:
 		return model.variable;
 	}
 
-	virtual Value *generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) override {
-		// task 3.6; never reached until then (see AiModel::fromCall)
-		return NULL;
-	}
+	virtual Value *generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) override;
 };

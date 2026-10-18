@@ -1,0 +1,47 @@
+/*
+ * tcc_micro_speech.rob na sintaxe nativa (native-syntax.rob, 4b).
+ *
+ * As features são códigos int8 já na escala do classificador: entram pela
+ * visão .raw, embutidas como int8[] (rob_embed.py, sufixo :int8).
+ *
+ * Devolve 0 se tudo passar, ou o código do teste que falhou.
+ */
+
+// @features_yes@
+
+// @features_no@
+
+// @features_silence@
+
+cls = ai_model("../models/micro_speech_quantized.tflite", 12288);
+
+// Categorias: [silence, unknown, yes, no]. Devolve a de maior probabilidade.
+int8 classifica(int8[] features) {
+    cls.input0.raw = features;
+    if cls.invoke() != 0 {
+        return -1;
+    }
+    output = cls.output0;
+    melhor = 0;
+    i = 1;
+    while i < 4 {
+        if output[i] > output[melhor] {
+            melhor = i;
+        }
+        i = i + 1;
+    }
+    return melhor;
+}
+
+int8 main() {
+    if classifica(features_yes) != 2 {
+        return 3;
+    }
+    if classifica(features_no) != 3 {
+        return 4;
+    }
+    if classifica(features_silence) != 0 {
+        return 5;
+    }
+    return 0;
+}

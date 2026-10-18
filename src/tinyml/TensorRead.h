@@ -9,7 +9,11 @@
  *     c = m.output0.raw;      the whole tensor, raw view: int8[N] or int16[N]
  *     c = m.output0.raw[k];   one element: int8 or int16
  *
- * Inputs can be read too. The code generation is task 3.6.
+ * Inputs can be read too.
+ *
+ * The whole tensor is copied into a buffer: a new one, reserved once in the
+ * function, for a new variable or a temporary; the vector of the variable, when
+ * it already exists (specification, section 4b).
  */
 
 #include "Node.h"
@@ -20,6 +24,7 @@ class TensorRead: public Node {
 private:
 	TensorRef tensor;
 	Node *element;	// NULL: the whole tensor
+	Variable *leftValue = NULL;	// the variable that receives the tensor
 
 public:
 	TensorRead(const TensorRef& tensor, Node *element, location_t loc):
@@ -45,8 +50,9 @@ public:
 		return element;
 	}
 
-	virtual Value *generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) override {
-		// task 3.6; never reached until then (see AiModel::fromCall)
-		return NULL;
+	virtual void setLeftValue(Variable *symbol) override {
+		leftValue = symbol;
 	}
+
+	virtual Value *generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) override;
 };

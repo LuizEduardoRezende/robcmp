@@ -1,0 +1,106 @@
+/*
+ * tcc_hello_world.rob na sintaxe nativa (native-syntax.rob, seções 1 e 2).
+ *
+ * Mesmas entradas, mesmos limiares e mesmos códigos de retorno do modo
+ * biblioteca. O que muda:
+ *   - o modelo é lido pelo compilador: sem bytes embutidos à mão, sem
+ *     tflm_create_resolver/tflm_add_*, que o compilador deriva do .tflite;
+ *   - não há destruição (seção 8b): o modelo é criado uma vez;
+ *   - os testes de índice de tensor inválido (tflm_input(h, 99)) não têm
+ *     equivalente: m.input99 é erro de compilação (check_ai_model.py).
+ *
+ * O mesmo arquivo serve aos modelos float e int8: o build troca o marcador
+ * pelo nome do modelo. A conversão float <-> quantizado é automática.
+ *
+ * Devolve 0 se tudo passar, ou o número do último teste que falhou.
+ */
+
+// Global: criado antes do main.
+sine = ai_model("../models/@modelo@.tflite", 3000);
+
+// As propriedades são constantes de compilação. Uma condição por if: um `or`
+// entre duas comparações constantes derruba o robcmp (RESULTADOS.md, 5.2.19).
+int8 test_init() {
+    if sine.input_count != 1 {
+        return 1;
+    }
+    if sine.output_count != 1 {
+        return 1;
+    }
+    if sine.input0.size != 1 {
+        return 1;
+    }
+    return 0;
+}
+
+// Inferência para entrada 0.0: sin(0) = 0. Vetor inteiro de entrada e de saída.
+int8 test_infer_zero() {
+    sine.input0 = {0.0};
+    if sine.invoke() != 0 {
+        return 1;
+    }
+    saida = sine.output0;
+    if saida[0] < -0.5 or saida[0] > 0.5 {
+        return 3;
+    }
+    return 0;
+}
+
+// Inferência para entrada 1.57: sin(pi/2) = 1. Elemento de entrada e de saída.
+int8 test_infer_pi_2() {
+    sine.input0[0] = 1.57;
+    if sine.invoke() != 0 {
+        return 1;
+    }
+    r = sine.output0[0];
+    if r < 0.5 or r > 1.5 {
+        return 3;
+    }
+    return 0;
+}
+
+// Modelo local, numa função chamada várias vezes: criado na primeira, o mesmo
+// intérprete nas seguintes. O wrapper tem 4 instâncias; criar um a cada chamada
+// esgotaria as instâncias na quinta.
+float infere_local(float x) {
+    local = ai_model("../models/@modelo@.tflite", 3000);
+    local.input0[0] = x;
+    if local.invoke() != 0 {
+        return 99.0;
+    }
+    return local.output0[0];
+}
+
+int8 test_local() {
+    i = 0;
+    while i < 8 {
+        r = infere_local(1.57);
+        if r < 0.5 or r > 1.5 {
+            return 2;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Leitura para um vetor que já existe: copiada para ele, não atribuída.
+int8 test_buffer_existente() {
+    saida = {7.0};
+    sine.input0 = {1.57};
+    sine.invoke();
+    saida = sine.output0;
+    if saida[0] < 0.5 or saida[0] > 1.5 {
+        return 2;
+    }
+    return 0;
+}
+
+int8 main() {
+    result = 0;
+    if test_init() != 0 { result = 1; }
+    if test_infer_zero() != 0 { result = 2; }
+    if test_infer_pi_2() != 0 { result = 3; }
+    if test_local() != 0 { result = 4; }
+    if test_buffer_existente() != 0 { result = 5; }
+    return result;
+}

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Valida o reconhecimento de ai_model(...) na análise semântica do compilador
-(src/tinyml/AiModel.cpp), tarefa 3.3.
+Valida ai_model(...) no compilador (src/tinyml): a análise semântica
+(tarefas 3.3 a 3.5) e a geração de código (3.6).
 
   1. Erros da seção 8 de native-syntax.rob que dependem só da declaração do
      modelo: caminho não literal, arena ausente ou inválida, arquivo
-     inexistente, arquivo que não é .tflite e .tflite truncado. Cada um precisa
-     sair na linha e coluna certas.
+     inexistente, arquivo que não é .tflite, .tflite truncado e kernel sem
+     suporte no wrapper. Cada um precisa sair na linha e coluna certas.
   2. Busca do arquivo: primeiro a pasta do .rob que faz a chamada, depois as
      pastas -I na ordem dada. A pasta de trabalho não entra.
   3. ai_model é nome reservado: declarar função, método, tipo, campo,
@@ -23,10 +23,10 @@ Valida o reconhecimento de ai_model(...) na análise semântica do compilador
      duas visões (seções 4b e 8); vetor de tamanho desconhecido e índice
      variável ficam para o wrapper.
 
-Enquanto a geração de código (3.6) não existe, um modelo aceito dá, na
-análise semântica, o erro "was read, but the code generation ... is not
-implemented yet", que nomeia o arquivo lido. É ele que os casos de sucesso
-conferem.
+Um programa aceito precisa compilar sem erro, o que inclui o verificador do
+LLVM sobre o IR gerado. Quantas vezes um modelo foi embutido se confere no IR
+(-Od): um @<variável>.tflite por declaração. A execução dos modelos em sintaxe
+nativa é testada à parte, em `make -C test/tflm nativo`.
 
 Uso: check_ai_model.py ROBCMP   (a partir de test/tflm)
 """
@@ -40,7 +40,6 @@ from pathlib import Path
 
 MODELOS = Path(__file__).resolve().parent / "models"
 MODELO = MODELOS / "hello_world_float.tflite"
-LIDO = "was read, but the code generation"
 
 falhas = []
 
@@ -80,11 +79,40 @@ def checa(rotulo, robcmp, fonte, esperado, linha, coluna=None, *args, cwd, arqui
     print(f"  ok  {rotulo}")
 
 
+def checa_ok(rotulo, robcmp, fonte, *args, cwd, modelos=None):
+    """Compila sem erro nenhum. Com `modelos`, confere também quantos modelos o
+    IR embute."""
+    codigo, saida = compila(robcmp, fonte, *args, cwd=cwd)
+    if codigo != 0:
+        falha(f"{rotulo}: não compilou: {saida.strip()!r}")
+        return
+    if modelos is not None:
+        r = subprocess.run([robcmp, "-Od", *args, str(fonte)], cwd=cwd,
+                           capture_output=True, text=True)
+        embutidos = re.findall(r"^@\"?([\w.]+)\.tflite\"? = ", r.stdout, re.M)
+        if len(embutidos) != modelos:
+            falha(f"{rotulo}: esperados {modelos} modelos embutidos, obtidos {embutidos!r}")
+            return
+    print(f"  ok  {rotulo}")
+
+
+def kernel_sem_suporte(destino):
+    """O hello_world_float com o operador trocado por LSH_PROJECTION, que o
+    TFLM não implementa. Os 8 últimos bytes do arquivo são o OperatorCode do
+    FULLY_CONNECTED (9): builtin_code (int32), padding e deprecated_builtin_code."""
+    dados = bytearray(MODELO.read_bytes())
+    assert dados[-8:] == bytes([9, 0, 0, 0, 0, 0, 0, 9])
+    dados[-8:-4] = (15).to_bytes(4, "little")
+    dados[-1] = 15
+    destino.write_bytes(bytes(dados))
+
+
 def checa_erros(robcmp, tmp):
     print("== erros de declaração (seção 8)")
     shutil.copy(MODELO, tmp / "m.tflite")
     shutil.copy(Path(__file__).resolve().parent / "Makefile", tmp / "Makefile")
     (tmp / "truncado.tflite").write_bytes(MODELO.read_bytes()[:500])
+    kernel_sem_suporte(tmp / "lsh.tflite")
 
     casos = [
         # rótulo, linhas do main, mensagem esperada, linha, coluna
@@ -107,15 +135,23 @@ def checa_erros(robcmp, tmp):
          "TFL3 identifier missing", 2, 18),
         ("truncado", ['a = ai_model("truncado.tflite", 3000);'],
          "corrupted or truncated", 2, 18),
-        ("modelo aceito", ['a = ai_model("m.tflite", 3000);'], LIDO, 2, 9),
-        ("arena constante nomeada", ["const ARENA = 3000;", 'a = ai_model("m.tflite", ARENA);'],
-         LIDO, 3, 9),
-        ("arena como expressão", ['a = ai_model("m.tflite", 90 * 1024);'], LIDO, 2, 9),
+        ("kernel sem suporte", ['a = ai_model("lsh.tflite", 3000);'],
+         "uses the builtin kernel LSH_PROJECTION, which the TFLM wrapper does not support",
+         2, 18),
     ]
+    fonte = tmp / "t.rob"
     for rotulo, linhas, esperado, linha, coluna in casos:
-        fonte = tmp / "t.rob"
         fonte.write_text(programa(*linhas))
         checa(rotulo, robcmp, fonte, esperado, linha, coluna, cwd=tmp)
+
+    aceitos = [
+        ("modelo aceito", ['a = ai_model("m.tflite", 3000);']),
+        ("arena constante nomeada", ["const ARENA = 3000;", 'a = ai_model("m.tflite", ARENA);']),
+        ("arena como expressão", ['a = ai_model("m.tflite", 90 * 1024);']),
+    ]
+    for rotulo, linhas in aceitos:
+        fonte.write_text(programa(*linhas))
+        checa_ok(rotulo, robcmp, fonte, cwd=tmp, modelos=1)
 
 
 def checa_busca(robcmp, tmp):
@@ -136,22 +172,22 @@ def checa_busca(robcmp, tmp):
     valido = MODELO.read_bytes()
     I = lambda *ds: [a for d in ds for a in ("-I", str(d))]
 
+    # Em cada caso, só um arquivo válido pode ser encontrado: os outros
+    # candidatos não existem ou são inválidos. Compilar sem erro mostra que a
+    # busca chegou a ele sem passar por um inválido.
+
     # O caminho é relativo ao .rob, não à pasta de onde o robcmp é chamado.
     coloca((prog, valido))
-    checa("ao lado do .rob, robcmp chamado de outra pasta", robcmp, fonte,
-          f"model '{prog / 'm.tflite'}' {LIDO}", 2, cwd=trabalho)
+    checa_ok("ao lado do .rob, robcmp chamado de outra pasta", robcmp, fonte, cwd=trabalho)
 
     coloca((inc1, valido))
-    checa("só na pasta -I", robcmp, fonte, f"model '{inc1 / 'm.tflite'}' {LIDO}", 2,
-          None, *I(inc1), cwd=trabalho)
+    checa_ok("só na pasta -I", robcmp, fonte, *I(inc1), cwd=trabalho)
 
     coloca((prog, valido), (inc1, invalido))
-    checa("pasta do .rob antes da -I", robcmp, fonte, f"model '{prog / 'm.tflite'}' {LIDO}", 2,
-          None, *I(inc1), cwd=trabalho)
+    checa_ok("pasta do .rob antes da -I", robcmp, fonte, *I(inc1), cwd=trabalho)
 
     coloca((inc1, valido), (inc2, invalido))
-    checa("-I na ordem dada (primeira válida)", robcmp, fonte,
-          f"model '{inc1 / 'm.tflite'}' {LIDO}", 2, None, *I(inc1, inc2), cwd=trabalho)
+    checa_ok("-I na ordem dada (primeira válida)", robcmp, fonte, *I(inc1, inc2), cwd=trabalho)
     checa("-I na ordem dada (primeira inválida)", robcmp, fonte,
           "TFL3 identifier missing", 2, None, *I(inc2, inc1), cwd=trabalho)
 
@@ -168,7 +204,10 @@ def checa_busca(robcmp, tmp):
         'int8 carrega() {\n    a = ai_model("m.tflite", 3000);\n    return 0;\n}\n')
     usa = prog / "usa.rob"
     usa.write_text("use sub.carrega;\nint16 main() {\n    carrega();\n    return 0;\n}\n")
-    checa("chamada em arquivo de use", robcmp, usa, f"model '{lib / 'm.tflite'}' {LIDO}", 2, 9,
+    checa_ok("chamada em arquivo de use", robcmp, usa, "-bdep", *I(tmp / "lib"), cwd=trabalho)
+    # e o erro de um arquivo de `use` aponta para ele
+    (lib / "m.tflite").write_bytes(invalido)
+    checa("erro em arquivo de use", robcmp, usa, "TFL3 identifier missing", 2, 18,
           "-bdep", *I(tmp / "lib"), cwd=trabalho, arquivo=lib / "carrega.rob")
 
 
@@ -246,15 +285,13 @@ def programa_membros(*linhas):
 
 
 def checa_unico(rotulo, robcmp, fonte, esperado, linha, coluna, cwd):
-    """Além do aviso de geração de cada modelo, exatamente um erro."""
+    """Exatamente um erro, na linha e coluna dadas."""
     codigo, saida = compila(robcmp, fonte, cwd=cwd)
     erros = re.findall(r"^.*?:(\d+):(\d+): semantic error: (.*)$", saida, re.M)
-    lidos = [e for e in erros if LIDO in e[2]]
-    outros = [e for e in erros if LIDO not in e[2]]
-    if len(lidos) != len(MODELOS_MEMBROS) or len(outros) != 1:
-        falha(f"{rotulo}: esperado 1 erro além dos modelos lidos, obtido {saida.strip()!r}")
+    if len(erros) != 1:
+        falha(f"{rotulo}: esperado 1 erro, obtido {saida.strip()!r}")
         return
-    l, c, msg = outros[0]
+    l, c, msg = erros[0]
     if esperado not in msg or (int(l), int(c)) != (linha, coluna):
         falha(f"{rotulo}: esperado {esperado!r} em {linha}:{coluna}, obtido {l}:{c} {msg!r}")
         return
@@ -264,17 +301,16 @@ def checa_unico(rotulo, robcmp, fonte, esperado, linha, coluna, cwd):
 def checa_membros(robcmp, tmp):
     print("== membros do modelo (3.4)")
 
-    # A especificação inteira: todo erro é o aviso de geração, exceto o modelo
-    # hipotético de várias entradas da seção 5, que não existe em models/.
+    # A especificação inteira: o único erro é o do modelo hipotético de várias
+    # entradas da seção 5, que não existe em models/ (tarefa 3.9).
     raiz = Path(__file__).resolve().parent
     codigo, saida = compila(robcmp, raiz / "native-syntax.rob", cwd=raiz)
     erros = re.findall(r"semantic error: (.*)$", re.sub(r"\x1b\[[0-9;]*m", "", saida), re.M)
-    outros = [e for e in erros if LIDO not in e and "algum_modelo_multi_entrada" not in e]
+    outros = [e for e in erros if "algum_modelo_multi_entrada" not in e]
     if outros or not erros:
         falha(f"native-syntax.rob: erros além dos esperados: {outros!r}")
     else:
-        print(f"  ok  native-syntax.rob passa pela análise semântica "
-              f"({len(erros) - 1} modelos lidos)")
+        print("  ok  native-syntax.rob passa pela análise semântica")
 
     for _, nome, _ in MODELOS_MEMBROS:
         shutil.copy(MODELOS / f"{nome}.tflite", tmp / f"{nome}.tflite")
@@ -348,8 +384,7 @@ def checa_membros(robcmp, tmp):
     fonte.write_text('type robo {\n    m = ai_model("hello_world_int8.tflite", 3000);\n}\n'
                      'int16 main() {\n    return 0;\n}\n')
     codigo, saida = compila(robcmp, fonte, cwd=tmp)
-    erros = re.findall(r"^.*?:(\d+):(\d+): semantic error: (.*)$", saida, re.M)
-    outros = [e for e in erros if LIDO not in e[2]]
+    outros = re.findall(r"^.*?:(\d+):(\d+): semantic error: (.*)$", saida, re.M)
     if len(outros) != 1 or outros[0][:2] != ("2", "5") or "field of a type" not in outros[0][2]:
         falha(f"{rotulo}: obtido {saida.strip()!r}")
     else:
@@ -363,12 +398,12 @@ def checa_membros(robcmp, tmp):
     declara = 'm = ai_model("hello_world_int8.tflite", 3000);\n'
     main = 'int16 main() {\n    return a() + b();\n}\n'
     fonte.write_text(usa + declara + main)
-    checa("global declarado depois das funções que o usam", robcmp, fonte, LIDO, 9, 5, cwd=tmp)
+    checa_ok("global declarado depois das funções que o usam, embutido uma vez", robcmp, fonte,
+             cwd=tmp, modelos=1)
     fonte.write_text(usa.replace("m.input0[0]", "m.input1[0]") + declara + main)
     saida_ordem = compila(robcmp, fonte, cwd=tmp)[1]
-    erros = re.findall(r"^.*?:(\d+):(\d+): semantic error: (.*)$", saida_ordem, re.M)
-    outros = [e for e in erros if LIDO not in e[2]]
-    if (len(erros) != 2 or len(outros) != 1 or outros[0][:2] != ("6", "5")
+    outros = re.findall(r"^.*?:(\d+):(\d+): semantic error: (.*)$", saida_ordem, re.M)
+    if (len(outros) != 1 or outros[0][:2] != ("6", "5")
             or "input1 does not exist" not in outros[0][2]):
         falha(f"erro de membro em global declarado depois: obtido {saida_ordem.strip()!r}")
     else:
@@ -376,22 +411,11 @@ def checa_membros(robcmp, tmp):
 
     fonte.write_text(programa("m.input0 = {1.0};", declara.strip()))
     codigo, saida = compila(robcmp, fonte, cwd=tmp)
-    erros = re.findall(r"^.*?:(\d+):(\d+): semantic error: (.*)$", saida, re.M)
-    outros = [e for e in erros if LIDO not in e[2]]
+    outros = re.findall(r"^.*?:(\d+):(\d+): semantic error: (.*)$", saida, re.M)
     if len(outros) != 1 or outros[0][:2] != ("2", "5") or "used before its declaration" not in outros[0][2]:
         falha(f"local usado antes da declaração: obtido {saida.strip()!r}")
     else:
         print("  ok  local usado antes da declaração")
-
-
-def checa_aceito(rotulo, robcmp, fonte, cwd, modelos=len(MODELOS_MEMBROS)):
-    """Nenhum erro além do aviso de geração de cada modelo."""
-    codigo, saida = compila(robcmp, fonte, cwd=cwd)
-    erros = re.findall(r"semantic error: (.*)$", saida, re.M)
-    if len(erros) != modelos or any(LIDO not in e for e in erros):
-        falha(f"{rotulo}: esperados só os {modelos} modelos lidos, obtido {saida.strip()!r}")
-    else:
-        print(f"  ok  {rotulo}")
 
 
 def checa_tamanhos(robcmp, tmp):
@@ -442,12 +466,12 @@ def checa_tamanhos(robcmp, tmp):
     ]
     for rotulo, linhas in aceitos:
         fonte.write_text(programa_membros(*linhas))
-        checa_aceito(rotulo, robcmp, fonte, tmp)
+        checa_ok(rotulo, robcmp, fonte, cwd=tmp)
 
     fonte.write_text('d = ai_model("hello_world_float.tflite", 3000);\n'
                      'int8 escreve(float[] v) {\n    d.input0 = v;\n    return d.invoke();\n}\n'
                      'int16 main() {\n    v = {1.0};\n    return escreve(v);\n}\n')
-    checa_aceito("vetor de tamanho desconhecido (parâmetro)", robcmp, fonte, tmp, modelos=1)
+    checa_ok("vetor de tamanho desconhecido (parâmetro)", robcmp, fonte, cwd=tmp)
 
 
 def main():

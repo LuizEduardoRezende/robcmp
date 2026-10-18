@@ -1,0 +1,57 @@
+/*
+ * tcc_person_detect.rob na sintaxe nativa (native-syntax.rob, 4b).
+ *
+ * A imagem já é código int8 do modelo: entra pela visão .raw, sem conversão.
+ * Ela é embutida como int8[] (rob_embed.py, sufixo :int8). Embutida em
+ * hexadecimal, como no modo biblioteca, seria uint8[], e a escrita na .raw
+ * seria erro de compilação -- o modo biblioteca a aceita sem aviso, porque a
+ * RL entrega o vetor a tflm_set_raw_int8 sem conferir o tipo.
+ *
+ * Devolve 0 se tudo passar, ou o código do teste que falhou.
+ */
+
+// @imagem_pessoa@
+
+// @imagem_sem_pessoa@
+
+detector = ai_model("../models/person_detect.tflite", 90000);
+
+int8 test_person() {
+    detector.input0.raw = imagem_pessoa;
+    if detector.invoke() != 0 {
+        return 2;
+    }
+    output = detector.output0;      // [sem pessoa, pessoa]
+    if output[1] > output[0] {
+        return 0;
+    }
+    return 1;
+}
+
+int8 test_no_person() {
+    detector.input0.raw = imagem_sem_pessoa;
+    if detector.invoke() != 0 {
+        return 2;
+    }
+    // os mesmos dados pelas duas visões: códigos e valores reais
+    codigos = detector.output0.raw;
+    if codigos[0] <= codigos[1] or detector.output0.raw[0] != codigos[0] {
+        return 4;
+    }
+    if detector.output0[0] > detector.output0[1] {
+        return 0;
+    }
+    return 3;
+}
+
+int8 main() {
+    res_person = test_person();
+    if res_person != 0 {
+        return res_person;
+    }
+    res_no_person = test_no_person();
+    if res_no_person != 0 {
+        return res_no_person;
+    }
+    return 0;
+}

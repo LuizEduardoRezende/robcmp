@@ -10,8 +10,7 @@
  *     m.input0.raw = codes;    the whole tensor, raw view: int8[] or int16[]
  *     m.input0.raw[k] = c;     one element, converted to the tensor type
  *
- * Only inputs can be written (specification, section 4c). The code
- * generation is task 3.6.
+ * Only inputs can be written (specification, section 4c).
  */
 
 #include "Node.h"
@@ -43,8 +42,5 @@ public:
 		return value;
 	}
 
-	virtual Value *generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) override {
-		// task 3.6; never reached until then (see AiModel::fromCall)
-		return NULL;
-	}
+	virtual Value *generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) override;
 };

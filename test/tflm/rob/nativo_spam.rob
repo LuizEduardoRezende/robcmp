@@ -1,0 +1,55 @@
+/*
+ * tcc_spam.rob na sintaxe nativa.
+ *
+ * Mesmas frases, mesmos limiares e mesmos códigos de retorno. A entrada do
+ * spam é int32 sem quantização (índices de palavras): pela visão padrão, os
+ * índices são escritos como float e chegam exatos (native-syntax.rob, 4b).
+ *
+ * Devolve 0 se tudo passar, ou o número do último teste que falhou.
+ */
+
+spam = ai_model("../models/spam.tflite", 4096);
+
+int8 test_init() {
+    if spam.input0.size != 20 {
+        return 1;
+    }
+    if spam.output0.size != 2 {
+        return 1;
+    }
+    return 0;
+}
+
+// Frase legítima: "This is a great article thank you for the information"
+int8 test_infer_not_spam() {
+    spam.input0 = {1.0, 82.0, 70.0, 214.0, 55.0, 98.0, 84.0, 47.0, 89.0, 26.0, 73.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    if spam.invoke() != 0 {
+        return 2;
+    }
+    output = spam.output0;
+    if output[1] > 0.1 {
+        return 3;
+    }
+    return 0;
+}
+
+// Frase de spam: "win free money online click www site com"
+int8 test_infer_spam() {
+    dados = {1.0, 93.0, 326.0, 72.0, 8.0, 485.0, 24.0, 35.0, 6.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    spam.input0 = dados;
+    if spam.invoke() != 0 {
+        return 2;
+    }
+    if spam.output0[1] < 0.90 {
+        return 3;
+    }
+    return 0;
+}
+
+int8 main() {
+    result = 0;
+    if test_init() != 0 { result = 1; }
+    if test_infer_not_spam() != 0 { result = 2; }
+    if test_infer_spam() != 0 { result = 3; }
+    return result;
+}

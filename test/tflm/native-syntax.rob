@@ -1,11 +1,13 @@
 /*
  * ESPECIFICAÇÃO da sintaxe nativa de TinyML na Robotics Language.
  *
- * ATENÇÃO: este arquivo NÃO compila hoje. Ele descreve o alvo do frontend a
- * ser desenvolvido, não um teste que passa. Ele existe para que o
- * contrato com o usuário esteja fechado antes de escrever a primeira linha do
- * compilador -- o que o compilador emite decorre do que está escrito aqui, e o
- * formato das funções do wrapper decorre do que o compilador emite.
+ * ATENÇÃO: este arquivo ainda NÃO compila inteiro. Ele foi escrito antes do
+ * compilador, para que o contrato com o usuário estivesse fechado antes da
+ * primeira linha de implementação -- o que o compilador emite decorre do que
+ * está escrito aqui, e o formato das funções do wrapper decorre do que o
+ * compilador emite. Hoje tudo nele passa pela análise semântica e é gerado,
+ * exceto o modelo hipotético de várias entradas da seção 5 (tarefa 3.9). Os
+ * testes que rodam a sintaxe nativa estão em rob/nativo_*.rob.
  *
  * Todos os modelos, tipos, shapes e parâmetros de quantização citados abaixo
  * foram extraídos dos arquivos reais em models/, com ./tflite_info.
@@ -299,8 +301,14 @@ int16 exemplo_elemento_e_vetor() {
  *         }
  *
  * Mapeamento para o wrapper: escrita em .raw -> tflm_set_raw_int8/int16, leitura
- * -> tflm_get_raw_int8/int16, escolhidas pelo tipo do tensor. Como .raw[k] é
- * gerado (função própria no wrapper ou leitura do vetor) fica para a tarefa 3.6.
+ * -> tflm_get_raw_int8/int16, escolhidas pelo tipo do tensor.
+ *
+ * DECISÃO (tarefa 3.6): .raw[k] tem função própria no wrapper,
+ * tflm_set_raw_value/tflm_get_raw_value, para tensor int8 ou int16. Ler o
+ * vetor inteiro para pegar um elemento custaria O(N) e um buffer do tamanho do
+ * tensor na pilha (9216 bytes na imagem do person_detect). O código trafega
+ * como int32 nos dois sentidos: um int8 escalar dependeria de quem estende o
+ * sinal na chamada, e o robcmp não marca signext (RESULTADOS.md, 5.2.7).
  *
  * O nome .raw não colide com código existente: membros são resolvidos por
  * valor, como .rows e .cols, então um tipo do usuário com campo `raw` segue
@@ -417,6 +425,13 @@ int16 exemplo_raw_pipeline() {
  * Um modelo é um intérprete do TFLM com a sua arena, criado uma vez. Copiá-lo
  * ou trocá-lo exigiria definir o que acontece com o intérprete antigo -- o
  * mesmo problema da destruição, que a seção 8b deixa de fora.
+ *
+ * DECISÃO (tarefa 3.6): "uma vez" vale também para o modelo LOCAL. Declarado
+ * numa função, ele é criado na primeira vez que a declaração executa; as
+ * chamadas seguintes da função recebem o mesmo intérprete, com os tensores
+ * como a última inferência os deixou. A arena é uma só por declaração, então
+ * um segundo intérprete sobre ela corromperia o primeiro -- e, sem destruição,
+ * cada criação ocuparia para sempre uma das instâncias do wrapper.
  * ========================================================================= */
 
 

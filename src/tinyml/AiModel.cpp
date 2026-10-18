@@ -4,6 +4,8 @@
 #include "Scalar.h"
 #include "Scanner.h"
 #include "tinyml/IntegerConstant.h"
+#include "tinyml/WrapperCall.h"
+#include "BackLLVM.h"
 
 static const char *builtinName = "ai_model";
 
@@ -121,18 +123,123 @@ AiModel *AiModel::fromCall(FunctionCall& fc) {
 		return node;
 	}
 
-	node->valid = true;
-
-	// Until the code generation exists (task 3.6), no program with a model
-	// may reach it: the nodes that use the model generate nothing, and the
-	// code around them would get no value. Reported here, in the semantic
-	// analysis, the error stops the compilation before the generation.
-	yyerrorcpp(string_format("model '%s' was read, but the code generation of %s "
-		"is not implemented yet.", node->model.path.c_str(), builtinName), node);
+	// The kernels are registered by the code generation, one call for each:
+	// a kernel the wrapper can not register would only fail at run time, when
+	// the interpreter meets the operator (specification, section 8).
+	bool supported = true;
+	for (const TfliteKernel& k : node->model.kernels) {
+		if (k.wrapperFunction.empty()) {
+			yyerrorcpp(string_format("model '%s' uses the %s kernel %s, which the TFLM "
+				"wrapper does not support.", node->model.path.c_str(),
+				k.custom ? "custom" : "builtin", k.op.c_str()), path);
+			supported = false;
+		}
+	}
+	node->valid = supported;
 	return node;
 }
 
+/*
+ * Code generation. For m = ai_model("model.tflite", 3000):
+ *
+ *   @m.tflite  the bytes of the model, constant (flash, in a MCU)
+ *   @m.arena   the arena, zeroed (RAM)
+ *   @m.handle  the interpreter, once created
+ *
+ * both buffers aligned to 16, as the TFLM wants them (RESULTADOS.md, 5.2.8 and
+ * 5.4.10), and a function that creates the interpreter -- the three phases of
+ * the wrapper, with one tflm_add_* for each kernel the .tflite uses:
+ *
+ *   uint64 m.ai_model() {
+ *       if m.handle != 0 { return m.handle; }
+ *       r = tflm_create_resolver();
+ *       tflm_add_fully_connected(r);
+ *       h = tflm_create_model(r, m.tflite, m.arena);
+ *       if h == 0 { tflm_free_model(r); return 0; }
+ *       m.handle = h;
+ *       return h;
+ *   }
+ *
+ * The declaration calls it. A model is created once (specification, section
+ * 4c): a declaration inside a function that runs again gets the same
+ * interpreter, instead of a second one over the same arena. A failed creation
+ * releases its slot in the wrapper, and the variable holds 0, the handle that
+ * the wrapper refuses: invoke() then returns -1.
+ */
+
+static GlobalVariable *alignedGlobal(Type *ty, bool constant, Constant *init, const string& name) {
+	GlobalVariable *gv = new GlobalVariable(*mainmodule, ty, constant,
+		GlobalValue::InternalLinkage, init, name);
+	gv->setAlignment(Align(16));
+	return gv;
+}
+
+Function *AiModel::createFunction(const string& name) {
+	IRBuilderBase::InsertPointGuard guard(*Builder);
+	Builder->SetCurrentDebugLocation(DebugLoc());
+
+	Type *i32 = Type::getInt32Ty(global_context);
+	Type *i64 = Type::getInt64Ty(global_context);
+	Constant *zero = ConstantInt::get(i64, 0);
+
+	Constant *bytes = ConstantDataArray::get(global_context, ArrayRef<uint8_t>(model.bytes));
+	GlobalVariable *data = alignedGlobal(bytes->getType(), true, bytes, name + ".tflite");
+	ArrayType *arenaTy = ArrayType::get(Type::getInt8Ty(global_context), arenaSize);
+	GlobalVariable *arena = alignedGlobal(arenaTy, false, ConstantAggregateZero::get(arenaTy),
+		name + ".arena");
+	GlobalVariable *handle = new GlobalVariable(*mainmodule, i64, false,
+		GlobalValue::InternalLinkage, zero, name + ".handle");
+
+	Function *f = Function::Create(FunctionType::get(i64, false), Function::InternalLinkage,
+		codeAddrSpace, name + ".ai_model", mainmodule);
+	BasicBlock *entry = BasicBlock::Create(global_context, "entry", f);
+	BasicBlock *create = BasicBlock::Create(global_context, "create", f);
+	BasicBlock *failed = BasicBlock::Create(global_context, "failed", f);
+	BasicBlock *created = BasicBlock::Create(global_context, "created", f);
+	BasicBlock *existing = BasicBlock::Create(global_context, "existing", f);
+
+	Builder->SetInsertPoint(entry);
+	Value *current = Builder->CreateLoad(i64, handle, "current");
+	Builder->CreateCondBr(Builder->CreateICmpEQ(current, zero), create, existing);
+
+	Builder->SetInsertPoint(create);
+	Value *resolver = WrapperCall::call("tflm_create_resolver", {});
+	for (const TfliteKernel& k : model.kernels)
+		WrapperCall::call(k.wrapperFunction, {resolver});
+	Value *h = WrapperCall::call("tflm_create_model", {resolver, data, arena,
+		ConstantInt::get(i32, model.bytes.size()), ConstantInt::get(i32, arenaSize)});
+	Builder->CreateCondBr(Builder->CreateICmpEQ(h, zero), failed, created);
+
+	Builder->SetInsertPoint(failed);
+	WrapperCall::call("tflm_free_model", {resolver});
+	Builder->CreateRet(zero);
+
+	Builder->SetInsertPoint(created);
+	Builder->CreateStore(h, handle);
+	Builder->CreateRet(h);
+
+	Builder->SetInsertPoint(existing);
+	Builder->CreateRet(current);
+	return f;
+}
+
 Value *AiModel::generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) {
-	// task 3.6; never reached until then (see fromCall)
-	return NULL;
+	if (!leftValue)
+		return NULL;
+	Function *create = createFunction(leftValue->getName());
+
+	if (allocblock == global_alloc) {
+		// A global model is created before main runs, by __globals_init, as
+		// every global (Program::generate). Its variable starts at 0, and the
+		// Scalar that declares it stores the handle there.
+		Type *i64 = Type::getInt64Ty(global_context);
+		leftValue->setAlloca(new GlobalVariable(*mainmodule, i64, false,
+			GlobalValue::InternalLinkage, ConstantInt::get(i64, 0), leftValue->getName()));
+		Builder->SetInsertPoint(global_alloc);
+		return Builder->CreateCall(create);
+	}
+
+	Builder->SetInsertPoint(block);
+	RobDbgInfo.emitLocation(this);
+	return Builder->CreateCall(create);
 }

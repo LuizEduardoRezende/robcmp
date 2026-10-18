@@ -7,9 +7,8 @@
  *
  * The parser reads this as an ordinary function call. PropagateTypes replaces
  * the FunctionCall by this node, which checks the arguments and reads the model
- * at compile time. The members of the model are typed from getModel()
- * (task 3.4), and the code generation embeds its bytes and registers its
- * kernels (task 3.6).
+ * at compile time. The members of the model are typed from getModel(), and
+ * the code generation embeds its bytes and registers its kernels.
  */
 
 #include "MemCopy.h"
@@ -29,6 +28,9 @@ private:
 	AiModel(location_t loc): Constructor(loc) {
 		dt = tint64u;
 	}
+
+	// The function that creates the interpreter, and the globals it uses.
+	Function *createFunction(const string& name);
 
 public:
 	// ai_model is a reserved name: declaring a function, method, type or

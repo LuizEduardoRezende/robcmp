@@ -2,9 +2,10 @@
 #
 #   make              compila o tflite_info (inspetor estático de .tflite)
 #   make analyze      inspeciona todos os modelos de models/
-#   make check        validação completa: wrapper (C++), testes do TCC em RL,
-#                     assinaturas RL x C em x86_64 e Cortex-M, o módulo de
-#                     análise de .tflite do compilador e o ai_model(...)
+#   make check        validação completa: wrapper (C++), testes do TCC em RL
+#                     nos dois modos (ai.tflm e sintaxe nativa), assinaturas
+#                     RL x C em x86_64 e Cortex-M, o módulo de análise de
+#                     .tflite do compilador e o ai_model(...)
 #
 # Depende do submódulo third-party/tflite-micro. Na primeira vez, `make check`
 # compila a libtensorflow-microlite.a e baixa as dependências do TFLM (demora
@@ -122,7 +123,31 @@ $(OUT)/tcc_micro_speech.rob: rob/tcc_micro_speech.rob models/micro_speech_quanti
 		features_no=data/micro_speech_no_features.bin \
 		features_silence=data/micro_speech_silence_features.bin > $@
 
-$(addprefix $(OUT)/,$(ROB_TESTS)): $(OUT)/%: $(OUT)/%.rob $(OUT)/libtflm_wrapper.a $(ROBCMP)
+# Camada 3: os mesmos testes na sintaxe nativa (rob/nativo_*.rob). O compilador
+# lê o .tflite: só os dados de teste são embutidos, como int8[] para a .raw.
+# Os modelos são citados por caminho relativo ao .rob gerado, em out/.
+NATIVE_TESTS = nativo_hello_world_float nativo_hello_world_int8 nativo_spam \
+               nativo_person_detect nativo_micro_speech
+
+$(OUT)/nativo_hello_world_float.rob: rob/nativo_hello_world.rob models/hello_world_float.tflite | $(OUT)
+	sed 's/@modelo@/hello_world_float/' $< > $@
+
+$(OUT)/nativo_hello_world_int8.rob: rob/nativo_hello_world.rob models/hello_world_int8.tflite | $(OUT)
+	sed 's/@modelo@/hello_world_int8/' $< > $@
+
+$(OUT)/nativo_spam.rob: rob/nativo_spam.rob models/spam.tflite | $(OUT)
+	cp $< $@
+
+$(OUT)/nativo_person_detect.rob: rob/nativo_person_detect.rob models/person_detect.tflite data/person_image.bin data/no_person_image.bin rob_embed.py | $(OUT)
+	$(EMBED) $< imagem_pessoa=data/person_image.bin:int8 \
+		imagem_sem_pessoa=data/no_person_image.bin:int8 > $@
+
+$(OUT)/nativo_micro_speech.rob: rob/nativo_micro_speech.rob models/micro_speech_quantized.tflite data/micro_speech_yes_features.bin data/micro_speech_no_features.bin data/micro_speech_silence_features.bin rob_embed.py | $(OUT)
+	$(EMBED) $< features_yes=data/micro_speech_yes_features.bin:int8 \
+		features_no=data/micro_speech_no_features.bin:int8 \
+		features_silence=data/micro_speech_silence_features.bin:int8 > $@
+
+$(addprefix $(OUT)/,$(ROB_TESTS) $(NATIVE_TESTS)): $(OUT)/%: $(OUT)/%.rob $(OUT)/libtflm_wrapper.a $(ROBCMP)
 	$(ROBCMP) -I $(ROOT)/lib -o $(OUT)/$*.o $<
 	$(WCXX) $(OUT)/$*.o $(OUT)/libtflm_wrapper.a $(TFLM_LIB) -Wl,--gc-sections -o $@
 
@@ -130,13 +155,20 @@ $(addprefix $(OUT)/,$(ROB_TESTS)): $(OUT)/%: $(OUT)/%.rob $(OUT)/libtflm_wrapper
 validate: $(OUT)/validate_wrapper
 	@cd $(ROOT) && test/tflm/$(OUT)/validate_wrapper 2>/dev/null
 
-rob: $(addprefix $(OUT)/,$(ROB_TESTS))
-	@echo "== camada 2: testes do TCC portados, em RL"
-	@falhou=0; for t in $(ROB_TESTS); do \
+# Roda cada teste de uma lista; o código de saída 0 é sucesso.
+roda_testes = falhou=0; for t in $(1); do \
 		$(OUT)/$$t > $(OUT)/$$t.log 2>&1; st=$$?; \
-		if [ $$st -eq 0 ]; then printf "  %-24s OK\n" $$t; \
-		else printf "  %-24s FALHOU (codigo %d)\n" $$t $$st; falhou=1; fi; \
+		if [ $$st -eq 0 ]; then printf "  %-28s OK\n" $$t; \
+		else printf "  %-28s FALHOU (codigo %d)\n" $$t $$st; falhou=1; fi; \
 	done; exit $$falhou
+
+rob: $(addprefix $(OUT)/,$(ROB_TESTS))
+	@echo "== camada 2: testes do TCC portados, em RL (ai.tflm)"
+	@$(call roda_testes,$(ROB_TESTS))
+
+nativo: $(addprefix $(OUT)/,$(NATIVE_TESTS))
+	@echo "== camada 3: os mesmos testes na sintaxe nativa"
+	@$(call roda_testes,$(NATIVE_TESTS))
 
 # Confere, para x86_64 e Cortex-M, que cada funcao declarada em lib/ai/tflm.rob
 # tem a mesma assinatura no LLVM IR que a do header C. Pega o tipo de erro que
@@ -155,9 +187,9 @@ tflite: tflite_info $(OUT)/tflite_info_asan
 ai_model: $(ROBCMP)
 	@python3 check_ai_model.py $(ROBCMP)
 
-check: validate rob abi tflite ai_model
+check: validate rob nativo abi tflite ai_model
 
 clean:
 	rm -rf tflite_info $(OUT)
 
-.PHONY: all analyze validate rob abi tflite ai_model check clean
+.PHONY: all analyze validate rob nativo abi tflite ai_model check clean

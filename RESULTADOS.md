@@ -743,6 +743,66 @@ investigado além disso; fora do escopo de TinyML.
 leitura de um tensor inteiro para uma variável existente não pode se apoiar na
 atribuição de vetores da RL (decisão pendente, abaixo).
 
+### 5.2.19 `or` entre duas comparações constantes derruba o robcmp
+
+Defeito da RL, não de TinyML, encontrado ao portar os testes para a sintaxe
+nativa — as propriedades do modelo são constantes, e o teste as comparava num
+`or`. O mínimo que reproduz, em RL pura:
+
+```
+if 1 != 1 or 2 != 2 { ... }      Error: signal 11
+```
+
+`BinaryOp::logical_operator` trata o valor do primeiro lado como instrução e
+pede o bloco dela (`getParent`); com os dois lados constantes, o LLVM já dobrou
+a comparação numa constante, que não tem bloco. Contornado nos testes com um
+`if` por condição. Não corrigido: fora do escopo de TinyML.
+
+**Serve para:** a 5.2, como limitação da base registrada — e como exemplo de
+que constantes de compilação vindas do `.tflite` exercitam caminhos do
+compilador que o código RL usual não exercita.
+
+### 5.2.20 O literal `-128` é `int16`
+
+Também da RL. `-128` é lido como `-(128)`, e `128` não cabe em `int8`: o
+literal é `int16`. Num vetor, um único `-128` faz o vetor inteiro `int16[]`:
+
+```
+a = {11, -72};      [2 x i8]
+a = {-128, 127};    [2 x i16]
+```
+
+Apareceu ao embutir as imagens do person_detect como `int8[]` para a visão
+`.raw`: a imagem tem o byte 0x80. O `rob_embed.py` escreve `int8(-128)` nesse
+caso (sufixo `:int8`). Com a visão `.raw` tipada, o engano é erro de compilação
+(`takes int8[], the type of the tensor, not int16[]`); no modo biblioteca o
+vetor `int16[]` seria entregue a `tflm_set_raw_int8` sem aviso (5.4.9).
+
+### 5.2.21 `__globals_init` rodava depois do código do `main` — corrigido
+
+Defeito da base, corrigido nesta etapa porque a sintaxe nativa depende dele: um
+modelo global é criado em `__globals_init`, que o `Program::generate` chama no
+início do `main`. A chamada era posta antes da última instrução do bloco de
+entrada, contando que ele fosse o bloco das `alloca`, terminado pelo `br` para o
+corpo. Quando o `main` não tem variável local, esse bloco é removido
+(`FunctionImpl.cpp`), o corpo vira a entrada, e a inicialização ia parar depois
+do código. Em RL pura:
+
+```
+type contador { n = 7; }
+c = contador();
+int8 main() { return le(); }      call @le()  e só depois  call @__globals_init()
+```
+
+No teste nativo do micro speech, o `main` sem locais classificava o primeiro
+áudio com o modelo ainda não criado. Correção (`Program.cpp`, uma linha): a
+chamada vai depois das `alloca` (`getFirstNonPHIOrDbgOrAlloca`) — o mesmo
+ponto de antes quando há locais, e o início do corpo quando não há. IR de
+`test/general` idêntico ao do commit anterior nos 65 programas.
+
+**Serve para:** a 5.2, como a única mudança no núcleo do compilador feita pela
+geração de código do TinyML, e por quê.
+
 ---
 
 ## Seção 5.4 — Validação e métricas
@@ -1180,6 +1240,87 @@ Os dados de teste ficam em `test/tflm/data/`, com a origem documentada
 (`data/README.md`); as imagens do TCC conferem byte a byte com as do TFLM.
 Reproduzir: `make -C test/tflm check`.
 
+### 5.4.20 Sintaxe nativa: os testes do TCC passam, com valores idênticos
+
+Os testes do TCC reescritos na sintaxe nativa (`test/tflm/rob/nativo_*.rob`),
+com as mesmas entradas, limiares e códigos de retorno. O compilador lê o
+`.tflite`: só os dados de teste são embutidos.
+
+| Teste | Resultado |
+|---|---|
+| `nativo_hello_world_float` | OK |
+| `nativo_hello_world_int8` | OK |
+| `nativo_spam` | OK |
+| `nativo_person_detect` | OK |
+| `nativo_micro_speech` | OK |
+
+Os testes de índice de tensor inválido (`tflm_input(h, 99)`) não têm
+equivalente: `m.input99` é erro de compilação, coberto pelo `check_ai_model.py`.
+
+**Equivalência de valores.** Como na 5.4.19, passar contra limiar não prova
+igualdade. Verificado à parte: as 24 saídas dos 11 casos (hello_world float e
+int8 com x = 0,0 e 1,57; as duas frases do spam; as duas imagens; os três
+áudios) impressas por um programa em sintaxe nativa e por um no modo
+biblioteca: **24 de 24 idênticas**. Cada `.raw`, leitura e escrita de vetor e
+de elemento passa pelo mesmo wrapper que o modo biblioteca chama.
+
+Reproduzir: `make -C test/tflm nativo`.
+
+### 5.4.21 O modelo fica na flash na sintaxe nativa, e na RAM no modo biblioteca
+
+O mesmo programa (hello_world float: escreve, invoca, lê) nos dois modos,
+x86_64, `objdump -h`:
+
+| Seção | Modo biblioteca | Sintaxe nativa |
+|---|---|---|
+| modelo (3164 bytes) | `.data.modelo` | `.rodata.m.tflite` |
+| arena (3000 bytes) | `.bss.arena` | `.bss.m.arena` |
+| handle | (local) | `.bss.m.handle` + `.bss.m`, 16 bytes |
+
+No modo biblioteca o modelo é um vetor global da RL, e a RL põe todo vetor
+global em `.data` — inclusive declarado `const`, verificado. Num
+microcontrolador, `.data` ocupa a flash **e** a RAM (é copiada na
+inicialização). Na sintaxe nativa o compilador emite o modelo como constante, e
+ele fica só na flash.
+
+O tamanho total quase não muda (+232 bytes na nativa: a função que cria o
+intérprete, e o handle guardado). O que muda é onde: no `person_detect`, o modo
+biblioteca tem 322400 bytes em `.data` (modelo de ~300 KB mais as imagens); a
+sintaxe nativa, 21824 (só as imagens). O STM32F407 tem 192 KB de RAM: **o
+person_detect no modo biblioteca não cabe na RAM do alvo**, e na sintaxe nativa
+cabe.
+
+**Serve para:** a 5.4 e a Etapa 4 — é a primeira diferença medida entre os dois
+modos que não é de conveniência, e decide se o maior modelo de validação roda
+no STM32 pelo modo biblioteca. Medir no alvo, com o linker script do
+STM32F407.
+
+### 5.4.22 A visão `.raw` tipada recusou o vetor que o modo biblioteca aceitava
+
+O `rob_embed.py` embute bytes em hexadecimal, e a RL infere `uint8[]` (não
+`int8[]`, como dizia a documentação do script). O `tcc_person_detect` passa
+esse `uint8[]` a `tflm_set_raw_int8(uint64, int8[])` e a RL não reclama — os
+bits coincidem, e o teste passa. Na sintaxe nativa, a mesma imagem escrita em
+`detector.input0.raw` é erro de compilação:
+`The raw view p.input0.raw takes int8[], the type of the tensor, not uint8[].`
+
+**Serve para:** a 5.2, como exemplo concreto do argumento de mover verificação
+para a compilação — o tipo do tensor vem do `.tflite`, e o modo biblioteca não
+tem como conferi-lo.
+
+### 5.4.23 Quatro modelos no máximo, e o quinto falha calado
+
+O wrapper tem `TFLM_MAX_MODELS` = 4 instâncias. Na sintaxe nativa não há
+destruição (seção 8b da especificação), então cada declaração `ai_model(...)`
+ocupa uma instância para sempre. Um programa com 5 modelos compila, e o quinto
+falha na criação: a variável guarda 0, `invoke()` devolve -1 e as leituras dão
+0. Medido: o programa de equivalência da 5.4.20 com os cinco modelos juntos
+devolveu zeros no micro speech.
+
+O compilador conhece todas as declarações: o limite pode virar erro de
+compilação. Em aberto (abaixo): o número é um `#define` do wrapper, compilado
+à parte.
+
 ---
 
 ## Registro de modificações
@@ -1533,6 +1674,53 @@ desconhecido, buffer reservado, buffer relido de outro modelo, leitura no
 laço). IR de `test/general` idêntico ao do commit anterior;
 `make -C test/tflm check` passa.
 
+### 2026-10-18 — Etapa 3.6: geração de código; 3.7 concluída
+
+A sintaxe nativa compila e roda. Para `m = ai_model("modelo.tflite", 3000)`, o
+compilador emite (`src/tinyml/AiModel.cpp`):
+
+- `@m.tflite`, os bytes do modelo, constante; `@m.arena`, zerada; os dois
+  alinhados a 16;
+- uma função `m.ai_model()` que cria o intérprete nas três fases do wrapper,
+  com um `tflm_add_*` para cada kernel do `.tflite`, e guarda o handle. A
+  declaração a chama. O modelo é criado uma vez (seção 4c): uma declaração
+  local, numa função que roda de novo, reaproveita o intérprete — sem isso, a
+  quinta chamada esgotaria as instâncias do wrapper. Criação que falha libera a
+  instância e deixa 0 na variável;
+- um modelo global é criado em `__globals_init`, antes do `main`.
+
+Leitura, escrita e `invoke()` (`TensorRead.cpp`, `TensorWrite.cpp`,
+`ModelInvoke.cpp`) viram chamadas da API `tflm_`, declaradas por
+`src/tinyml/WrapperCall` com as mesmas assinaturas do modo biblioteca — um
+programa que usa os dois modos compartilha as declarações. Tensor lido inteiro
+para variável nova ganha um buffer próprio; para variável que já existe, é
+copiado para o vetor dela (5.2.18).
+
+`.raw[k]` precisou de função nova no wrapper, `tflm_set_raw_value` e
+`tflm_get_raw_value`, para tensor int8 ou int16. O código trafega como `int32`
+nos dois sentidos: um `int8` escalar dependeria de extensão de sinal na
+chamada, que o robcmp não marca (5.2.7). Declaradas também em `lib/ai/tflm.rob`;
+o `check_abi.py` confere as duas (139 funções).
+
+3.7: falta só o kernel sem suporte, agora erro na declaração (`model '...'
+uses the builtin kernel LSH_PROJECTION, which the TFLM wrapper does not
+support.`), testado com um `.tflite` cujo operador foi trocado.
+
+Testes: `make -C test/tflm nativo` (camada 3, 5.4.20), incluída no `check`.
+`check_ai_model.py` deixa de depender do erro provisório "not implemented
+yet": um programa aceito precisa compilar sem erro — o que inclui o
+verificador do LLVM sobre o IR gerado —, e "lido uma vez" se confere contando
+os `@<variável>.tflite` do IR. 94 casos. Uma correção no núcleo (5.2.21); IR
+de `test/general` idêntico ao do commit anterior.
+
+Fora do recorte, ficam para a sequência da 3.6:
+
+- **Quantização com constantes** (seção 2 da especificação): hoje a conversão
+  float ↔ int8 é a do wrapper, em tempo de execução, com `scale`/`zero_point`
+  lidos do tensor. O resultado é o mesmo (5.4.20); a especificação promete a
+  conversão emitida pelo compilador, sem divisão em runtime.
+- **Limite de modelos** em tempo de compilação (5.4.23).
+
 ---
 
 ## Roteiro — o que foi feito e o que vem
@@ -1608,7 +1796,7 @@ alinhamento do `interpreter_storage`, conversão de handle.
 
 ---
 
-### ⬜ Etapa 3 — Compilador, seção 5.2 (PRÓXIMA)
+### ⬜ Etapa 3 — Compilador, seção 5.2 (EM ANDAMENTO)
 
 Pela regra "sintaxe antes da implementação" (`CLAUDE.md`, seção 6), a primeira
 tarefa é fechar a especificação. As demais seguem a ordem das fases do
@@ -1622,8 +1810,8 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 | 3.3 | `ai_model(...)` na semântica (`PropagateTypes::visit(FunctionCall)`): nome reservado (antes: precedência da função do usuário), caminho literal resolvido relativo ao `.rob` e depois nas pastas `-I`, arena obrigatória, `TfliteModel::load` | **feito** — nó `AiModel`; `make -C test/tflm ai_model` (5.2.13, 5.2.14) |
 | 3.4 | Membros do modelo derivados do `.tflite`: `inputN`/`outputN` (vetores tipados), `input_count`/`output_count`, e por tensor `.size`/`.scale`/`.zero_point`/`.raw`. Interceptar os nós que o parser já gera: `Load`, `LoadArray`, `UpdateArray`, `Scalar`, `Array`, e `FunctionCall` para `m.invoke()` | **feito** — `ModelMember`, `ModelUse`, `TensorRead`/`TensorWrite`/`ModelInvoke` (5.2.15, 5.2.16) |
 | 3.5 | Visão `.raw`: verificação de tipo e tamanho em tempo de compilação, inclusive `.raw[k]` | **feito** — tipo na 3.4; tamanho e índice nas duas visões; leitura para variável existente |
-| 3.6 | Geração de código: modelo e arena como globais alinhados a 16 (5.2.8), um `tflm_add_*` por kernel detectado, e as chamadas da API `tflm_` (5.1.7) |
-| 3.7 | Erros de compilação da seção 8 da especificação: caminho não literal, arena ausente, arquivo inválido, tamanho incompatível, tensor inexistente (como `input1` num modelo de uma entrada), índice de elemento constante fora do tensor, escrita em `.scale`, `.raw` com tipo ou tamanho errado, kernel sem suporte | feitos na 3.3–3.5 os de declaração, membro, tipo, escrita, tamanho e índice; falta kernel sem suporte |
+| 3.6 | Geração de código: modelo e arena como globais alinhados a 16 (5.2.8), um `tflm_add_*` por kernel detectado, e as chamadas da API `tflm_` (5.1.7) | **feito** — os 5 modelos rodam, valores idênticos ao modo biblioteca (5.4.20); falta a quantização com constantes (seção 2) |
+| 3.7 | Erros de compilação da seção 8 da especificação: caminho não literal, arena ausente, arquivo inválido, tamanho incompatível, tensor inexistente (como `input1` num modelo de uma entrada), índice de elemento constante fora do tensor, escrita em `.scale`, `.raw` com tipo ou tamanho errado, kernel sem suporte | **feito** — kernel sem suporte na 3.6 |
 | 3.8 | `signext` em `int8`/`int16` com sinal, em parâmetros e retornos (5.2.7) |
 | 3.9 | Fazer `test/tflm/native-syntax.rob` compilar e rodar, com o mesmo resultado do modo biblioteca |
 
@@ -1675,6 +1863,7 @@ A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
   `m.input0`) ou qualquer expressão de vetor. `ModelInvoke(modelo)`.
 - Os `generate()` dos três devolvem `NULL`, e o do `AiModel` também; nenhum é
   alcançado enquanto o aviso da semântica existir (`AiModel::fromCall`).
+  (Implementados na 3.6, e o aviso removido.)
 - Leitura para variável que já existe (`saida = m.output0`, com `saida`
   declarada antes): a 3.6 gera a cópia para o buffer existente
   (`tflm_get_values`/`tflm_get_raw_*` sobre ele), e não a atribuição de
@@ -1728,12 +1917,25 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
 
 ## Decisões ainda em aberto
 
+- Limite de modelos (5.4.23): erro de compilação acima de 4 declarações, com o
+  número fixado no compilador igual ao do wrapper; ou o compilador informar o
+  número ao wrapper; ou só documentar. O número só tem sentido com as `.a`
+  pré-compiladas da Etapa 4, que fixam o `TFLM_MAX_MODELS`.
+- Quantização (seção 2 da especificação): emitir a conversão com `scale` e
+  `zero_point` como constantes, como a especificação diz, ou registrar que a
+  conversão do wrapper basta. A diferença é de desempenho (uma divisão por
+  elemento), a medir na Etapa 5.
+
 - Arena automática (fase 2): o caminho é medir na compilação, rodando o TFLM do
   host (`test/achados/arena`). Falta saber se o valor do host cobre o do
   Cortex-M — decide-se com as medições no STM32 da Etapa 4.
 - Modelo como campo de tipo (`type robo { m = ai_model(...); }`): fora da
   especificação; recusado com erro próprio. Duas instâncias do tipo dividiriam
   o modelo e a arena — decide-se com o armazenamento, na 3.6.
+
+Decididas na 3.6 (2026-10-18): o modelo é criado uma vez, também quando
+declarado numa função que roda de novo; `.raw[k]` por função própria no
+wrapper, com o código em `int32`.
 
 Confirmado (registrado em 2026-10-16): o nome do construtor é `ai_model`.
 
@@ -1756,9 +1958,11 @@ ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
 ## Estado do repositório
 
 Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento:
-3.0, 3.1, 3.3, 3.4 e 3.5 concluídas, 3.2 dispensada, próxima a 3.6. `make -C
-test/tflm check` passa por inteiro, incluindo o alvo `ai_model`; `make -C test/achados`
-reproduz os achados 5.2.7, 5.2.8 e 5.2.11.
+3.0, 3.1 e 3.3 a 3.7 concluídas, 3.2 dispensada; faltam 3.8, 3.9 e a
+quantização com constantes da 3.6. A sintaxe nativa compila e roda os cinco
+modelos de validação. `make -C test/tflm check` passa por inteiro, incluindo os
+alvos `nativo` e `ai_model`; `make -C test/achados` reproduz os achados 5.2.7,
+5.2.8 e 5.2.11.
 
 Os dados de teste `test/tflm/data/*.bin` estão versionados desde 2026-10-18: o
 `.gitignore` mantém `*.bin` (firmware gerado em `hack/stm32` e pelo PlatformIO)
