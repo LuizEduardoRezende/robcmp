@@ -140,7 +140,7 @@ def checa_erros(robcmp, tmp):
         ("truncado", ['a = ai_model("truncado.tflite", 3000);'],
          "corrupted or truncated", 2, 18),
         ("kernel sem suporte", ['a = ai_model("lsh.tflite", 3000);'],
-         "uses the builtin kernel LSH_PROJECTION, which the TFLM wrapper does not support",
+         "uses a kernel the TFLM wrapper does not support: builtin LSH_PROJECTION.",
          2, 18),
     ]
     fonte = tmp / "t.rob"

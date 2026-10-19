@@ -135,15 +135,19 @@ AiModel *AiModel::fromCall(FunctionCall& fc) {
 	// The kernels are registered by the code generation, one call for each:
 	// a kernel the wrapper can not register would only fail at run time, when
 	// the interpreter meets the operator (specification, section 8).
-	bool supported = true;
+	// All of them in one message: the compiler reports one error per place.
+	string missing;
+	unsigned count = 0;
 	for (const TfliteKernel& k : node->model.kernels) {
 		if (k.wrapperFunction.empty()) {
-			yyerrorcpp(string_format("model '%s' uses the %s kernel %s, which the TFLM "
-				"wrapper does not support.", node->model.path.c_str(),
-				k.custom ? "custom" : "builtin", k.op.c_str()), path);
-			supported = false;
+			missing += (missing.empty() ? "" : ", ") + string(k.custom ? "custom " : "builtin ") + k.op;
+			count++;
 		}
 	}
+	bool supported = count == 0;
+	if (!supported)
+		yyerrorcpp(string_format("model '%s' uses %s the TFLM wrapper does not support: %s.",
+			node->model.path.c_str(), count == 1 ? "a kernel" : "kernels", missing.c_str()), path);
 	node->valid = supported;
 	if (supported)
 		models.push_back({node, declarations[&fc]});

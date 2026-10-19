@@ -1361,6 +1361,53 @@ cada, e confere a soma em três pontos, com tolerância de 0,1 (meio passo de
 cada escala). Passa; com o valor esperado trocado, falha com o código do teste.
 É o primeiro teste que executa `input1`.
 
+### 5.4.25 Quantos tipos de kernel modelos reais usam
+
+Levantado para decidir o tamanho do resolver (128 ou 32 kernels por modelo;
+ver as decisões). Contado com o `tflite_info` em três fontes:
+
+**Os 17 modelos reais do repositório do TFLM** (fora os 127 de operador único
+de `integration_tests`): máximo de **18**, o `audio_preprocessor_int8`; depois
+14 (o mesmo em float), 8 (MobileNetV2 convertido do PyTorch), 5 (person
+detect), e os demais de 1 a 4.
+
+**Classificação de imagem em TFLite**, pela tabela de operadores da Intel
+(webml-polyfill): de 5 (MobileNet V1, MnasNet) a 14 (NASNet Mobile e Large),
+passando por ResNet V2 (8) e DenseNet (9). Os modelos do MLPerf Tiny são
+dessa família.
+
+**Quatro modelos públicos maiores**, baixados para `test/tflm/models/externos/`
+(README com origem e SHA-256):
+
+| Modelo | Tamanho | Kernels | Observação |
+|---|---|---|---|
+| MobileBERT (classificador de texto, MediaPipe) | 25,7 MB | 14 | Transformer; 3 entradas int32[128] |
+| YAMNet (sons) | 4,1 MB | 16 | 2 sem suporte no TFLM |
+| EfficientDet-Lite0 int8 | 4,6 MB | 10 | |
+| SSD MobileNet v1 quantizado | 4,2 MB | 6 | 1 custom op, 4 saídas |
+
+Máximo encontrado em todas as fontes: **18**. Nem o Transformer passa de 14:
+redes repetem muitas vezes poucos tipos de operação. Com 32 kernels por modelo
+sobraria quase o dobro do maior caso; com 64, 3,5 vezes.
+
+Dois fatos laterais:
+
+- **O YAMNet não roda no TFLM.** Usa `RFFT2D` e `COMPLEX_ABS`, builtins que o
+  TFLM não implementa (o pipeline de áudio do TFLM usa os custom ops `Signal*`).
+  O compilador recusa o modelo na declaração. A mensagem passou a listar todos
+  os kernels que faltam numa linha só — antes saía só o primeiro, porque o
+  compilador reporta um erro por posição.
+- **As saídas do SSD não têm tamanho no arquivo.** Vêm do custom op
+  `TFLite_Detection_PostProcess`, que as dimensiona em execução; no `.tflite` a
+  forma é vazia, e o compilador as tipa como `float[1]`. Na sintaxe nativa,
+  `d.output0` seria lido com o tamanho errado (o wrapper recusa a cópia) e
+  `d.output0[3]` seria erro de índice falso. Pendente: tratar saída sem forma
+  como tamanho desconhecido — recusar a leitura inteira e conferir o índice
+  só em execução. Nenhum modelo de validação tem saída assim.
+
+**Serve para:** a 5.1 e a decisão do resolver, como dado empírico; e a 5.2,
+pelos dois casos de modelo que a análise estática precisa tratar.
+
 ---
 
 ## Registro de modificações
@@ -1990,7 +2037,10 @@ com 64, 1384 com 32 e 808 com 16; as 4 instâncias, 18,9 KB da RAM do STM32F407.
 O resolver é 95% desse custo. Reduzir para 32 devolveria ~13,5 KB, e o maior
 modelo de validação usa 18 kernels, mas criaria uma restrição por modelo só por
 memória — contrária ao objetivo de suportar qualquer modelo. Reconsiderar só se
-a RAM faltar nas medições no STM32.
+a RAM faltar nas medições no STM32. Levantamento dos modelos reais na 5.4.25:
+máximo de 18 kernels; nenhum caso perto de 32. No x86, a troca para 32
+reduziu a RAM estática em 25,5 KB em cada teste nativo, sem mudar um byte de
+código, e todos passaram.
 
 Decidida em 2026-10-19: limite de modelos como erro para globais e aviso com
 locais (5.4.23), com o número no compilador igual ao `TFLM_MAX_MODELS`.
