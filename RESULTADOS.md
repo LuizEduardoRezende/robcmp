@@ -1398,25 +1398,56 @@ Três fatos laterais:
   os kernels que faltam numa linha só — antes saía só o primeiro, porque o
   compilador reporta um erro por posição.
 - **As saídas do SSD não têm tamanho no arquivo.** Vêm do custom op
-  `TFLite_Detection_PostProcess`, que as dimensiona em execução; no `.tflite` a
-  forma é vazia, e o compilador as tipa como `float[1]`. Na sintaxe nativa,
-  `d.output0` seria lido com o tamanho errado (o wrapper recusa a cópia) e
-  `d.output0[3]` seria erro de índice falso. Pendente: tratar saída sem forma
-  como tamanho desconhecido — recusar a leitura inteira e conferir o índice
-  só em execução. Nenhum modelo de validação tem saída assim, e este SSD não
-  roda no TFLM de qualquer jeito (abaixo); outros detectores com o mesmo
-  pós-processamento rodam.
+  `TFLite_Detection_PostProcess`; no `.tflite` a forma é vazia, e o compilador
+  as tipava como `float[1]`. A primeira leitura foi que o operador as
+  dimensiona em execução, e que a sintaxe nativa precisaria de "tamanho
+  conhecido só em runtime". Lido o código do TFLM, não: o TFLM não
+  redimensiona tensores — reserva cada um pela forma do arquivo, e o próprio
+  teste do operador (`detection_postprocess_test.cc`) passa formas
+  explícitas. Com a forma vazia, o tensor teria 1 elemento, e o operador
+  escreveria até `max_detections` detecções além do fim, na arena. Num modelo
+  que o TFLM roda, a forma do arquivo é a verdadeira; o que falta é recusar o
+  que tem a forma vazia (abaixo). Deduzido do código, não executado: o SSD
+  falha antes, por ser híbrido.
 - **Ter todos os kernels não basta.** Testado criando o intérprete: o
   MobileBERT falha no `FULLY_CONNECTED` (`Input type: FLOAT32 with filter type:
   INT8 not supported`, quantização de faixa dinâmica) e o SSD de 2018 no
   `CONV_2D` (`Hybrid models are not supported on TFLite Micro`). Os dois
   passam pela compilação — o compilador só confere se cada kernel existe — e
-  falham em execução. Pendente: reconhecer na análise do `.tflite` operações
-  híbridas (entrada float com pesos inteiros) e recusá-las na compilação. Só o
-  EfficientDet-Lite0, dos quatro, cria e roda (`invoke()` devolve 0).
+  falham em execução. Só o EfficientDet-Lite0, dos quatro, cria e roda
+  (`invoke()` devolve 0).
+
+**Resolvido em 2026-10-19:** as duas coisas viraram erro de compilação. A
+análise do `.tflite` (`TfliteModel::incompatibilities`) confere o par de tipos
+entrada/pesos de `CONV_2D`, `DEPTHWISE_CONV_2D`, `TRANSPOSE_CONV` e
+`FULLY_CONNECTED` com as mesmas regras que os kernels do TFLM aplicam no
+`Prepare`, e as saídas de `TFLite_Detection_PostProcess` sem forma. Os 8
+modelos de validação e o EfficientDet passam; o MobileBERT e o SSD são
+recusados, nomeando a operação; o `tflite_info` mostra o mesmo. A mensagem
+junta tudo numa linha só, com os kernels que faltam:
+`model 'ssd_mobilenet_v1_quant.tflite' can not run on TFLite Micro: CONV_2D
+with uint8 input and uint8 weights; outputs 0, 1, 2, 3 of
+TFLite_Detection_PostProcess with no shape in the file (...)`.
 
 **Serve para:** a 5.1 e a decisão do resolver, como dado empírico; e a 5.2,
 pelos dois casos de modelo que a análise estática precisa tratar.
+
+### 5.4.26 EfficientDet-Lite0 na sintaxe nativa
+
+O maior modelo rodado em sintaxe nativa: 4,6 MB, 10 kernels, entrada uint8
+320×320×3 quantizada, duas saídas (scores 19206×90 e caixas 19206×4, 1,8
+milhão de floats). Arena medida pelo TFLM: 9030960 bytes; o teste usa 10 MB.
+
+`rob/nativo_efficientdet.rob` escreve uma imagem sintética (um gradiente,
+elemento a elemento, pela visão padrão) e confere 9 elementos das duas
+saídas contra o mesmo modelo rodado pelo TFLM direto, em C++, com a mesma
+imagem (`ref_efficientdet.cpp`; `make -C test/tflm ref_efficientdet`): iguais
+até a sexta casa. Com um valor esperado alterado em 0,00001, falha. Compila em
+0,9 s; a inferência leva ~11 s no x86 com os kernels de referência do TFLM.
+
+Não cabe no STM32F407 (512 KB de flash, 192 KB de RAM): o valor dele é ser o
+primeiro modelo de tamanho real, com mais de uma saída e entrada uint8, a
+passar pela sintaxe nativa de ponta a ponta.
 
 ---
 
@@ -1832,6 +1863,18 @@ da 5.2.22. Dois testes novos na camada 3: `nativo_simple_add`, que roda o
 modelo de duas entradas, e `nativo_especificacao`, a especificação compilada,
 ligada ao wrapper e executada — prova que toda função que o compilador chama
 existe no wrapper. O `check_ai_model.py` exige zero erros na especificação.
+
+Nenhuma mudança fora de `src/tinyml` e dos testes.
+
+### 2026-10-19 — O que o TFLM não roda; EfficientDet na sintaxe nativa
+
+Quatro modelos públicos maiores baixados para `test/tflm/models/externos/`
+(5.4.25). Dois deles compilavam e só falhavam ao criar o intérprete; agora são
+erro de compilação: combinação de tipos que o TFLM recusa e saídas de
+detecção sem forma. A mensagem de kernel sem suporte passou a listar todos os
+que faltam. Especificado antes, na seção 8 do `native-syntax.rob`. Testes:
+casos novos no `check_ai_model.py` (101 no total) e no `check_tflite.py`
+(veredito dos 4 externos), e `nativo_efficientdet` na camada 3 (5.4.26).
 
 Nenhuma mudança fora de `src/tinyml` e dos testes.
 

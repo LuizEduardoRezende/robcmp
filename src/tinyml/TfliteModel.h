@@ -57,6 +57,13 @@ struct TfliteModel {
 	// sorted by op name.
 	std::vector<TfliteKernel> kernels;
 
+	// What TFLM would refuse or get wrong although every kernel exists, one
+	// sentence each, without duplicates: operations with a combination of
+	// tensor types TFLM does not run ("FULLY_CONNECTED with float32 input and
+	// int8 weights"), and detection outputs with no shape in the file. Empty
+	// for a model TFLM runs. Reported by the semantic analysis, not by load.
+	std::vector<std::string> incompatibilities;
+
 	// Reads and verifies the file. On failure returns false and sets error to
 	// a message naming the file; a truncated or corrupted file is an error,
 	// never a crash.

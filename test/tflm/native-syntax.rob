@@ -772,6 +772,29 @@ int16 usa_tipo_proprio() {
 //     compila-se o wrapper com outro TFLM_MAX_MODELS e muda-se o limite no
 //     compilador junto.
 
+// b = ai_model("models/externos/mobilebert_classifier.tflite", 200000);
+//     -> erro: o modelo tem operações com combinação de tipos que o TFLM não
+//        executa -- aqui FULLY_CONNECTED com entrada float32 e pesos int8
+//        (quantização de faixa dinâmica, ou "híbrida"). O TFLM só aceita
+//        pesos do mesmo tipo da entrada, ou entrada int8/int16 com pesos
+//        inteiros (int8, int4). As regras são as do próprio TFLM, para
+//        CONV_2D, DEPTHWISE_CONV_2D, TRANSPOSE_CONV e FULLY_CONNECTED.
+//     DECISÃO (2026-10-19): erro na declaração. Sem ele, o modelo compila e
+//     falha ao criar o intérprete, em runtime: ter todos os kernels não basta
+//     (RESULTADOS.md, 5.4.25). Para rodar, o modelo precisa ser convertido
+//     com quantização inteira completa.
+
+// s = ai_model("models/externos/ssd_mobilenet_v1_quant.tflite", 600000);
+//     -> erro: as saídas do TFLite_Detection_PostProcess não têm forma no
+//        arquivo (shape vazio). O TFLM reserva cada tensor pela forma do
+//        arquivo -- não redimensiona em runtime --, e o operador escreve até
+//        max_detections detecções ali: escreveria além do fim do tensor.
+//     DECISÃO (2026-10-19): erro na declaração, nomeando a saída. Num modelo
+//     que o TFLM roda corretamente, a forma do arquivo é a verdadeira, e é
+//     ela que dá o tipo do tensor na sintaxe nativa (m.output0 é float[N]);
+//     não há tamanho "conhecido só em runtime". (Este modelo também cai na
+//     regra anterior: é híbrido, uint8.)
+
 // f = ai_model("models/audio_preprocessor_int8.tflite", 12288);
 //     -> DEPENDE: este modelo exige 9 custom ops (SignalRfft, SignalWindow,
 //        SignalFilterBank, SignalPCAN, SignalEnergy, SignalFftAutoScale,

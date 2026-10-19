@@ -1,0 +1,59 @@
+/*
+ * Detector de objetos EfficientDet-Lite0 int8 na sintaxe nativa
+ * (models/externos/README.md): 10 kernels, entrada uint8 de 320x320x3 com
+ * escala, duas saídas grandes -- scores de 19206 caixas x 90 classes e as
+ * 19206 caixas. O maior modelo rodado em sintaxe nativa até aqui, e o
+ * primeiro com mais de uma saída.
+ *
+ * A entrada é uma imagem sintética, um gradiente, e os elementos conferidos
+ * vêm do mesmo modelo rodado pelo TFLM direto, em C++, com a mesma imagem
+ * (RESULTADOS.md, 5.4.26): o teste confere que a sintaxe nativa chega aos
+ * mesmos valores, não que o detector acha algum objeto.
+ *
+ * Arena medida: 9030960 bytes.
+ *
+ * Devolve 0 se tudo passar, ou o código do teste que falhou.
+ */
+
+detector = ai_model("../models/externos/efficientdet_lite0_int8.tflite", 10485760);
+
+// O mesmo valor de referência, até a sexta casa.
+int8 igual(float valor, float esperado) {
+    d = valor - esperado;
+    if d < -0.000001 or d > 0.000001 {
+        return 0;
+    }
+    return 1;
+}
+
+int8 main() {
+    if detector.output_count != 2 {
+        return 1;
+    }
+
+    // Gradiente em [-1, 1): o elemento i vale (i % 251) / 125 - 1. A visão
+    // padrão converte cada valor para o código uint8 do tensor.
+    i = int32(0);
+    while i < detector.input0.size {
+        detector.input0[i] = float(i % 251) / 125.0 - 1.0;
+        i = i + 1;
+    }
+
+    if detector.invoke() != 0 {
+        return 2;
+    }
+
+    // scores: output0, 19206 x 90
+    if igual(detector.output0[0], 0.007812) == 0 { return 3; }
+    if igual(detector.output0[1], 0.003906) == 0 { return 3; }
+    if igual(detector.output0[90], 0.019531) == 0 { return 3; }
+    if igual(detector.output0[864270], 0.003906) == 0 { return 3; }
+    if igual(detector.output0[1728539], 0.0) == 0 { return 3; }
+
+    // caixas: output1, 19206 x 4
+    if igual(detector.output1[0], 0.114750) == 0 { return 4; }
+    if igual(detector.output1[1], 0.019125) == 0 { return 4; }
+    if igual(detector.output1[2], -1.300504) == 0 { return 4; }
+    if igual(detector.output1[3], -0.688502) == 0 { return 4; }
+    return 0;
+}

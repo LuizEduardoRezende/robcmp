@@ -148,8 +148,24 @@ def checa_erros(robcmp, tmp):
         fonte.write_text(programa(*linhas))
         checa(rotulo, robcmp, fonte, esperado, linha, coluna, cwd=tmp)
 
+    # Modelos que o TFLM não roda embora o wrapper tenha todos os kernels
+    # (seção 8): a combinação de tipos e as saídas de detecção sem forma.
+    externos = Path(__file__).resolve().parent / "models/externos"
+    for nome in ("mobilebert_classifier", "ssd_mobilenet_v1_quant", "efficientdet_lite0_int8"):
+        shutil.copy(externos / f"{nome}.tflite", tmp / f"{nome}.tflite")
+    for rotulo, nome, esperado in [
+        ("quantização híbrida", "mobilebert_classifier",
+         "can not run on TFLite Micro: FULLY_CONNECTED with float32 input and int8 weights. "
+         "Convert the model with full integer quantization."),
+        ("saídas de detecção sem forma", "ssd_mobilenet_v1_quant",
+         "outputs 0, 1, 2, 3 of TFLite_Detection_PostProcess with no shape in the file"),
+    ]:
+        fonte.write_text(programa(f'a = ai_model("{nome}.tflite", 900000);'))
+        checa(rotulo, robcmp, fonte, esperado, 2, 18, cwd=tmp)
+
     aceitos = [
         ("modelo aceito", ['a = ai_model("m.tflite", 3000);']),
+        ("detector int8 que o TFLM roda", ['a = ai_model("efficientdet_lite0_int8.tflite", 900000);']),
         ("arena constante nomeada", ["const ARENA = 3000;", 'a = ai_model("m.tflite", ARENA);']),
         ("arena como expressão", ['a = ai_model("m.tflite", 90 * 1024);']),
     ]

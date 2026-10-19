@@ -51,6 +51,11 @@ static bool Inspect(const char *path) {
 	for (const TfliteKernel &k : model.kernels)
 		printf("    %-7s %-38s %s\n", k.custom ? "custom" : "builtin", k.op.c_str(),
 		       k.wrapperFunction.empty() ? "SEM SUPORTE" : k.wrapperFunction.c_str());
+	if (!model.incompatibilities.empty()) {
+		printf("  o TFLM nao roda (%zu):\n", model.incompatibilities.size());
+		for (const std::string &why : model.incompatibilities)
+			printf("    %s\n", why.c_str());
+	}
 	printf("\n");
 	return true;
 }

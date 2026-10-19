@@ -130,10 +130,34 @@ def checa_modelos(info):
         for op, f in ks.items():
             if f == "SEM SUPORTE":
                 falha(f"{nome}: kernel {op} sem suporte")
+        if "o TFLM nao roda" in r.stdout:
+            falha(f"{nome}: o TFLM não roda: {r.stdout.split('o TFLM nao roda')[1].strip()!r}")
         for linha in esp["linhas"]:
             if linha not in r.stdout:
                 falha(f"{nome}: saída não contém {linha.strip()!r}")
         print(f"  {nome:34} ok")
+
+
+def checa_externos(info):
+    """Os modelos de models/externos que o TFLM recusa, testados criando o
+    intérprete (externos/README.md), precisam ser apontados pela análise; os
+    que ele roda, não."""
+    print("== modelos externos: o que o TFLM roda")
+    externos = MODELOS / "externos"
+    esperado = {
+        "efficientdet_lite0_int8.tflite": [],
+        "mobilebert_classifier.tflite": ["FULLY_CONNECTED with float32 input and int8 weights"],
+        "ssd_mobilenet_v1_quant.tflite": ["CONV_2D with uint8 input and uint8 weights",
+                                          "outputs 0, 1, 2, 3 of TFLite_Detection_PostProcess"],
+        "yamnet.tflite": [],  # recusado pelos kernels, não pelos tipos
+    }
+    for nome, motivos in esperado.items():
+        r = roda(info, externos / nome)
+        saida = r.stdout.split("o TFLM nao roda")[1] if "o TFLM nao roda" in r.stdout else ""
+        if r.returncode != 0 or any(m not in saida for m in motivos) or (not motivos and saida):
+            falha(f"{nome}: esperado {motivos!r}, obtido {saida.strip()!r}")
+        else:
+            print(f"  {nome:34} ok")
 
 
 def checa_erro(asan, arquivo, rotulo, esperado=None):
@@ -196,6 +220,7 @@ def main():
     info, asan = sys.argv[1], sys.argv[2]
     checa_tabela(info)
     checa_modelos(info)
+    checa_externos(info)
     checa_robustez(asan)
     if falhas:
         print(f"{len(falhas)} falha(s)")

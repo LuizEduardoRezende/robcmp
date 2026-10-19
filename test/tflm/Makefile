@@ -128,7 +128,7 @@ $(OUT)/tcc_micro_speech.rob: rob/tcc_micro_speech.rob models/micro_speech_quanti
 # Os modelos são citados por caminho relativo ao .rob gerado, em out/.
 NATIVE_TESTS = nativo_hello_world_float nativo_hello_world_int8 nativo_spam \
                nativo_person_detect nativo_micro_speech nativo_simple_add \
-               nativo_especificacao
+               nativo_efficientdet nativo_especificacao
 
 $(OUT)/nativo_hello_world_float.rob: rob/nativo_hello_world.rob models/hello_world_float.tflite | $(OUT)
 	sed 's/@modelo@/hello_world_float/' $< > $@
@@ -141,6 +141,16 @@ $(OUT)/nativo_spam.rob: rob/nativo_spam.rob models/spam.tflite | $(OUT)
 
 $(OUT)/nativo_simple_add.rob: rob/nativo_simple_add.rob models/simple_add_model.tflite | $(OUT)
 	cp $< $@
+
+# O maior modelo da camada: ~11 s de inferência no x86 com os kernels de
+# referência do TFLM.
+$(OUT)/nativo_efficientdet.rob: rob/nativo_efficientdet.rob models/externos/efficientdet_lite0_int8.tflite | $(OUT)
+	cp $< $@
+
+# Recalcula os valores que nativo_efficientdet confere, pelo TFLM direto.
+ref_efficientdet: ref_efficientdet.cpp | $(TFLM_LIB) $(DOWNLOADS)
+	$(WCXX) $(WRAPPER_FLAGS) $(WRAPPER_INCLUDES) $< $(TFLM_LIB) -o $(OUT)/ref_efficientdet
+	@$(OUT)/ref_efficientdet models/externos/efficientdet_lite0_int8.tflite 2>/dev/null
 
 # A especificação inteira, compilada, ligada ao wrapper e executada: toda
 # função que o compilador chama precisa existir no wrapper. Os modelos são
@@ -202,4 +212,4 @@ check: validate rob nativo abi tflite ai_model
 clean:
 	rm -rf tflite_info $(OUT)
 
-.PHONY: all analyze validate rob nativo abi tflite ai_model check clean
+.PHONY: all analyze validate rob nativo abi tflite ai_model check clean ref_efficientdet

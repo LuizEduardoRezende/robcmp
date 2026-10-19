@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <cctype>
 #include <map>
+#include <set>
 
 /*
  * Kernel -> wrapper function. One entry per tflm_add_* function declared in
@@ -243,6 +245,90 @@ static bool readTensor(const tflite::SubGraph *sg, int32_t index, const char *ro
 	return true;
 }
 
+static std::string typeName(tflite::TensorType t) {
+	std::string n = tflite::EnumNameTensorType(t);
+	for (char &c : n)
+		c = (char)std::tolower((unsigned char)c);
+	return n.empty() ? "type " + std::to_string((int)t) : n;
+}
+
+/*
+ * The combinations of input and weight types that TFLM runs, as its kernels
+ * check them in Prepare (kernels/conv_common.cc, depthwise_conv_common.cc,
+ * transpose_conv.cc, fully_connected.cc). Float input with integer weights --
+ * the "hybrid" or "dynamic range" quantization of TFLite -- is refused, and
+ * the model fails when the interpreter is created.
+ */
+static bool tflmRunsTypes(tflite::BuiltinOperator op, tflite::TensorType in,
+	tflite::TensorType w) {
+	using namespace tflite;
+	bool intWeights = w == TensorType_INT8 || w == TensorType_INT4;
+	switch (op) {
+		case BuiltinOperator_CONV_2D:
+			return (in == TensorType_FLOAT32 && w == TensorType_FLOAT32) ||
+				(in == TensorType_INT16 && w == TensorType_INT8) ||
+				(in == TensorType_INT8 && intWeights);
+		case BuiltinOperator_DEPTHWISE_CONV_2D:
+			return in == w || (in == TensorType_INT8 && intWeights) ||
+				(in == TensorType_INT16 && w == TensorType_INT8);
+		case BuiltinOperator_TRANSPOSE_CONV:
+			return in == w || (in == TensorType_INT16 && w == TensorType_INT8);
+		case BuiltinOperator_FULLY_CONNECTED:
+			return !((in == TensorType_FLOAT32 && w != TensorType_FLOAT32) ||
+				(in == TensorType_INT8 && !intWeights) ||
+				(in == TensorType_INT16 && w != TensorType_INT8));
+		default:
+			return true;
+	}
+}
+
+static const tflite::Tensor *operand(const tflite::SubGraph *sg,
+	const flatbuffers::Vector<int32_t> *list, unsigned position) {
+	if (!list || position >= list->size() || !sg->tensors())
+		return nullptr;
+	int32_t index = list->Get(position);
+	if (index < 0 || (uint32_t)index >= sg->tensors()->size())
+		return nullptr;
+	return sg->tensors()->Get(index);
+}
+
+// An operation TFLM refuses for its tensor types, or "".
+static std::string typeIncompatibility(const tflite::SubGraph *sg, const tflite::Operator *op,
+	tflite::BuiltinOperator code) {
+	// TRANSPOSE_CONV takes (output shape, weights, input); the others take
+	// (input, weights).
+	unsigned inputPosition = code == tflite::BuiltinOperator_TRANSPOSE_CONV ? 2 : 0;
+	const tflite::Tensor *in = operand(sg, op->inputs(), inputPosition);
+	const tflite::Tensor *w = operand(sg, op->inputs(), 1);
+	if (!in || !w || tflmRunsTypes(code, in->type(), w->type()))
+		return "";
+	return std::string(tflite::EnumNameBuiltinOperator(code)) + " with " +
+		typeName(in->type()) + " input and " + typeName(w->type()) + " weights";
+}
+
+/*
+ * TFLM gives each tensor the size of its shape in the file: it does not resize
+ * tensors at run time. TFLite_Detection_PostProcess writes up to
+ * max_detections detections into its outputs, so outputs with no shape -- as
+ * models converted for TFLite, which resizes them, have -- would be written
+ * past their end.
+ */
+static std::string shapeIncompatibility(const tflite::SubGraph *sg, const tflite::Operator *op,
+	const std::string &customCode) {
+	if (customCode != "TFLite_Detection_PostProcess" || !op->outputs())
+		return "";
+	std::string unshaped;
+	for (unsigned i = 0; i < op->outputs()->size(); i++) {
+		const tflite::Tensor *t = operand(sg, op->outputs(), i);
+		if (t && (!t->shape() || t->shape()->size() == 0))
+			unshaped += (unshaped.empty() ? "" : ", ") + std::to_string(i);
+	}
+	if (unshaped.empty())
+		return "";
+	return "outputs " + unshaped + " of TFLite_Detection_PostProcess with no shape in the "
+		"file (TFLM sizes tensors by the file, and the operator would write past their end)";
+}
+
 static std::string wrapperFunctionFor(tflite::BuiltinOperator op) {
 	for (const BuiltinEntry &e : builtinKernels)
 		if (e.op == op)
@@ -319,6 +405,7 @@ bool TfliteModel::load(const std::string &path, TfliteModel &model, std::string 
 	// registration -- and must not be reported as unsupported.
 	const auto *codes = m->operator_codes();
 	std::map<std::string, TfliteKernel> kernels;
+	std::set<std::string> incompatibilities;
 	for (const tflite::SubGraph *sg : *m->subgraphs()) {
 		if (!sg->operators())
 			continue;
@@ -341,16 +428,23 @@ bool TfliteModel::load(const std::string &path, TfliteModel &model, std::string 
 				k.op = oc->custom_code()->str();
 				k.custom = true;
 				k.wrapperFunction = wrapperFunctionFor(k.op);
+				std::string why = shapeIncompatibility(sg, op, k.op);
+				if (!why.empty())
+					incompatibilities.insert(why);
 			} else {
 				const char *name = tflite::EnumNameBuiltinOperator(code);
 				k.op = (name && *name) ? name : "BUILTIN_" + std::to_string((int)code);
 				k.wrapperFunction = wrapperFunctionFor(code);
+				std::string why = typeIncompatibility(sg, op, code);
+				if (!why.empty())
+					incompatibilities.insert(why);
 			}
 			kernels.emplace(k.op, k);
 		}
 	}
 	for (auto &kv : kernels)
 		model.kernels.push_back(kv.second);
+	model.incompatibilities.assign(incompatibilities.begin(), incompatibilities.end());
 
 	return true;
 }

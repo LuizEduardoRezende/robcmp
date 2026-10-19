@@ -2,8 +2,10 @@
 
 Modelos públicos maiores que os de validação, baixados em 2026-10-19 para
 levantar quantos tipos de kernel modelos reais usam (RESULTADOS.md, 5.4.25) e
-para testes futuros. Não fazem parte da validação automática (`make -C
-test/tflm check`): o `check_tflite.py` só confere os modelos de `models/`.
+para testes. Não são modelos de validação (o `check_tflite.py` exige fatos
+completos só dos de `models/`), mas o `make -C test/tflm check` os usa: o
+EfficientDet roda na sintaxe nativa (`rob/nativo_efficientdet.rob`), e os
+quatro conferem as verificações de compilação do que o TFLM não roda.
 
 Nenhum cabe no STM32F407 (512 KB de flash): servem para testes no x86_64.
 
@@ -23,13 +25,16 @@ detector SSD.
 **Saídas do SSD sem tamanho no arquivo.** As 4 saídas vêm do custom op
 `TFLite_Detection_PostProcess`, que só define o tamanho delas em execução. No
 `.tflite` elas não têm forma (`shape=[]`), e o compilador as tipa como um
-elemento só. Este modelo não roda no TFLM de qualquer jeito, mas outros
-detectores com o mesmo pós-processamento rodam, e usá-los na sintaxe nativa
-exige tratar saídas de tamanho desconhecido (RESULTADOS.md, 5.4.25).
+elemento só. O TFLM não redimensiona tensores em execução: reserva cada um
+pela forma do arquivo, e o operador escreveria além do fim. O compilador
+recusa o modelo por isso (e por ser híbrido). Um detector com o mesmo
+pós-processamento convertido para o TFLM traz as formas no arquivo.
 
-**YAMNet.** O compilador recusa o modelo, nomeando os dois kernels que o TFLM
-não implementa. O MobileBERT e o SSD, ao contrário, passam pela compilação e
-só falham ao criar o intérprete, em execução.
+**O que o compilador recusa.** YAMNet: os dois kernels que o TFLM não
+implementa. MobileBERT: `FULLY_CONNECTED` com entrada float32 e pesos int8.
+SSD: `CONV_2D` com entrada e pesos uint8, e as saídas sem forma. Antes dessas
+verificações, o MobileBERT e o SSD compilavam e só falhavam ao criar o
+intérprete, em execução.
 
 ## Origem
 

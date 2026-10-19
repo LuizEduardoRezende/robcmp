@@ -135,7 +135,9 @@ AiModel *AiModel::fromCall(FunctionCall& fc) {
 	// The kernels are registered by the code generation, one call for each:
 	// a kernel the wrapper can not register would only fail at run time, when
 	// the interpreter meets the operator (specification, section 8).
-	// All of them in one message: the compiler reports one error per place.
+	// Having every kernel is not enough: TFLM also refuses some combinations
+	// of tensor types (specification, section 8). All the reasons go in one
+	// message, since the compiler reports one error per place.
 	string missing;
 	unsigned count = 0;
 	for (const TfliteKernel& k : node->model.kernels) {
@@ -144,10 +146,27 @@ AiModel *AiModel::fromCall(FunctionCall& fc) {
 			count++;
 		}
 	}
-	bool supported = count == 0;
-	if (!supported)
-		yyerrorcpp(string_format("model '%s' uses %s the TFLM wrapper does not support: %s.",
-			node->model.path.c_str(), count == 1 ? "a kernel" : "kernels", missing.c_str()), path);
+	vector<string> reasons;
+	if (count > 0)
+		reasons.push_back(string_format("uses %s the TFLM wrapper does not support: %s",
+			count == 1 ? "a kernel" : "kernels", missing.c_str()));
+	const vector<string>& incompatible = node->model.incompatibilities;
+	if (!incompatible.empty()) {
+		string what;
+		for (const string& why : incompatible)
+			what += (what.empty() ? "" : "; ") + why;
+		reasons.push_back("can not run on TFLite Micro: " + what +
+			(any_of(incompatible.begin(), incompatible.end(), [](const string& w) {
+				return w.find(" weights") != string::npos; }) ?
+				". Convert the model with full integer quantization" : ""));
+	}
+	bool supported = reasons.empty();
+	if (!supported) {
+		string message = "model '" + node->model.path + "' ";
+		for (size_t i = 0; i < reasons.size(); i++)
+			message += (i > 0 ? ", and " : "") + reasons[i];
+		yyerrorcpp(message + ".", path);
+	}
 	node->valid = supported;
 	if (supported)
 		models.push_back({node, declarations[&fc]});
