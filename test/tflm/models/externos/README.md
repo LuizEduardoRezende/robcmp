@@ -7,11 +7,14 @@ test/tflm check`): o `check_tflite.py` só confere os modelos de `models/`.
 
 Nenhum cabe no STM32F407 (512 KB de flash): servem para testes no x86_64.
 
+"Roda no TFLM" foi testado criando o intérprete pelo wrapper e chamando
+`invoke()`, no x86_64: ter todos os kernels não basta.
+
 | Arquivo | Modelo | Tamanho | Entradas | Saídas | Kernels | Roda no TFLM |
 |---|---|---|---|---|---|---|
-| `mobilebert_classifier.tflite` | classificador de texto do MediaPipe, baseado no MobileBERT (Transformer) | 25,7 MB | 3 × int32[128] | float32[2] | 14 | sim |
-| `efficientdet_lite0_int8.tflite` | detector de objetos EfficientDet-Lite0, int8 | 4,6 MB | uint8[320×320×3] | float32[19206×90], float32[19206×4] | 10 | sim |
-| `ssd_mobilenet_v1_quant.tflite` | detector de objetos SSD MobileNet v1 (COCO), quantizado, com pós-processamento | 4,2 MB | uint8[300×300×3] | 4 saídas: caixas, classes, scores, contagem | 6 (1 custom) | sim, ver abaixo |
+| `mobilebert_classifier.tflite` | classificador de texto do MediaPipe, baseado no MobileBERT (Transformer) | 25,7 MB | 3 × int32[128] | float32[2] | 14 | **não**: quantização de faixa dinâmica (entrada float, pesos int8 no `FULLY_CONNECTED`) |
+| `efficientdet_lite0_int8.tflite` | detector de objetos EfficientDet-Lite0, int8 | 4,6 MB | uint8[320×320×3] | float32[19206×90], float32[19206×4] | 10 | **sim** |
+| `ssd_mobilenet_v1_quant.tflite` | detector de objetos SSD MobileNet v1 (COCO), quantizado, com pós-processamento | 4,2 MB | uint8[300×300×3] | 4 saídas: caixas, classes, scores, contagem | 6 (1 custom) | **não**: modelo híbrido, quantização uint8 antiga |
 | `yamnet.tflite` | classificador de sons YAMNet (521 classes) | 4,1 MB | float32[15600] (0,975 s a 16 kHz) | float32[521] | 16 | **não**: `RFFT2D` e `COMPLEX_ABS` |
 
 `ssd_mobilenet_v1_labelmap.txt` é a lista das classes do COCO que acompanha o
@@ -20,11 +23,13 @@ detector SSD.
 **Saídas do SSD sem tamanho no arquivo.** As 4 saídas vêm do custom op
 `TFLite_Detection_PostProcess`, que só define o tamanho delas em execução. No
 `.tflite` elas não têm forma (`shape=[]`), e o compilador as tipa como um
-elemento só. Usar esse modelo na sintaxe nativa exige tratar saídas de
-tamanho desconhecido (RESULTADOS.md, 5.4.25).
+elemento só. Este modelo não roda no TFLM de qualquer jeito, mas outros
+detectores com o mesmo pós-processamento rodam, e usá-los na sintaxe nativa
+exige tratar saídas de tamanho desconhecido (RESULTADOS.md, 5.4.25).
 
 **YAMNet.** O compilador recusa o modelo, nomeando os dois kernels que o TFLM
-não implementa.
+não implementa. O MobileBERT e o SSD, ao contrário, passam pela compilação e
+só falham ao criar o intérprete, em execução.
 
 ## Origem
 

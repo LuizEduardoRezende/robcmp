@@ -1379,18 +1379,18 @@ dessa família.
 **Quatro modelos públicos maiores**, baixados para `test/tflm/models/externos/`
 (README com origem e SHA-256):
 
-| Modelo | Tamanho | Kernels | Observação |
+| Modelo | Tamanho | Kernels | Roda no TFLM (testado) |
 |---|---|---|---|
-| MobileBERT (classificador de texto, MediaPipe) | 25,7 MB | 14 | Transformer; 3 entradas int32[128] |
-| YAMNet (sons) | 4,1 MB | 16 | 2 sem suporte no TFLM |
-| EfficientDet-Lite0 int8 | 4,6 MB | 10 | |
-| SSD MobileNet v1 quantizado | 4,2 MB | 6 | 1 custom op, 4 saídas |
+| MobileBERT (classificador de texto, MediaPipe) | 25,7 MB | 14 | não: quantização de faixa dinâmica |
+| YAMNet (sons) | 4,1 MB | 16 | não: 2 kernels sem implementação |
+| EfficientDet-Lite0 int8 | 4,6 MB | 10 | sim |
+| SSD MobileNet v1 quantizado (2018) | 4,2 MB | 6 | não: modelo híbrido uint8 |
 
 Máximo encontrado em todas as fontes: **18**. Nem o Transformer passa de 14:
 redes repetem muitas vezes poucos tipos de operação. Com 32 kernels por modelo
 sobraria quase o dobro do maior caso; com 64, 3,5 vezes.
 
-Dois fatos laterais:
+Três fatos laterais:
 
 - **O YAMNet não roda no TFLM.** Usa `RFFT2D` e `COMPLEX_ABS`, builtins que o
   TFLM não implementa (o pipeline de áudio do TFLM usa os custom ops `Signal*`).
@@ -1403,7 +1403,17 @@ Dois fatos laterais:
   `d.output0` seria lido com o tamanho errado (o wrapper recusa a cópia) e
   `d.output0[3]` seria erro de índice falso. Pendente: tratar saída sem forma
   como tamanho desconhecido — recusar a leitura inteira e conferir o índice
-  só em execução. Nenhum modelo de validação tem saída assim.
+  só em execução. Nenhum modelo de validação tem saída assim, e este SSD não
+  roda no TFLM de qualquer jeito (abaixo); outros detectores com o mesmo
+  pós-processamento rodam.
+- **Ter todos os kernels não basta.** Testado criando o intérprete: o
+  MobileBERT falha no `FULLY_CONNECTED` (`Input type: FLOAT32 with filter type:
+  INT8 not supported`, quantização de faixa dinâmica) e o SSD de 2018 no
+  `CONV_2D` (`Hybrid models are not supported on TFLite Micro`). Os dois
+  passam pela compilação — o compilador só confere se cada kernel existe — e
+  falham em execução. Pendente: reconhecer na análise do `.tflite` operações
+  híbridas (entrada float com pesos inteiros) e recusá-las na compilação. Só o
+  EfficientDet-Lite0, dos quatro, cria e roda (`invoke()` devolve 0).
 
 **Serve para:** a 5.1 e a decisão do resolver, como dado empírico; e a 5.2,
 pelos dois casos de modelo que a análise estática precisa tratar.
