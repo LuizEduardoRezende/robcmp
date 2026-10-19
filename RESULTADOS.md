@@ -1982,6 +1982,16 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
   especificação; recusado com erro próprio. Duas instâncias do tipo dividiriam
   o modelo e a arena — decide-se com o armazenamento, na 3.6.
 
+Decidida em 2026-10-19: o resolver de cada instância continua dimensionado
+para 128 kernels (`TFLM_MAX_OPS`), acima dos 119 que o wrapper registra — um
+modelo pode usar qualquer combinação deles, sem limite. Medido no Cortex-M4
+(arm-none-eabi-g++ 12.3, `sizeof`): a instância custa 4840 bytes com 128, 2536
+com 64, 1384 com 32 e 808 com 16; as 4 instâncias, 18,9 KB da RAM do STM32F407.
+O resolver é 95% desse custo. Reduzir para 32 devolveria ~13,5 KB, e o maior
+modelo de validação usa 18 kernels, mas criaria uma restrição por modelo só por
+memória — contrária ao objetivo de suportar qualquer modelo. Reconsiderar só se
+a RAM faltar nas medições no STM32.
+
 Decidida em 2026-10-19: limite de modelos como erro para globais e aviso com
 locais (5.4.23), com o número no compilador igual ao `TFLM_MAX_MODELS`.
 
