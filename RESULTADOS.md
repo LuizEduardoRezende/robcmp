@@ -756,7 +756,7 @@ if 1 != 1 or 2 != 2 { ... }      Error: signal 11
 `BinaryOp::logical_operator` trata o valor do primeiro lado como instrução e
 pede o bloco dela (`getParent`); com os dois lados constantes, o LLVM já dobrou
 a comparação numa constante, que não tem bloco. Contornado nos testes com um
-`if` por condição. Não corrigido: fora do escopo de TinyML.
+`if` por condição. Não corrigido: fora do escopo de TinyML (decisão de 2026-10-19).
 
 **Serve para:** a 5.2, como limitação da base registrada — e como exemplo de
 que constantes de compilação vindas do `.tflite` exercitam caminhos do
@@ -1813,7 +1813,7 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 | 3.5 | Visão `.raw`: verificação de tipo e tamanho em tempo de compilação, inclusive `.raw[k]` | **feito** — tipo na 3.4; tamanho e índice nas duas visões; leitura para variável existente |
 | 3.6 | Geração de código: modelo e arena como globais alinhados a 16 (5.2.8), um `tflm_add_*` por kernel detectado, e as chamadas da API `tflm_` (5.1.7) | **feito** — os 5 modelos rodam, valores idênticos ao modo biblioteca (5.4.20); conversão float ↔ quantizado mantida no wrapper (decisão) |
 | 3.7 | Erros de compilação da seção 8 da especificação: caminho não literal, arena ausente, arquivo inválido, tamanho incompatível, tensor inexistente (como `input1` num modelo de uma entrada), índice de elemento constante fora do tensor, escrita em `.scale`, `.raw` com tipo ou tamanho errado, kernel sem suporte | **feito** — kernel sem suporte na 3.6 |
-| 3.8 | `signext` em `int8`/`int16` com sinal, em parâmetros e retornos (5.2.7) |
+| 3.8 | `signext` em `int8`/`int16` com sinal, em parâmetros e retornos (5.2.7) | **não será feito** — defeito da base, contornado por regra no wrapper (decisão de 2026-10-19) |
 | 3.9 | Fazer `test/tflm/native-syntax.rob` compilar e rodar, com o mesmo resultado do modo biblioteca |
 
 A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
@@ -1930,6 +1930,14 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
   especificação; recusado com erro próprio. Duas instâncias do tipo dividiriam
   o modelo e a arena — decide-se com o armazenamento, na 3.6.
 
+Decidida em 2026-10-19: defeitos da RL base encontrados durante o TinyML são
+registrados e contornados, não corrigidos — a falta de `signext` (5.2.7), o
+`or` entre comparações constantes (5.2.19) e o literal `-128` (5.2.20). A
+extensão de TinyML não depende de nenhum deles: o wrapper não tem parâmetro
+`int8`/`int16` escalar, regra agora escrita no `CLAUDE.md`. Candidatos a
+reportar ao upstream. A única mudança feita no núcleo segue sendo a do
+`__globals_init` (5.2.21).
+
 Decididas na 3.6 (2026-10-18): o modelo é criado uma vez, também quando
 declarado numa função que roda de novo; `.raw[k]` por função própria no
 wrapper, com o código em `int32`; a conversão float ↔ quantizado fica no
@@ -1960,7 +1968,8 @@ ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
 ## Estado do repositório
 
 Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento:
-3.0, 3.1 e 3.3 a 3.7 concluídas, 3.2 dispensada; faltam 3.8 e 3.9. A sintaxe nativa compila e roda os cinco
+3.0, 3.1 e 3.3 a 3.7 concluídas, 3.2 dispensada, 3.8 descartada (defeito da
+base); falta a 3.9 e o limite de modelos. A sintaxe nativa compila e roda os cinco
 modelos de validação. `make -C test/tflm check` passa por inteiro, incluindo os
 alvos `nativo` e `ai_model`; `make -C test/achados` reproduz os achados 5.2.7,
 5.2.8 e 5.2.11.
