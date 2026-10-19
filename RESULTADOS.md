@@ -2047,7 +2047,7 @@ A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
 
 ---
 
-### ⬜ Etapa 4 — Build unificado, seção 5.3
+### ⬜ Etapa 4 — Build unificado, seção 5.3 (PRÓXIMA)
 
 | # | Tarefa |
 |---|---|
@@ -2055,6 +2055,35 @@ A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
 | 4.2 | `stm32f407.rob` — periféricos implementando `intfs.mcu`, incluindo o registrador DWT |
 | 4.3 | Estender `platformio/platform/builder/main.py` |
 | 4.4 | Distribuir `.a` pré-compiladas: x86_64 e ARM Cortex-M4 |
+
+**Notas para começar** (levantadas em 2026-10-19):
+
+- **A placa ainda não está disponível:** o autor a pega com o orientador na
+  semana de 2026-10-26. Até lá, só o que se verifica compilando e ligando:
+  4.1, 4.2, o build ARM do 4.4 e o 4.3.
+- **O robcmp não tem alvo Cortex-M4.** Os alvos estão em `supportedTargets`
+  (`src/BackLLVM.cpp`): native, AVR, `stm32f1` (`thumbv7m-none-eabi`,
+  cortex-m3) e esp32. Dois caminhos, a decidir com o autor antes de mexer:
+  (a) usar `-a stm32f1` — código de Cortex-M3 roda no M4; as contas `float` do
+  programa RL saem em software, e o TFLM tem de ser compilado com convenção de
+  chamada compatível (float ABI soft/softfp); nenhuma mudança no núcleo.
+  (b) acrescentar um alvo `stm32f407` à tabela — usa a FPU, mas é mudança no
+  núcleo (uma entrada na tabela e no enum de `BackLLVM.h`), contra a decisão
+  de 2026-10-19 de evitar mexer no núcleo sem decisão explícita. Recomendado
+  começar por (a). Investigar antes como o `-a` se liga ao `lib/stm32f1.rob`,
+  ao `lib/stm32f1.ld` e ao `main.py`.
+- **Compilador ARM disponível:** `arm-none-eabi-g++` 12.3.1 do PlatformIO, em
+  `~/.platformio/packages/toolchain-gccarmnoneeabi*/bin`. Já usado para medir
+  o tamanho das instâncias do wrapper no Cortex-M4 (ver as decisões).
+- **Memória do STM32F407VET6:** 512 KB de flash; 192 KB de RAM, sendo 128 KB
+  de SRAM e 64 KB de CCM (só a CPU acessa a CCM). A arena do person_detect
+  (~85 KB) mais as 4 instâncias do wrapper (~19 KB) já passam da metade.
+- **A confirmar no alvo:** a 5.4.21 (no modo biblioteca o person_detect põe
+  ~315 KB em `.data` e não cabe na RAM; na sintaxe nativa cabe) e se a arena
+  medida no x86 vale no Cortex-M (fase 2 da arena).
+- **Só o hardware fecha:** a geração de código em ARM rodando de verdade —
+  alinhamento a 16, handles de 64 bits em pares de registradores, retornos
+  `int8`. Hoje verificada só compilando para `stm32f1`.
 
 ---
 
@@ -2074,13 +2103,22 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
 
 ## Decisões ainda em aberto
 
+- Visão `.raw` para tensores `uint8` (achada com o EfficientDet, cuja entrada é
+  uint8, como imagens de câmera): hoje `.raw` só existe para int8 e int16, e a
+  entrada uint8 passa pela visão padrão — sem perda (o caminho código → float →
+  código volta ao mesmo código), mas com uma conversão por elemento. Seriam
+  funções `tflm_set/get_raw_uint8` no wrapper e uma regra a mais em
+  `ModelMember`. Pequeno; sem caso de uso no STM32 ainda.
+
 
 - Arena automática (fase 2): o caminho é medir na compilação, rodando o TFLM do
   host (`test/achados/arena`). Falta saber se o valor do host cobre o do
   Cortex-M — decide-se com as medições no STM32 da Etapa 4.
 - Modelo como campo de tipo (`type robo { m = ai_model(...); }`): fora da
   especificação; recusado com erro próprio. Duas instâncias do tipo dividiriam
-  o modelo e a arena — decide-se com o armazenamento, na 3.6.
+  o modelo e a arena. A geração de código (3.6) criou um modelo por
+  declaração, com handle e arena globais; um por instância exigiria guardá-los
+  no tipo. Sem caso de uso até agora.
 
 Decidida em 2026-10-19: o resolver de cada instância continua dimensionado
 para 128 kernels (`TFLM_MAX_OPS`), acima dos 119 que o wrapper registra — um
@@ -2135,12 +2173,22 @@ ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
 
 ## Estado do repositório
 
-Branch `mestrado/tflm-native`. Etapas 1, 2 e 3 commitadas.
-Etapa 3 concluída: 3.2 dispensada, 3.8 descartada (defeito da base). Próxima:
-Etapa 4, o STM32F407. A sintaxe nativa compila e roda os cinco
-modelos de validação e o de duas entradas. `make -C test/tflm check` passa por inteiro, incluindo os
-alvos `nativo` e `ai_model`; `make -C test/achados` reproduz os achados 5.2.7,
-5.2.8 e 5.2.11.
+Branch `mestrado/tflm-native`. Etapas 1, 2 e 3 commitadas; a 3 concluída em
+2026-10-19 (3.2 dispensada, 3.8 descartada por ser defeito da base). Próxima:
+Etapa 4, o STM32F407 — ver as notas para começar, no roteiro.
+
+A sintaxe nativa compila e roda os cinco modelos de validação, o de duas
+entradas (`simple_add_model`) e o EfficientDet-Lite0, com saídas idênticas às
+do modo biblioteca e do TFLM puro. O compilador recusa, na declaração, modelos
+com kernel sem suporte, com tipos que o TFLM não roda e com saídas de
+detecção sem forma, e confere o limite de modelos. `make -C test/tflm check`
+passa por inteiro: camadas 1 a 3, assinaturas, análise do `.tflite` e 101
+casos de compilação. `make -C test/achados` reproduz os achados 5.2.7, 5.2.8 e
+5.2.11; `make -C test/tflm/demo` é a demonstração da orientação.
+
+Toda a extensão está em `src/tinyml`; fora dela, a única mudança no núcleo é a
+linha do `__globals_init` (5.2.21). Os defeitos da base encontrados estão
+anotados e não serão corrigidos (decisão de 2026-10-19).
 
 Os dados de teste `test/tflm/data/*.bin` estão versionados desde 2026-10-18: o
 `.gitignore` mantém `*.bin` (firmware gerado em `hack/stm32` e pelo PlatformIO)

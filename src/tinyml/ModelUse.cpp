@@ -197,7 +197,7 @@ Node *ModelUse::scalar(Scalar& n, PropagateTypes& pt) {
 		AiModel::markDeclaration(*call, dynamic_cast<Program*>(n.getScope()) != NULL);
 
 		// Two instances of the type would share the model and its arena; how
-		// to store them is decided with the code generation (task 3.6).
+		// to store them is an open decision (RESULTADOS.md).
 		// The declaration goes on, so that its uses report nothing more.
 		if (dynamic_cast<UserType*>(n.getScope())) {
 			yyerrorcpp(string_format("A model can not be a field of a type: declare "

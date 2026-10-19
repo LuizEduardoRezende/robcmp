@@ -1,161 +1,75 @@
-# TensorFlow Lite Micro Wrapper - Configuração Otimizada
+# Wrapper TFLM
 
-Este wrapper para TensorFlow Lite Micro agora suporta **compilação condicional** para reduzir drasticamente o tamanho do executável final, incluindo apenas os kernels necessários.
+Camada C entre a Robotics Language (RL) e o TensorFlow Lite Micro (TFLM). As
+funções têm ligação C (`extern "C"`) e são chamadas de dois jeitos:
 
-## 🎯 Problema Resolvido
+- **modo biblioteca:** o programa RL faz `use ai.tflm;` e chama as funções
+  pelo nome; as declarações estão em `lib/ai/tflm.rob`;
+- **sintaxe nativa:** o programa declara `m = ai_model("modelo.tflite", arena)`
+  e o compilador emite as chamadas (`src/tinyml/WrapperCall.cpp`), com as
+  mesmas assinaturas do modo biblioteca.
 
-**ANTES**: Executável de 512KB (incluía todos os kernels)
-**DEPOIS**: 90-200KB dependendo da configuração (apenas kernels selecionados)
+| Arquivo | Conteúdo |
+|---|---|
+| `tflm_wrapper.h` | a API, com as convenções de assinatura |
+| `tflm_wrapper.cpp` | a implementação |
 
-## 📁 Arquivos Principais
+A antiga configuração de kernels por `kernel_config.h` (TCC) não existe mais:
+cada kernel é uma função própria, e o linker só traz os que o programa chama.
 
-- `tflm_wrapper.cpp` - Wrapper principal com macros condicionais
-- `kernel_config.h` - Configuração de kernels (ESTE É O ARQUIVO PRINCIPAL)
+## A API
 
-## 🚀 Como Usar
+| Grupo | Funções | Na sintaxe nativa |
+|---|---|---|
+| Ciclo de vida | `tflm_create_resolver`, `tflm_create_model`, `tflm_free_model` | `m = ai_model(...)`; não há destruição |
+| Kernels | `tflm_add_<kernel>`, um por kernel: 119, entre builtins e custom ops | emitidos pelo compilador, um por kernel do `.tflite` |
+| Execução | `tflm_invoke` | `m.invoke()` |
+| Tensores | `tflm_input`, `tflm_output`, `tflm_input_count`, `tflm_output_count`, `tflm_tensor_size` | `m.input0`, `m.output1`; contagens e tamanhos são constantes de compilação |
+| Valores reais | `tflm_set_value(s)`, `tflm_get_value(s)`, com conversão float ↔ quantizado | `m.input0 = v`, `x = m.output0[k]` |
+| Códigos crus | `tflm_set_raw_int8/int16`, `tflm_get_raw_int8/int16`, `tflm_set_raw_value`, `tflm_get_raw_value` | `m.input0.raw = c`, `c = m.output0.raw[k]` |
+| Utilitário | `tflm_print_float` | — |
 
-### 1. **Configuração Rápida (Recomendado)**
+O ciclo de vida tem três fases: criar o resolver, registrar cada kernel que o
+modelo usa e criar o modelo sobre o resolver. É a fase do meio que permite ao
+linker descartar os kernels não usados (`-ffunction-sections` com
+`--gc-sections`).
 
-Edite `kernel_config.h` e descomente UMA das opções:
+## Convenções
 
-```cpp
-// Escolha UMA das opções abaixo:
+- **Handles, índices e contagens são `uint64_t`**, o `uint64` da RL em
+  qualquer alvo. Nunca `uintptr_t` nem `size_t`, que têm 32 bits no Cortex-M.
+- **Para cada vetor, a RL injeta um `int32_t` com o número de elementos**,
+  depois de todos os parâmetros, na ordem dos vetores. Esses parâmetros não
+  aparecem na declaração `.rob`.
+- **Nenhum parâmetro escalar `int8_t`/`int16_t`.** O robcmp não marca
+  `signext`, e uma função compilada pelo clang lê −1 como 255
+  (`make -s -C test/tflm/demo sinal`). Use `int32_t`, como `tflm_set_raw_value`.
+- **Retorno `int8_t`:** 0 é sucesso, −1 é falha.
+- **Sem heap.** Os intérpretes vivem numa tabela estática e o TFLM aloca
+  dentro da arena do modelo.
 
-// #define KERNEL_CONFIG_BASIC           // ~90-120KB (mínimo)
-#define KERNEL_CONFIG_NEURAL_NETWORK     // ~150-200KB (padrão)
-// #define KERNEL_CONFIG_FULL            // ~512KB (todos os kernels)
-```
+`make -C test/tflm abi` confere, em x86_64 e Cortex-M, que cada função tem a
+mesma assinatura em `lib/ai/tflm.rob` e em `tflm_wrapper.h`.
 
-### 2. **Compilação com Makefile**
+## Parâmetros de compilação
 
-```bash
-# Usando configuração padrão (NEURAL_NETWORK)
-make
+| Define | Padrão | Efeito |
+|---|---|---|
+| `TF_LITE_STATIC_MEMORY` | **obrigatório** | o TFLM é compilado com ele, e o define muda o layout de `TfLiteTensor`; sem ele, o wrapper lê campos em posições erradas, sem erro de compilação |
+| `TFLM_MAX_MODELS` | 4 | instâncias de intérprete na tabela estática. O compilador tem o mesmo número (`src/tinyml/AiModel.cpp`); mudar um exige mudar o outro, e o `check_ai_model.py` falha se divergirem |
+| `TFLM_MAX_OPS` | 128 | kernels que cada modelo pode registrar (há 119). É o tamanho do resolver de cada instância: ~4,8 KB de RAM por instância no Cortex-M4, ~9,1 KB no x86_64 |
+| `TFLM_DEBUG_LOGS` | 0 | 1 liga os logs de diagnóstico (`TFLM_LOG`) |
 
-# Configurações específicas
-make KERNEL_CONFIG=BASIC         # Executável mínimo
-make KERNEL_CONFIG=NEURAL_NETWORK # Redes neurais (padrão)
-make KERNEL_CONFIG=FULL          # Todos os kernels
-
-# Exemplo para um teste específico
-make KERNEL_CONFIG=BASIC hello_world.tt
-```
-
-### 3. **Para Desenvolvedores .rob**
-
-**O código .rob não muda em nada!** Continue usando normalmente:
-
-```rob
-# Mesmo código de sempre, funciona automaticamente
-kernel_list = [9, 19, 25]  # FULLY_CONNECTED, RELU, SOFTMAX
-
-interpreter = tflm.initialize_interpreter(
-    model_data=model_bytes,
-    tensor_arena=arena,
-    required_kernels=kernel_list,
-    tensor_arena_size=arena_size,
-    num_kernels=3
-)
-```
-
-## ⚙️ Configurações Disponíveis
-
-### BASIC (~90-120KB)
-**Melhor para**: Modelos simples de classificação
-- FULLY_CONNECTED, RELU, SOFTMAX, RESHAPE
-- ADD, MUL, QUANTIZE, DEQUANTIZE
-
-### NEURAL_NETWORK (~150-200KB) ⭐ **PADRÃO**
-**Melhor para**: Redes neurais típicas (CNNs, MLPs)
-- Todos os kernels BASIC +
-- CONV_2D, MAX_POOL_2D, AVERAGE_POOL_2D
-- DEPTHWISE_CONV_2D, TRANSPOSE_CONV
-- RELU6, TANH, LOGISTIC, LEAKY_RELU, ELU
-- PAD, CONCATENATION, SPLIT, PACK
-- RESIZE_BILINEAR, RESIZE_NEAREST_NEIGHBOR
-
-### FULL (~512KB)
-**Melhor para**: Modelos complexos ou compatibilidade total
-- Todos os kernels disponíveis (comportamento original)
-
-## 🔧 Configuração Personalizada
-
-Para necessidades específicas, edite `kernel_config.h`:
-
-```cpp
-#define KERNEL_CONFIG_CUSTOM
-
-// No final do arquivo, defina manualmente:
-#define ENABLE_FULLY_CONNECTED 1  // Incluir
-#define ENABLE_CONV_2D 1          // Incluir  
-#define ENABLE_LSTM 0             // Excluir
-#define ENABLE_WHILE 0            // Excluir
-// ... etc
-```
-
-## 🚨 Avisos Importantes
-
-1. **Runtime Error**: Se seu modelo usar um kernel desabilitado, você verá:
-   ```
-   ⚠️ Kernel 42 não habilitado na compilação
-   ```
-
-2. **Solução**: Habilite o kernel necessário em `kernel_config.h` ou use uma configuração mais abrangente
-
-3. **Teste Primeiro**: Comece com `NEURAL_NETWORK`, se não funcionar, use `FULL`
-
-## 📊 Resultados Esperados
-
-| Configuração | Tamanho | Casos de Uso |
-|-------------|---------|--------------|
-| BASIC | ~100KB | MLP simples, classificação básica |
-| NEURAL_NETWORK | ~175KB | CNNs, redes típicas de ML |
-| FULL | ~512KB | Modelos complexos, compatibilidade total |
-
-## 🔍 Debug e Troubleshooting
-
-### Problema: "Kernel X não habilitado"
-```bash
-# Solução 1: Use configuração mais ampla
-make KERNEL_CONFIG=FULL
-
-# Solução 2: Habilite kernel específico em kernel_config.h
-#define ENABLE_NOME_DO_KERNEL 1
-```
-
-### Problema: Executável muito grande
-```bash
-# Use configuração menor
-make KERNEL_CONFIG=BASIC
-```
-
-### Problema: Modelo não funciona
-```bash
-# Teste com todos os kernels primeiro
-make KERNEL_CONFIG=FULL
-# Depois otimize gradualmente
-```
-
-## 🎯 Workflow Recomendado
-
-1. **Desenvolvimento**: Use `KERNEL_CONFIG=FULL` (garantia total)
-2. **Teste**: Use `KERNEL_CONFIG=NEURAL_NETWORK` (balanço)
-3. **Produção**: Use `KERNEL_CONFIG=BASIC` (tamanho mínimo)
-
-## 📝 Exemplo Prático
+## Compilar e testar
 
 ```bash
-# 1. Testar se funciona
-make KERNEL_CONFIG=FULL meu_modelo.tt
-
-# 2. Otimizar para produção  
-make KERNEL_CONFIG=NEURAL_NETWORK meu_modelo.tt
-
-# 3. Máxima otimização (se funcionar)
-make KERNEL_CONFIG=BASIC meu_modelo.tt
-
-# 4. Verificar tamanho
-ls -lh out/meu_modelo
+make -C test/tflm out/libtflm_wrapper.a   # o wrapper, para x86_64
+make -C test/tflm check                   # toda a validação
 ```
 
-O sistema é **backward compatible** - códigos antigos continuam funcionando sem modificações!
+O `test/tflm/Makefile` compila o wrapper com `g++`, o mesmo compilador da
+`libtensorflow-microlite.a`, e as flags certas. A camada 1 da validação
+(`test/tflm/validate_wrapper.cpp`) roda o wrapper sem a RL e compara cada saída
+byte a byte com o TFLM usado diretamente.
+
+Ainda não há build para Cortex-M4: é o passo seguinte da pesquisa.

@@ -84,15 +84,47 @@ robcmp/
 ```
 
 > Estrutura acima corresponde ao estado da branch `tcc/tflm-front-end`
-> (base `llvm20`). Ao trabalhar em `mestrado/tflm-native` (base `cola2025`),
-> confirme se esses caminhos/arquivos ainda existem com o mesmo nome antes
-> de assumir que a estrutura é idêntica.
+> (base `llvm20`). A da branch de trabalho está logo abaixo.
+
+**Estrutura atual (`mestrado/tflm-native`):**
+
+```
+src/tinyml/                   # TODA a extensão TinyML do compilador
+├── TfliteModel.{h,cpp}       #   análise estática do .tflite (FlatBuffers): kernels,
+│                             #   tensores, quantização, o que o TFLM não roda
+├── AiModel.{h,cpp}           #   m = ai_model("x.tflite", arena): declaração e geração
+├── ModelMember.{h,cpp}       #   resolve m.input0, m.output1.raw, m.input_count ...
+├── ModelUse.{h,cpp}          #   ganchos no PropagateTypes que trocam os nós do parser
+├── TensorRead / TensorWrite / ModelInvoke   # leitura, escrita, invoke()
+├── WrapperCall.{h,cpp}       #   declara e chama as funções do wrapper no IR
+└── IntegerConstant.{h,cpp}   #   constantes inteiras e tamanhos estáticos
+wrappers/tflm/                # o wrapper C (README.md descreve a API atual)
+lib/ai/tflm.rob               # modo biblioteca: declarações do wrapper em RL
+lib/stm32f1.{ld,rob}, lib/arch/stm32/   # alvo ARM existente (Cortex-M3)
+platformio/platform/builder/main.py      # build pelo PlatformIO
+third-party/tflite-micro/     # submódulo do TFLM (gen/ guarda a libtensorflow-microlite.a)
+test/tflm/
+├── native-syntax.rob         # ESPECIFICAÇÃO executável da sintaxe nativa (compila inteira)
+├── models/                   # 8 modelos de validação; externos/ tem 4 públicos maiores
+├── data/                     # imagens e áudios de teste (.bin) e a origem deles
+├── validate_wrapper.cpp      # camada 1: wrapper x TFLM puro, byte a byte
+├── rob/tcc_*.rob             # camada 2: testes do TCC no modo biblioteca
+├── rob/nativo_*.rob          # camada 3: os mesmos e mais, na sintaxe nativa
+├── check_abi.py              # assinaturas RL x C em x86_64 e Cortex-M
+├── check_tflite.py           # análise do .tflite (com tflite_info.cpp)
+├── check_ai_model.py         # erros e programas aceitos da sintaxe nativa (101 casos)
+├── rob_embed.py              # embute arquivos binários em .rob
+└── demo/                     # demonstração para orientação (reuniao.html, make ...)
+test/achados/                 # reproduções dos achados do RESULTADOS.md
+```
+
+O que cada teste prova está no cabeçalho do próprio arquivo e no
+`test/tflm/Makefile`.
 
 **Arquivos que ainda precisam ser criados nesta pesquisa:**
 - `stm32f407.ld` — linker script do STM32F407VET6 (mapa de memória flash/SRAM).
-- `stm32f407.rob` — descrição dos registradores/periféricos do STM32F407VET6, implementando `intfs.mcu` (mesmo padrão de `stm32f1.rob`), incluindo o registrador do DWT para contagem de ciclos.
-- Módulo de análise estática de `.tflite` via FlatBuffers (extrai kernels necessários, tipos de tensor, `scale`/`zero_point` em **tempo de compilação**).
-- Novas classes semânticas decompostas (ver seção 5) substituindo o antigo `ModelNode`.
+- `stm32f407.rob` — descrição dos registradores/periféricos do STM32F407VET6, implementando `intfs.mcu` (mesmo padrão de `lib/stm32f1.rob`), incluindo o registrador do DWT para contagem de ciclos.
+- Build do TFLM e do wrapper para Cortex-M4, e a extensão do `main.py`.
 
 ---
 
@@ -186,24 +218,46 @@ Critérios de teste: corretude funcional (unit tests) + comparação de **tempo 
 
 ---
 
-## 7. Comandos úteis (a confirmar/ajustar conforme o setup local)
+## 7. Comandos úteis
+
+Verificados na branch `mestrado/tflm-native`:
 
 ```bash
-# Compilar um programa .rob para uma arquitetura específica
-robcmp -a <arquitetura> -o programa.o <fonte.rob>
+# Compilar o robcmp (CMake em build/; regera o parser se o .y/.l mudar)
+make -C build -j$(nproc)
 
-# Build/upload via PlatformIO (usa main.py como orquestrador)
+# Validação completa do TinyML: wrapper, modo biblioteca, sintaxe nativa,
+# assinaturas, análise do .tflite e erros de compilação. Na primeira vez
+# compila a libtensorflow-microlite.a (minutos).
+make -C test/tflm check
+make -C test/tflm nativo      # só os testes da sintaxe nativa
+make -C test/tflm ai_model    # só os casos de compilação (check_ai_model.py)
+
+# Inspecionar um modelo: tensores, quantização, kernels, o que o TFLM não roda
+test/tflm/tflite_info modelo.tflite
+
+# Compilar um programa .rob (sem -o, imprime o LLVM IR otimizado)
+build/robcmp -I lib -o programa.o fonte.rob      # host x86_64
+build/robcmp -a stm32f1 -o programa.o fonte.rob  # Cortex-M3, o alvo ARM que existe
+build/robcmp -Od fonte.rob                       # IR antes de otimizar
+# ligar com o wrapper e o TFLM (host):
+g++ programa.o test/tflm/out/libtflm_wrapper.a \
+    third-party/tflite-micro/gen/linux_x86_64_default_gcc/lib/libtensorflow-microlite.a \
+    -Wl,--gc-sections -o programa
+
+# Demonstração (ver test/tflm/demo/reuniao.html)
+make -s -C test/tflm/demo exemplo   # também: ir, erros, testes, memoria, sinal
+
+# Compilador ARM instalado pelo PlatformIO (para o Cortex-M4)
+ls ~/.platformio/packages/toolchain-gccarmnoneeabi*/bin/arm-none-eabi-g++
+
+# Build/upload via PlatformIO (main.py como orquestrador) -- ainda não para o F407
 pio run
 pio run -t upload
 
 # Benchmark nativo (x86_64)
 hyperfine --warmup 10 -m 100 './firmware'
 ```
-
-> Os comandos exatos de geração do parser (Flex/Bison) e de build do wrapper
-> (`test/tflm-tests/Makefile`) devem ser confirmados diretamente no
-> repositório antes de qualquer automação, pois podem ter mudado entre a
-> branch usada no TCC e a branch atual do Robcmp.
 
 > **Sessões na nuvem (Claude Code):** antes de compilar ou testar, rode
 > `robcmp-preparar` na raiz do repositório. O comando é instalado pelo setup
