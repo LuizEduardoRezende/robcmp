@@ -9,6 +9,7 @@
 #include "Scalar.h"
 #include "UserType.h"
 #include "Scanner.h"
+#include "Program.h"
 
 // Replaces a use of a model that has an error.
 class InvalidModelUse: public Node {
@@ -193,7 +194,7 @@ Node *ModelUse::scalar(Scalar& n, PropagateTypes& pt) {
 	// not exist yet.
 	FunctionCall *call = dynamic_cast<FunctionCall*>(n.getExpr());
 	if (call && AiModel::isBuiltinCall(*call)) {
-		AiModel::markDeclaration(*call);
+		AiModel::markDeclaration(*call, dynamic_cast<Program*>(n.getScope()) != NULL);
 
 		// Two instances of the type would share the model and its arena; how
 		// to store them is decided with the code generation (task 3.6).

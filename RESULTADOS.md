@@ -1321,6 +1321,24 @@ O compilador conhece todas as declarações: o limite pode virar erro de
 compilação. Em aberto (abaixo): o número é um `#define` do wrapper, compilado
 à parte.
 
+**Resolvido em 2026-10-19.** Primeiro implementado como erro em toda
+declaração além da quarta — e a própria especificação deixou de compilar: o
+`native-syntax.rob` tem um exemplo por função, cada um com o seu modelo, e
+nenhum par deles roda junto. A regra "toda declaração conta" recusaria também
+um firmware real que escolhe o modelo pelo modo de operação. A versão final
+separa o que o compilador sabe do que não sabe: modelos **globais** são todos
+criados antes do `main`, então mais deles que instâncias é **erro**; um modelo
+**local** só é criado se a função rodar, então passar do limite com locais é
+**aviso**, na primeira declaração além do limite. Verificado na geração de
+código, quando todas as declarações já foram vistas (um global pode vir depois
+das funções que o usam). O limite está no compilador
+(`src/tinyml/AiModel.cpp`); o `check_ai_model.py` lê o `TFLM_MAX_MODELS` do
+wrapper, e um número diferente do outro faz o teste falhar.
+
+**Serve para:** a 5.2, como exemplo de verificação que só pode ser parcial —
+o compilador transforma em erro o que é certo e em aviso o que depende da
+execução, em vez de recusar programas válidos.
+
 ---
 
 ## Registro de modificações
@@ -1720,7 +1738,7 @@ Fora do recorte, ficam para a sequência da 3.6:
   lidos do tensor. O resultado é o mesmo (5.4.20); a especificação prometia a
   conversão emitida pelo compilador, sem divisão em runtime. Decidido depois,
   no mesmo dia: fica no wrapper (ver as decisões).
-- **Limite de modelos** em tempo de compilação (5.4.23).
+- **Limite de modelos** em tempo de compilação (5.4.23) — feito em 2026-10-19.
 
 ---
 
@@ -1918,10 +1936,6 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
 
 ## Decisões ainda em aberto
 
-- Limite de modelos (5.4.23): erro de compilação acima de 4 declarações, com o
-  número fixado no compilador igual ao do wrapper; ou o compilador informar o
-  número ao wrapper; ou só documentar. O número só tem sentido com as `.a`
-  pré-compiladas da Etapa 4, que fixam o `TFLM_MAX_MODELS`.
 
 - Arena automática (fase 2): o caminho é medir na compilação, rodando o TFLM do
   host (`test/achados/arena`). Falta saber se o valor do host cobre o do
@@ -1929,6 +1943,9 @@ Atenção metodológica registrada em 5.4.5: **medir o firmware linkado, não o
 - Modelo como campo de tipo (`type robo { m = ai_model(...); }`): fora da
   especificação; recusado com erro próprio. Duas instâncias do tipo dividiriam
   o modelo e a arena — decide-se com o armazenamento, na 3.6.
+
+Decidida em 2026-10-19: limite de modelos como erro para globais e aviso com
+locais (5.4.23), com o número no compilador igual ao `TFLM_MAX_MODELS`.
 
 Decidida em 2026-10-19: defeitos da RL base encontrados durante o TinyML são
 registrados e contornados, não corrigidos — a falta de `signext` (5.2.7), o
@@ -1969,7 +1986,7 @@ ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
 
 Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento:
 3.0, 3.1 e 3.3 a 3.7 concluídas, 3.2 dispensada, 3.8 descartada (defeito da
-base); falta a 3.9 e o limite de modelos. A sintaxe nativa compila e roda os cinco
+base); falta a 3.9. A sintaxe nativa compila e roda os cinco
 modelos de validação. `make -C test/tflm check` passa por inteiro, incluindo os
 alvos `nativo` e `ai_model`; `make -C test/achados` reproduz os achados 5.2.7,
 5.2.8 e 5.2.11.

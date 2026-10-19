@@ -430,7 +430,8 @@ int16 exemplo_raw_pipeline() {
  * existem antes de qualquer função rodar. Um modelo LOCAL só vale depois da sua
  * declaração; usá-lo antes é erro de compilação.
  *
- * Um modelo é um intérprete do TFLM com a sua arena, criado uma vez. Copiá-lo
+ * Um modelo é um intérprete do TFLM com a sua arena, criado uma vez, e ocupa
+ * uma das 4 instâncias do wrapper pelo programa inteiro (seção 8). Copiá-lo
  * ou trocá-lo exigiria definir o que acontece com o intérprete antigo -- o
  * mesmo problema da destruição, que a seção 8b deixa de fora.
  *
@@ -732,6 +733,34 @@ int16 usa_tipo_proprio() {
 // sp = ai_model("models/spam.tflite", 4096);
 // v = sp.input0.raw;
 //     -> erro: tensor int32 não tem visão .raw; só int8 e int16 (4b)
+
+// m1 = ai_model("models/hello_world_float.tflite", 3000);
+// m2 = ai_model("models/hello_world_int8.tflite", 3000);
+// m3 = ai_model("models/spam.tflite", 4096);
+// m4 = ai_model("models/person_detect.tflite", 90000);
+// m5 = ai_model("models/micro_speech_quantized.tflite", 12288);
+//     -> erro, na quinta declaração: o wrapper tem 4 instâncias de
+//        intérprete (TFLM_MAX_MODELS), e todo modelo global é criado antes do
+//        main -- o quinto não teria instância.
+//
+//     DECISÃO (2026-10-19): o modelo é criado uma vez e nunca destruído
+//     (4c, 8b), então cada modelo criado ocupa uma instância até o fim do
+//     programa. Sem esta verificação, o modelo além do limite compilaria e
+//     falharia calado em runtime: invoke() devolvendo -1 e as leituras dando 0
+//     (RESULTADOS.md, 5.4.23). A verificação separa o que o compilador sabe do
+//     que não sabe:
+//       - modelos GLOBAIS são sempre criados: mais deles que instâncias é
+//         ERRO de compilação;
+//       - um modelo LOCAL só é criado se a sua função rodar, o que o
+//         compilador não sabe: mais modelos no total que instâncias é AVISO
+//         de compilação, na primeira declaração além do limite. Um programa
+//         que escolhe um modelo por modo de operação, cada um numa função,
+//         segue compilando.
+//     As instâncias que o modo biblioteca cria no mesmo programa
+//     (tflm_create_resolver) disputam as mesmas 4 e só são conferidas em
+//     runtime. O número é o do wrapper pré-compilado; para usar mais modelos,
+//     compila-se o wrapper com outro TFLM_MAX_MODELS e muda-se o limite no
+//     compilador junto.
 
 // f = ai_model("models/audio_preprocessor_int8.tflite", 12288);
 //     -> DEPENDE: este modelo exige 9 custom ops (SignalRfft, SignalWindow,

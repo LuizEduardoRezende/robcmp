@@ -9,6 +9,11 @@
 
 static const char *builtinName = "ai_model";
 
+// Instances of interpreter in the TFLM wrapper: TFLM_MAX_MODELS, in
+// wrappers/tflm/tflm_wrapper.cpp. The two must change together;
+// check_ai_model.py fails when they differ.
+static const unsigned wrapperInstances = 4;
+
 bool AiModel::checkNotReserved(NamedNode *declared) {
 	if (declared->getName() != builtinName)
 		return true;
@@ -32,10 +37,14 @@ bool AiModel::isPendingDeclaration(Node *symbol) {
 	return call && isBuiltinCall(*call);
 }
 
-static set<const FunctionCall*> declarations;
+// The calls that declare a model, and whether the variable is global.
+static map<const FunctionCall*, bool> declarations;
 
-void AiModel::markDeclaration(FunctionCall& fc) {
-	declarations.insert(&fc);
+// Every valid model of the program, in the order the analysis met them.
+vector<AiModel::Declared> AiModel::models;
+
+void AiModel::markDeclaration(FunctionCall& fc, bool global) {
+	declarations[&fc] = global;
 }
 
 /*
@@ -136,7 +145,52 @@ AiModel *AiModel::fromCall(FunctionCall& fc) {
 		}
 	}
 	node->valid = supported;
+	if (supported)
+		models.push_back({node, declarations[&fc]});
 	return node;
+}
+
+/*
+ * A model is created once and never destroyed (specification, sections 4c and
+ * 8b), so each one created takes an instance of the wrapper until the program
+ * ends. Global models are all created before main: more of them than
+ * instances is an error. A local one is created only if its function runs,
+ * which the compiler does not know: more models in all than instances is a
+ * warning. Checked once, at the code generation, when every declaration has
+ * been seen -- a global can be declared below the functions that use it.
+ */
+void AiModel::checkInstances() {
+	static bool checked = false;
+	if (checked)
+		return;
+	checked = true;
+
+	auto before = [](const Declared& a, const Declared& b) {
+		AiModel *x = a.model, *y = b.model;
+		if (x->getFile() != y->getFile())
+			return x->getFile() < y->getFile();
+		if (x->getLineNo() != y->getLineNo())
+			return x->getLineNo() < y->getLineNo();
+		return x->getColNo() < y->getColNo();
+	};
+	vector<Declared> sorted(models.begin(), models.end());
+	std::sort(sorted.begin(), sorted.end(), before);
+
+	unsigned globals = 0;
+	for (const Declared& d : sorted) {
+		if (d.global && ++globals == wrapperInstances + 1)
+			yyerrorcpp(string_format("This is global model %u of the program, but the TFLM "
+				"wrapper has %u instances (TFLM_MAX_MODELS): every global model is created "
+				"before main runs, and this one can not be.", globals, wrapperInstances),
+				d.model);
+	}
+	if (globals > wrapperInstances || sorted.size() <= wrapperInstances)
+		return;
+	yywarncpp(string_format("The program declares %u models, and the TFLM wrapper has %u "
+		"instances (TFLM_MAX_MODELS). A model is never destroyed: if more than %u of them "
+		"are created, the next ones fail at run time, and their invoke() returns -1.",
+		(unsigned)sorted.size(), wrapperInstances, wrapperInstances),
+		sorted[wrapperInstances].model);
 }
 
 /*
@@ -226,6 +280,7 @@ Function *AiModel::createFunction(const string& name) {
 Value *AiModel::generate(FunctionImpl *func, BasicBlock *block, BasicBlock *allocblock) {
 	if (!leftValue)
 		return NULL;
+	checkInstances();
 	Function *create = createFunction(leftValue->getName());
 
 	if (allocblock == global_alloc) {

@@ -32,6 +32,15 @@ private:
 	// The function that creates the interpreter, and the globals it uses.
 	Function *createFunction(const string& name);
 
+	struct Declared {
+		AiModel *model;
+		bool global;
+	};
+	static vector<Declared> models;
+
+	// Models against the instances of the wrapper: an error or a warning.
+	static void checkInstances();
+
 public:
 	// ai_model is a reserved name: declaring a function, method, type or
 	// variable with it is an error, reported here. Returns false if so.
@@ -42,8 +51,8 @@ public:
 
 	// fc initializes a variable: m = ai_model(...). Any other use of
 	// ai_model(...) is an error, since a model is not a value
-	// (specification, section 4c).
-	static void markDeclaration(FunctionCall& fc);
+	// (specification, section 4c). global: the variable is a global.
+	static void markDeclaration(FunctionCall& fc, bool global);
 
 	// The model held by a variable declared as m = ai_model(...), or NULL.
 	static AiModel *heldBy(Node *symbol);

@@ -22,6 +22,10 @@ Valida ai_model(...) no compilador (src/tinyml): a análise semântica
      constante de elemento e tensor lido para uma variável que já existe, nas
      duas visões (seções 4b e 8); vetor de tamanho desconhecido e índice
      variável ficam para o wrapper.
+  7. Limite de modelos, contra as instâncias do wrapper (TFLM_MAX_MODELS,
+     lido de tflm_wrapper.cpp): globais além do limite são erro, porque são
+     todos criados antes do main; com modelos locais, que só são criados se a
+     função rodar, passar do limite é aviso, e o programa compila.
 
 Um programa aceito precisa compilar sem erro, o que inclui o verificador do
 LLVM sobre o IR gerado. Quantas vezes um modelo foi embutido se confere no IR
@@ -474,6 +478,49 @@ def checa_tamanhos(robcmp, tmp):
     checa_ok("vetor de tamanho desconhecido (parâmetro)", robcmp, fonte, cwd=tmp)
 
 
+WRAPPER = Path(__file__).resolve().parents[2] / "wrappers/tflm/tflm_wrapper.cpp"
+
+
+def checa_limite(robcmp, tmp):
+    print("== limite de modelos (seção 8)")
+    shutil.copy(MODELO, tmp / "m.tflite")
+    limite = int(re.search(r"#define TFLM_MAX_MODELS (\d+)", WRAPPER.read_text()).group(1))
+    fonte = tmp / "t.rob"
+
+    def globais(n):
+        return "".join(f'm{i} = ai_model("m.tflite", 3000);\n' for i in range(1, n + 1))
+
+    main = "int16 main() {\n    return m1.invoke();\n}\n"
+    fonte.write_text(globais(limite) + main)
+    checa_ok(f"{limite} modelos, as instâncias do wrapper", robcmp, fonte, cwd=tmp, modelos=limite)
+
+    fonte.write_text(globais(limite + 1) + main)
+    checa(f"{limite + 1} modelos globais: erro", robcmp, fonte,
+          f"This is global model {limite + 1} of the program, but the TFLM wrapper has {limite} "
+          "instances", limite + 1, 6, cwd=tmp)
+
+    # Um global declarado depois das funções também conta: a verificação é
+    # feita quando todas as declarações já foram vistas.
+    usa = "int8 usa() {\n    return m1.invoke();\n}\n"
+    fonte.write_text(usa + globais(limite + 1) + main)
+    checa("global além do limite declarado depois das funções", robcmp, fonte,
+          f"This is global model {limite + 1}", limite + 4, 6, cwd=tmp)
+
+    # Um local além do limite pode nunca ser criado: o programa compila, com
+    # aviso na declaração que passa do limite.
+    rotulo = "modelo local além do limite: aviso"
+    nunca = 'int8 nunca() {\n    x = ai_model("m.tflite", 3000);\n    return x.invoke();\n}\n'
+    fonte.write_text(globais(limite) + nunca + main)
+    codigo, saida = compila(robcmp, fonte, cwd=tmp)
+    avisos = re.findall(r"^.*?:(\d+):(\d+) warning: (.*)$", saida, re.M)
+    esperado = f"The program declares {limite + 1} models, and the TFLM wrapper has {limite}"
+    if codigo != 0 or len(avisos) != 1 or avisos[0][:2] != (str(limite + 2), "9") \
+            or esperado not in avisos[0][2]:
+        falha(f"{rotulo}: obtido codigo {codigo} {saida.strip()!r}")
+    else:
+        print(f"  ok  {rotulo}")
+
+
 def main():
     if len(sys.argv) != 2:
         print(__doc__)
@@ -482,7 +529,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         for etapa in (checa_erros, checa_busca, checa_reservado,
-                      checa_retrocompatibilidade, checa_membros, checa_tamanhos):
+                      checa_retrocompatibilidade, checa_membros, checa_tamanhos, checa_limite):
             pasta = tmp / etapa.__name__
             pasta.mkdir()
             etapa(robcmp, pasta)
