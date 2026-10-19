@@ -803,6 +803,15 @@ ponto de antes quando há locais, e o início do corpo quando não há. IR de
 **Serve para:** a 5.2, como a única mudança no núcleo do compilador feita pela
 geração de código do TinyML, e por quê.
 
+### 5.2.22 Um programa sem `main` derruba o robcmp
+
+Defeito da base, encontrado quando a especificação passou a chegar à geração de
+código. `Program::generate` procura `main` e depois `__main`, e lê o resultado
+sem conferir se achou (`mainFuncIt->second` sobre o `end()` do mapa). Em RL
+pura, um arquivo só com `int8 f() { return 1; }` dá `signal 11`. Contornado na
+especificação com um `main` que só devolve 0; não corrigido (decisão de
+2026-10-19).
+
 ---
 
 ## Seção 5.4 — Validação e métricas
@@ -1339,6 +1348,19 @@ wrapper, e um número diferente do outro faz o teste falhar.
 o compilador transforma em erro o que é certo e em aviso o que depende da
 execução, em vez de recusar programas válidos.
 
+### 5.4.24 Duas entradas, rodando
+
+`models/simple_add_model.tflite`, copiado do TFLM
+(`tensorflow/lite/micro/python/tflite_size/tests`), é o único `.tflite` do
+repositório do TFLM com duas entradas (5.4.4): soma duas imagens int8 de
+128×128, cada entrada com a sua escala (0,0407254 e 0,0412456), saída com
+outra (0,0583774). Arena mínima medida: 49928 bytes.
+
+`rob/nativo_simple_add.rob` escreve as duas entradas inteiras e um elemento de
+cada, e confere a soma em três pontos, com tolerância de 0,1 (meio passo de
+cada escala). Passa; com o valor esperado trocado, falha com o código do teste.
+É o primeiro teste que executa `input1`.
+
 ---
 
 ## Registro de modificações
@@ -1740,6 +1762,22 @@ Fora do recorte, ficam para a sequência da 3.6:
   no mesmo dia: fica no wrapper (ver as decisões).
 - **Limite de modelos** em tempo de compilação (5.4.23) — feito em 2026-10-19.
 
+### 2026-10-19 — Limite de modelos; especificação compilando inteira
+
+**Limite de modelos** (5.4.23): erro para globais além das instâncias do
+wrapper, aviso quando os locais passam do limite. A primeira versão, erro em
+toda declaração além da quarta, recusava a própria especificação; ver a 5.4.23.
+
+**Especificação inteira** (3.9): o modelo hipotético de várias entradas da
+seção 5 trocado pelo `simple_add_model` (5.4.24). O `native-syntax.rob`
+compila sem erro, com o aviso dos seus 9 modelos, e ganhou um `main` por causa
+da 5.2.22. Dois testes novos na camada 3: `nativo_simple_add`, que roda o
+modelo de duas entradas, e `nativo_especificacao`, a especificação compilada,
+ligada ao wrapper e executada — prova que toda função que o compilador chama
+existe no wrapper. O `check_ai_model.py` exige zero erros na especificação.
+
+Nenhuma mudança fora de `src/tinyml` e dos testes.
+
 ---
 
 ## Roteiro — o que foi feito e o que vem
@@ -1815,7 +1853,7 @@ alinhamento do `interpreter_storage`, conversão de handle.
 
 ---
 
-### ⬜ Etapa 3 — Compilador, seção 5.2 (EM ANDAMENTO)
+### ✅ Etapa 3 — Compilador, seção 5.2 (concluída em 2026-10-19)
 
 Pela regra "sintaxe antes da implementação" (`CLAUDE.md`, seção 6), a primeira
 tarefa é fechar a especificação. As demais seguem a ordem das fases do
@@ -1832,7 +1870,7 @@ compilador: elaboração prévia, gramática, semântica, geração de código.
 | 3.6 | Geração de código: modelo e arena como globais alinhados a 16 (5.2.8), um `tflm_add_*` por kernel detectado, e as chamadas da API `tflm_` (5.1.7) | **feito** — os 5 modelos rodam, valores idênticos ao modo biblioteca (5.4.20); conversão float ↔ quantizado mantida no wrapper (decisão) |
 | 3.7 | Erros de compilação da seção 8 da especificação: caminho não literal, arena ausente, arquivo inválido, tamanho incompatível, tensor inexistente (como `input1` num modelo de uma entrada), índice de elemento constante fora do tensor, escrita em `.scale`, `.raw` com tipo ou tamanho errado, kernel sem suporte | **feito** — kernel sem suporte na 3.6 |
 | 3.8 | `signext` em `int8`/`int16` com sinal, em parâmetros e retornos (5.2.7) | **não será feito** — defeito da base, contornado por regra no wrapper (decisão de 2026-10-19) |
-| 3.9 | Fazer `test/tflm/native-syntax.rob` compilar e rodar, com o mesmo resultado do modo biblioteca |
+| 3.9 | Fazer `test/tflm/native-syntax.rob` compilar e rodar, com o mesmo resultado do modo biblioteca | **feito** — compila, liga e roda (`nativo_especificacao`); os exemplos não rodam juntos (5.4.23), e a equivalência de valores está na 5.4.20 |
 
 A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
 
@@ -1984,10 +2022,10 @@ ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
 
 ## Estado do repositório
 
-Branch `mestrado/tflm-native`. Etapas 1 e 2 commitadas; Etapa 3 em andamento:
-3.0, 3.1 e 3.3 a 3.7 concluídas, 3.2 dispensada, 3.8 descartada (defeito da
-base); falta a 3.9. A sintaxe nativa compila e roda os cinco
-modelos de validação. `make -C test/tflm check` passa por inteiro, incluindo os
+Branch `mestrado/tflm-native`. Etapas 1, 2 e 3 commitadas.
+Etapa 3 concluída: 3.2 dispensada, 3.8 descartada (defeito da base). Próxima:
+Etapa 4, o STM32F407. A sintaxe nativa compila e roda os cinco
+modelos de validação e o de duas entradas. `make -C test/tflm check` passa por inteiro, incluindo os
 alvos `nativo` e `ai_model`; `make -C test/achados` reproduz os achados 5.2.7,
 5.2.8 e 5.2.11.
 

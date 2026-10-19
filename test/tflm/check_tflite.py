@@ -100,6 +100,12 @@ def checa_modelos(info):
                         "SignalWindow"},
             "linhas": ["input [0] tipo=int16    shape=[1,480] elementos=480\n",
                        "output[0] tipo=float32  shape=[40] elementos=40\n"]},
+        # o único .tflite do TFLM com duas entradas (tflite_size/tests)
+        "simple_add_model.tflite": {
+            "kernels": {"ADD"},
+            "linhas": ["entradas=2  saidas=1",
+                       "input [1] tipo=int8     shape=[1,128,128,1] elementos=16384  "
+                       "scale=0.0412456 zero_point=-1"]},
         "audio_preprocessor_int8.tflite": {
             "kernels": {"ADD", "CAST", "CONCATENATION", "DIV", "MAXIMUM", "MINIMUM", "MUL",
                         "RESHAPE", "STRIDED_SLICE", "SignalEnergy", "SignalFftAutoScale",

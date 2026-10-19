@@ -127,7 +127,8 @@ $(OUT)/tcc_micro_speech.rob: rob/tcc_micro_speech.rob models/micro_speech_quanti
 # lê o .tflite: só os dados de teste são embutidos, como int8[] para a .raw.
 # Os modelos são citados por caminho relativo ao .rob gerado, em out/.
 NATIVE_TESTS = nativo_hello_world_float nativo_hello_world_int8 nativo_spam \
-               nativo_person_detect nativo_micro_speech
+               nativo_person_detect nativo_micro_speech nativo_simple_add \
+               nativo_especificacao
 
 $(OUT)/nativo_hello_world_float.rob: rob/nativo_hello_world.rob models/hello_world_float.tflite | $(OUT)
 	sed 's/@modelo@/hello_world_float/' $< > $@
@@ -137,6 +138,15 @@ $(OUT)/nativo_hello_world_int8.rob: rob/nativo_hello_world.rob models/hello_worl
 
 $(OUT)/nativo_spam.rob: rob/nativo_spam.rob models/spam.tflite | $(OUT)
 	cp $< $@
+
+$(OUT)/nativo_simple_add.rob: rob/nativo_simple_add.rob models/simple_add_model.tflite | $(OUT)
+	cp $< $@
+
+# A especificação inteira, compilada, ligada ao wrapper e executada: toda
+# função que o compilador chama precisa existir no wrapper. Os modelos são
+# citados relativos a test/tflm, por isso os caminhos são reescritos.
+$(OUT)/nativo_especificacao.rob: native-syntax.rob $(MODELS) | $(OUT)
+	sed 's#"models/#"../models/#' $< > $@
 
 $(OUT)/nativo_person_detect.rob: rob/nativo_person_detect.rob models/person_detect.tflite data/person_image.bin data/no_person_image.bin rob_embed.py | $(OUT)
 	$(EMBED) $< imagem_pessoa=data/person_image.bin:int8 \

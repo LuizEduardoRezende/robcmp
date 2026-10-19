@@ -1,0 +1,65 @@
+/*
+ * Modelo de duas entradas na sintaxe nativa (native-syntax.rob, seção 5).
+ *
+ * models/simple_add_model.tflite soma duas imagens int8 de 128x128, cada
+ * entrada com a sua escala. Nenhum teste do TCC tem duas entradas: este
+ * exercita input1 rodando.
+ *
+ * Devolve 0 se tudo passar, ou o código do teste que falhou.
+ */
+
+soma = ai_model("../models/simple_add_model.tflite", 65536);
+
+// A saída tem escala 0.0583774: o resultado pode diferir da soma exata por até
+// meio passo de cada entrada e meio da saída. 0.1 cobre os três.
+int8 perto(float valor, float esperado) {
+    d = valor - esperado;
+    if d < -0.1 or d > 0.1 {
+        return 0;
+    }
+    return 1;
+}
+
+// As duas entradas inteiras, cada uma com um valor.
+int8 test_vetores() {
+    soma.input0 = {0.5:16384};
+    soma.input1 = {0.25:16384};
+    if soma.invoke() != 0 {
+        return 1;
+    }
+    saida = soma.output0;
+    if perto(saida[0], 0.75) == 0 {
+        return 2;
+    }
+    if perto(saida[16383], 0.75) == 0 {
+        return 2;
+    }
+    return 0;
+}
+
+// Um elemento de cada entrada: só a soma dele muda.
+int8 test_elemento() {
+    soma.input0[100] = 1.0;
+    soma.input1[100] = -0.5;
+    if soma.invoke() != 0 {
+        return 1;
+    }
+    if perto(soma.output0[100], 0.5) == 0 {
+        return 3;
+    }
+    if perto(soma.output0[101], 0.75) == 0 {
+        return 4;
+    }
+    return 0;
+}
+
+int8 main() {
+    if soma.input_count != 2 {
+        return 5;
+    }
+    r = test_vetores();
+    if r != 0 {
+        return r;
+    }
+    return test_elemento();
+}

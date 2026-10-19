@@ -305,16 +305,9 @@ def checa_unico(rotulo, robcmp, fonte, esperado, linha, coluna, cwd):
 def checa_membros(robcmp, tmp):
     print("== membros do modelo (3.4)")
 
-    # A especificação inteira: o único erro é o do modelo hipotético de várias
-    # entradas da seção 5, que não existe em models/ (tarefa 3.9).
+    # A especificação inteira compila: análise semântica e geração de código.
     raiz = Path(__file__).resolve().parent
-    codigo, saida = compila(robcmp, raiz / "native-syntax.rob", cwd=raiz)
-    erros = re.findall(r"semantic error: (.*)$", re.sub(r"\x1b\[[0-9;]*m", "", saida), re.M)
-    outros = [e for e in erros if "algum_modelo_multi_entrada" not in e]
-    if outros or not erros:
-        falha(f"native-syntax.rob: erros além dos esperados: {outros!r}")
-    else:
-        print("  ok  native-syntax.rob passa pela análise semântica")
+    checa_ok("native-syntax.rob compila inteiro", robcmp, raiz / "native-syntax.rob", cwd=raiz)
 
     for _, nome, _ in MODELOS_MEMBROS:
         shutil.copy(MODELOS / f"{nome}.tflite", tmp / f"{nome}.tflite")
