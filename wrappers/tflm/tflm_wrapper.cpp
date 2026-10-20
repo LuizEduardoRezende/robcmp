@@ -766,6 +766,10 @@ int8_t tflm_add_energy(uint64_t resolver_handle) {
 int8_t tflm_add_ethos_u(uint64_t resolver_handle) {
     MutableResolver *r = resolver_from_handle(resolver_handle);
     if (!r) return -1;
+    // Sem uma NPU Ethos-U no build do TFLM, Register_ETHOSU devolve nullptr e
+    // AddEthosU devolve sucesso sem registrar nada: o modelo so falharia ao
+    // criar o interpretador (RESULTADOS.md, 5.2.26).
+    if (!tflite::Register_ETHOSU()) return -1;
     return (r->AddEthosU() == kTfLiteOk) ? 0 : -1;
 }
 

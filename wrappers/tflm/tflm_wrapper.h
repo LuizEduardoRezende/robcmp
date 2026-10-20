@@ -156,6 +156,9 @@ int8_t tflm_add_batch_matmul(uint64_t resolver_handle);
 int8_t tflm_add_cumsum(uint64_t resolver_handle);
 int8_t tflm_add_call_once(uint64_t resolver_handle);
 int8_t tflm_add_broadcast_to(uint64_t resolver_handle);
+// Os tres seguintes exigem variaveis de recurso, que o wrapper nao cria: um
+// modelo com eles falha em tflm_create_model, e a sintaxe nativa o recusa na
+// compilacao.
 int8_t tflm_add_var_handle(uint64_t resolver_handle);
 int8_t tflm_add_read_variable(uint64_t resolver_handle);
 int8_t tflm_add_assign_variable(uint64_t resolver_handle);
@@ -184,6 +187,7 @@ int8_t tflm_add_basic_classifier(uint64_t resolver_handle);
 int8_t tflm_add_circular_buffer(uint64_t resolver_handle);
 int8_t tflm_add_decode(uint64_t resolver_handle);
 int8_t tflm_add_detection_postprocess(uint64_t resolver_handle);
+// So com uma NPU Ethos-U no build do TFLM; sem ela, devolve -1.
 int8_t tflm_add_ethos_u(uint64_t resolver_handle);
 
 /* ---------------------------------------------------------------------------

@@ -22,7 +22,10 @@ Valida ai_model(...) no compilador (src/tinyml): a análise semântica
      constante de elemento e tensor lido para uma variável que já existe, nas
      duas visões (seções 4b e 8); vetor de tamanho desconhecido e índice
      variável ficam para o wrapper.
-  7. Limite de modelos, contra as instâncias do wrapper (TFLM_MAX_MODELS,
+  7. Modelos com todos os kernels que ainda assim nunca rodam: variáveis de
+     recurso, ethos-u, tipos que o TFLM só recusa na inferência e tensores de
+     tipo que o wrapper não converte (seção 8).
+  8. Limite de modelos, contra as instâncias do wrapper (TFLM_MAX_MODELS,
      lido de tflm_wrapper.cpp): globais além do limite são erro, porque são
      todos criados antes do main; com modelos locais, que só são criados se a
      função rodar, passar do limite é aviso, e o programa compila.
@@ -109,6 +112,73 @@ def kernel_sem_suporte(destino):
     dados[-8:-4] = (15).to_bytes(4, "little")
     dados[-1] = 15
     destino.write_bytes(bytes(dados))
+
+
+class Tflite:
+    """Leitura mínima de um .tflite (FlatBuffers, schema.fbs), só para achar
+    os bytes que os casos de teste alteram: o tipo de um tensor, o código de
+    um operador. Sem a biblioteca flatbuffers, que não é dependência do
+    projeto."""
+
+    # Campos usados, pela ordem em schema.fbs
+    MODELO_CODIGOS, MODELO_SUBGRAFOS = 1, 2
+    SUBGRAFO_TENSORES, SUBGRAFO_SAIDAS, SUBGRAFO_OPERADORES = 0, 2, 3
+    TENSOR_TIPO = 1
+    OPERADOR_ENTRADAS = 1
+    TIPO = {"uint8": 3, "bool": 6, "int16": 7, "float64": 10}
+
+    def __init__(self, caminho):
+        self.d = bytearray(Path(caminho).read_bytes())
+
+    def _u(self, p, n, sinal=False):
+        return int.from_bytes(self.d[p:p + n], "little", signed=sinal)
+
+    def _campo(self, tabela, i):
+        vt = tabela - self._u(tabela, 4, True)
+        if 4 + 2 * i >= self._u(vt, 2) or not self._u(vt + 4 + 2 * i, 2):
+            raise ValueError(f"campo {i} ausente na tabela em {tabela}")
+        return tabela + self._u(vt + 4 + 2 * i, 2)
+
+    def _vetor(self, tabela, i):
+        p = self._campo(tabela, i)
+        v = p + self._u(p, 4)
+        return [v + 4 + 4 * k for k in range(self._u(v, 4))]
+
+    def _tabelas(self, tabela, i):
+        return [p + self._u(p, 4) for p in self._vetor(tabela, i)]
+
+    def _subgrafo(self):
+        return self._tabelas(self._u(0, 4), self.MODELO_SUBGRAFOS)[0]
+
+    def tipo_do_tensor(self, indice, tipo):
+        tensor = self._tabelas(self._subgrafo(), self.SUBGRAFO_TENSORES)[indice]
+        self.d[self._campo(tensor, self.TENSOR_TIPO)] = self.TIPO[tipo]
+
+    def saida(self, k):
+        return self._u(self._vetor(self._subgrafo(), self.SUBGRAFO_SAIDAS)[k], 4, True)
+
+    def entradas_do_operador(self, k):
+        op = self._tabelas(self._subgrafo(), self.SUBGRAFO_OPERADORES)[k]
+        return [self._u(p, 4, True) for p in self._vetor(op, self.OPERADOR_ENTRADAS)]
+
+    def codigo_do_operador(self, k, codigo):
+        """Troca o operador do OperatorCode k: deprecated_builtin_code (int8,
+        127 para os códigos maiores) e builtin_code (int32)."""
+        oc = self._tabelas(self._u(0, 4), self.MODELO_CODIGOS)[k]
+        self.d[self._campo(oc, 0)] = min(codigo, 127)
+        p = self._campo(oc, 3)
+        self.d[p:p + 4] = codigo.to_bytes(4, "little")
+
+    def renomeia_custom(self, antigo, novo):
+        """Troca o custom_code de um operador por um nome menor ou igual: a
+        string do FlatBuffers guarda o comprimento antes e um 0 depois."""
+        p = self.d.index(antigo.encode())
+        assert self._u(p - 4, 4) == len(antigo) and len(novo) <= len(antigo)
+        self.d[p - 4:p] = len(novo).to_bytes(4, "little")
+        self.d[p:p + len(novo) + 1] = novo.encode() + b"\0"
+
+    def grava(self, destino):
+        destino.write_bytes(bytes(self.d))
 
 
 def checa_erros(robcmp, tmp):
@@ -504,6 +574,67 @@ def checa_tamanhos(robcmp, tmp):
         print("  ok  leitura inteira fora da pilha, um global por leitura")
 
 
+def checa_nao_roda(robcmp, tmp):
+    """Modelos com todos os kernels no wrapper, que ainda assim nunca rodam
+    (seção 8; RESULTADOS.md, 5.2.26). Gerados a partir dos modelos de
+    validação, alterando um código de operador ou o tipo de um tensor."""
+    print("== modelos que nunca rodam (seção 8)")
+    fonte = tmp / "t.rob"
+
+    # VAR_HANDLE e os outros dois: o operador do hello_world trocado, como em
+    # kernel_sem_suporte. Códigos acima de 127 ficam só em builtin_code.
+    for nome, codigo in (("VAR_HANDLE", 142), ("READ_VARIABLE", 143), ("ASSIGN_VARIABLE", 144)):
+        dados = bytearray(MODELO.read_bytes())
+        assert dados[-8:] == bytes([9, 0, 0, 0, 0, 0, 0, 9])
+        dados[-8:-4] = codigo.to_bytes(4, "little")
+        dados[-1] = 127
+        (tmp / f"{nome}.tflite").write_bytes(bytes(dados))
+        fonte.write_text(programa(f'a = ai_model("{nome}.tflite", 3000);'))
+        checa(nome, robcmp, fonte, f"{nome} needs resource variables, which the TFLM wrapper "
+              "does not create", 2, 18, cwd=tmp)
+
+    # ethos-u: o nome de um custom op do audio_preprocessor trocado
+    t = Tflite(MODELOS / "audio_preprocessor_int8.tflite")
+    t.renomeia_custom("SignalWindow", "ethos-u")
+    t.grava(tmp / "ethos.tflite")
+    fonte.write_text(programa('a = ai_model("ethos.tflite", 12288);'))
+    checa("custom ethos-u", robcmp, fonte, "custom ethos-u runs only on an Arm Ethos-U NPU",
+          2, 18, cwd=tmp)
+
+    # Tipos que o TFLM só recusa na inferência, ou roda errado: entrada e
+    # pesos do FULLY_CONNECTED do hello_world_int8 trocados.
+    q = MODELOS / "hello_world_int8.tflite"
+    entrada, pesos, vies = Tflite(q).entradas_do_operador(0)
+    for rotulo, codigo, tipos, esperado in [
+        ("FULLY_CONNECTED uint8", None, {entrada: "uint8", pesos: "uint8"},
+         "FULLY_CONNECTED with uint8 input and uint8 weights"),
+        ("TRANSPOSE_CONV int16 com pesos int16", 67, {vies: "int16", pesos: "int16"},
+         "TRANSPOSE_CONV with int16 input and int16 weights"),
+    ]:
+        t = Tflite(q)
+        for indice, tipo in tipos.items():
+            t.tipo_do_tensor(indice, tipo)
+        if codigo is not None:
+            # TRANSPOSE_CONV recebe (forma da saída, pesos, entrada): o viés
+            # do FULLY_CONNECTED faz o papel da entrada
+            t.codigo_do_operador(0, codigo)
+        t.grava(tmp / "tipos.tflite")
+        fonte.write_text(programa('a = ai_model("tipos.tflite", 3000);'))
+        checa(rotulo, robcmp, fonte, esperado, 2, 18, cwd=tmp)
+
+    # Tensor de tipo sem conversão: erro no uso, não na declaração.
+    for tipo, nome in (("bool", "bool"), ("float64", "of another type")):
+        t = Tflite(q)
+        t.tipo_do_tensor(t.saida(0), tipo)
+        t.grava(tmp / f"{tipo}.tflite")
+        fonte.write_text(programa(f'a = ai_model("{tipo}.tflite", 3000);', "x = a.output0[0];"))
+        checa(f"saída {tipo} lida", robcmp, fonte, f"Tensor output0 of model a is {nome}, which "
+              "the TFLM wrapper does not convert", 3, 9, cwd=tmp)
+    fonte.write_text(programa('a = ai_model("bool.tflite", 3000);', "n = a.output0.size;",
+                              "a.input0[0] = 1.0;", "r = a.invoke();"))
+    checa_ok("modelo com saída bool, sem lê-la", robcmp, fonte, cwd=tmp)
+
+
 WRAPPER = Path(__file__).resolve().parents[2] / "wrappers/tflm/tflm_wrapper.cpp"
 
 
@@ -555,7 +686,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         for etapa in (checa_erros, checa_busca, checa_reservado,
-                      checa_retrocompatibilidade, checa_membros, checa_tamanhos, checa_limite):
+                      checa_retrocompatibilidade, checa_membros, checa_tamanhos,
+                      checa_nao_roda, checa_limite):
             pasta = tmp / etapa.__name__
             pasta.mkdir()
             etapa(robcmp, pasta)

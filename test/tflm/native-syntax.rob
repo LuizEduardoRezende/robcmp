@@ -819,6 +819,35 @@ int16 usa_tipo_proprio() {
 //     ela que dá o tipo do tensor na sintaxe nativa (m.output0 é float[N]);
 //     não há tamanho "conhecido só em runtime". (Este modelo também cai na
 //     regra anterior: é híbrido, uint8.)
+//
+//     A regra de tipos vale também para o que o TFLM só recusa na inferência:
+//     uint8 em DEPTHWISE_CONV_2D, FULLY_CONNECTED e TRANSPOSE_CONV passa na
+//     criação do intérprete e faz o invoke() devolver -1; TRANSPOSE_CONV com
+//     entrada e pesos int16 roda, lendo os pesos como int8. DECISÃO
+//     (2026-10-20): erro na declaração, como os demais (RESULTADOS.md, 5.2.26).
+
+// v = ai_model("modelo_com_variaveis.tflite", 3000);
+//     -> erro: VAR_HANDLE, READ_VARIABLE e ASSIGN_VARIABLE precisam de
+//        variáveis de recurso, que a aplicação cria e entrega ao intérprete,
+//        e o wrapper não cria. O kernel existe e é registrado, mas o modelo
+//        falharia sempre ao criar o intérprete.
+//     DECISÃO (2026-10-20): erro na declaração. Criar as variáveis exigiria
+//     contar quantas o modelo usa e mudar a API do wrapper, sem caso de uso
+//     até aqui. O CALL_ONCE roda, mas na prática só aparece junto com elas.
+
+// n = ai_model("modelo_vela.tflite", 3000);
+//     -> erro: o custom op ethos-u é o trabalho de uma NPU Ethos-U da Arm,
+//        gerado pela ferramenta Vela. Nem o x86 nem o STM32F407 têm a NPU, e
+//        sem ela o TFLM não tem kernel para ele.
+
+// b = ai_model("modelo_com_saida_bool.tflite", 3000);
+// x = b.output0[0];
+//     -> erro, no uso: output0 é bool, e o wrapper só converte tensores
+//        float32, int8, uint8, int16, int32 e int64. A escrita seria ignorada
+//        e a leitura daria 0 em runtime. O modelo continua utilizável pelos
+//        outros tensores, e b.output0.size continua valendo.
+//     DECISÃO (2026-10-20): erro no uso do tensor, não na declaração do
+//     modelo: um modelo com uma saída bool que o programa não lê roda.
 
 // f = ai_model("models/audio_preprocessor_int8.tflite", 12288);
 //     -> DEPENDE: este modelo exige 9 custom ops (SignalRfft, SignalWindow,

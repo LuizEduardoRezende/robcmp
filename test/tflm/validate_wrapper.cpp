@@ -155,6 +155,14 @@ static void testa_ciclo_de_vida() {
     CHECK(tflm_input(0, 0) == 0, "tflm_input com handle 0 deveria devolver 0");
     tflm_free_model(0);
 
+    // ethos-u sem a NPU no build do TFLM: recusado ja no registro, em vez de
+    // devolver sucesso sem registrar nada (RESULTADOS.md, 5.2.26).
+    {
+        uint64_t r = tflm_create_resolver();
+        CHECK(tflm_add_ethos_u(r) == -1, "tflm_add_ethos_u aceitou sem a NPU");
+        tflm_free_model(r);
+    }
+
     // Arena pequena demais. Cada tamanho roda num processo filho, porque o
     // proprio TFLM cai em certas faixas (AllocatePOD constroi os parametros do
     // operador sobre nullptr quando a arena acaba -- ver RESULTADOS.md). O

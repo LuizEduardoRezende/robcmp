@@ -935,6 +935,62 @@ continuam independentes).
 programas nativos passa a incluir esses vetores, onde antes eles ficavam
 invisíveis na pilha.
 
+### 5.2.26 Modelos com todos os kernels que nunca rodavam
+
+Encontrado na revisão de 2026-10-19 e fechado com a verificação dos 119
+kernels do wrapper, um por um, em 2026-10-20, contra o TFLM do submódulo
+(commit `d031820`):
+
+| Verificação | Resultado |
+|---|---|
+| Um programa registra os 119 kernels num resolver | os 119 ligam e devolvem 0 |
+| Algum `Register_*` do TFLM sem `Add*` no resolver ou sem função no wrapper | nenhum |
+| Testes de unidade do próprio TFLM, rodados no nosso build x86 | 93 programas, 857 casos, nenhuma falha |
+| `IF`, `CALL_ONCE` e `UNIDIRECTIONAL_SEQUENCE_LSTM`, com teste só no Bazel, compilados à mão | 9 casos, nenhuma falha |
+| O que cada kernel exige do intérprete, pelo código e pela documentação | 4 nunca rodam com o wrapper |
+
+115 kernels rodam com o intérprete que o wrapper cria. Os 4 que não rodam, e
+dois casos de tipos, compilavam e só falhavam na execução:
+
+- **`VAR_HANDLE`, `READ_VARIABLE`, `ASSIGN_VARIABLE`:** precisam das variáveis
+  de recurso que a aplicação cria e entrega ao intérprete
+  (`tensorflow/lite/micro/docs/resource_variables.md`; o próprio exemplo
+  hello_world do TFLM cria 24). O wrapper passa `nullptr`, e
+  `kernels/var_handle.cc:53` recusa a criação do modelo — o erro da issue
+  tensorflow/tensorflow#56932. O `CALL_ONCE` roda, mas na prática só aparece
+  junto com eles.
+- **`ethos-u`:** o trabalho de uma NPU Ethos-U da Arm, gerado pela ferramenta
+  Vela (`kernels/ethos_u/README.md`). Sem a NPU no build do TFLM,
+  `Register_ETHOSU()` devolve `nullptr` e `AddEthosU` devolve sucesso sem
+  registrar nada.
+- **Tipos que só a inferência recusa:** a regra de tipos da 5.4.25 seguia o
+  `Prepare` dos kernels. `uint8` em `DEPTHWISE_CONV_2D`, `FULLY_CONNECTED` e
+  `TRANSPOSE_CONV` passa no `Prepare` e cai no `Eval`: o modelo é criado e o
+  `invoke()` devolve −1. `TRANSPOSE_CONV` com entrada e pesos `int16` passa
+  nos dois e lê os pesos como `int8`: roda, errado.
+- **Tensores de tipo que o wrapper não converte:** `bool`, `float16`,
+  `float64`, `uint16`, `uint32`, `string`. A visão padrão `float` os aceitava;
+  na execução a escrita era ignorada e a leitura dava 0.
+
+Corrigido, especificado antes na seção 8: os três primeiros casos são erro na
+declaração do modelo; o tipo sem conversão é erro no uso do tensor, para que um
+modelo com uma saída `bool` que o programa não lê continue utilizável. A regra
+de tipos passou a ser a lista do que o TFLM executa, e o SSD MobileNet agora
+aponta também o `DEPTHWISE_CONV_2D` com `uint8`. No wrapper, `tflm_add_ethos_u`
+devolve −1 sem a NPU, o que corrige também o modo biblioteca. Testes: 9 casos
+novos no `check_ai_model.py`, com modelos gerados a partir dos de validação
+trocando um código de operador ou o tipo de um tensor (uma leitura mínima de
+FlatBuffers em Python, sem dependência nova); `tflm_add_ethos_u` na camada 1; o
+veredito do SSD no `check_tflite.py`.
+
+Fica uma ressalva: a verificação é por kernel. Quase todo kernel aceita só
+alguns tipos, e o compilador confere tipos em 4 operadores. No Cortex-M4 o
+TFLM deve usar os kernels do CMSIS-NN, que substituem parte dos de referência;
+os mesmos testes valem ser repetidos no build ARM.
+
+**Serve para:** a seção sobre o que sobe para a compilação, com a contagem
+exata do que o wrapper suporta: 115 de 119 kernels, e por quê os outros 4 não.
+
 ---
 
 ## Seção 5.4 — Validação e métricas
@@ -2014,6 +2070,8 @@ corrigidos um por um, cada um com seu teste:
   `native-syntax.rob`.
 - Tensor lido inteiro num vetor global por leitura, em vez da pilha
   (5.2.25). Especificado antes, na seção 4b.
+- Verificação dos 119 kernels; os modelos que nunca rodavam viram erro de
+  compilação (5.2.26). Especificado antes, na seção 8.
 
 ---
 
@@ -2321,7 +2379,7 @@ entradas (`simple_add_model`) e o EfficientDet-Lite0, com saídas idênticas às
 do modo biblioteca e do TFLM puro. O compilador recusa, na declaração, modelos
 com kernel sem suporte, com tipos que o TFLM não roda e com saídas de
 detecção sem forma, e confere o limite de modelos. `make -C test/tflm check`
-passa por inteiro: camadas 1 a 3, assinaturas, análise do `.tflite` e 101
+passa por inteiro: camadas 1 a 3, assinaturas, análise do `.tflite` e 111
 casos de compilação. `make -C test/achados` reproduz os achados 5.2.7, 5.2.8 e
 5.2.11; `make -C test/tflm/demo` é a demonstração da orientação.
 

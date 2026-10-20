@@ -254,10 +254,13 @@ static std::string typeName(tflite::TensorType t) {
 
 /*
  * The combinations of input and weight types that TFLM runs, as its kernels
- * check them in Prepare (kernels/conv_common.cc, depthwise_conv_common.cc,
- * transpose_conv.cc, fully_connected.cc). Float input with integer weights --
- * the "hybrid" or "dynamic range" quantization of TFLite -- is refused, and
- * the model fails when the interpreter is created.
+ * check them in Prepare and dispatch them in Eval (kernels/conv.cc,
+ * depthwise_conv.cc, transpose_conv.cc, fully_connected.cc). Float input with
+ * integer weights -- the "hybrid" or "dynamic range" quantization of TFLite --
+ * is refused when the interpreter is created. uint8, which Prepare lets
+ * through in some of them, is refused by Eval: invoke() fails (RESULTADOS.md,
+ * 5.2.26). TRANSPOSE_CONV with int16 weights passes both and reads them as
+ * int8: it runs, wrong.
  */
 static bool tflmRunsTypes(tflite::BuiltinOperator op, tflite::TensorType in,
 	tflite::TensorType w) {
@@ -265,18 +268,15 @@ static bool tflmRunsTypes(tflite::BuiltinOperator op, tflite::TensorType in,
 	bool intWeights = w == TensorType_INT8 || w == TensorType_INT4;
 	switch (op) {
 		case BuiltinOperator_CONV_2D:
-			return (in == TensorType_FLOAT32 && w == TensorType_FLOAT32) ||
-				(in == TensorType_INT16 && w == TensorType_INT8) ||
-				(in == TensorType_INT8 && intWeights);
 		case BuiltinOperator_DEPTHWISE_CONV_2D:
-			return in == w || (in == TensorType_INT8 && intWeights) ||
+		case BuiltinOperator_FULLY_CONNECTED:
+			return (in == TensorType_FLOAT32 && w == TensorType_FLOAT32) ||
+				(in == TensorType_INT8 && intWeights) ||
 				(in == TensorType_INT16 && w == TensorType_INT8);
 		case BuiltinOperator_TRANSPOSE_CONV:
-			return in == w || (in == TensorType_INT16 && w == TensorType_INT8);
-		case BuiltinOperator_FULLY_CONNECTED:
-			return !((in == TensorType_FLOAT32 && w != TensorType_FLOAT32) ||
-				(in == TensorType_INT8 && !intWeights) ||
-				(in == TensorType_INT16 && w != TensorType_INT8));
+			return (in == TensorType_FLOAT32 && w == TensorType_FLOAT32) ||
+				(in == TensorType_INT8 && w == TensorType_INT8) ||
+				(in == TensorType_INT16 && w == TensorType_INT8);
 		default:
 			return true;
 	}
@@ -327,6 +327,32 @@ static std::string shapeIncompatibility(const tflite::SubGraph *sg, const tflite
 		return "";
 	return "outputs " + unshaped + " of TFLite_Detection_PostProcess with no shape in the "
 		"file (TFLM sizes tensors by the file, and the operator would write past their end)";
+}
+
+/*
+ * Kernels the wrapper registers, but that need something its interpreter does
+ * not have, and so always fail (RESULTADOS.md, 5.2.26). VAR_HANDLE,
+ * READ_VARIABLE and ASSIGN_VARIABLE need the resource variables, which the
+ * application creates and passes to the interpreter, and the wrapper passes
+ * none. ethos-u is the workload of an Arm Ethos-U NPU, made by the Vela tool;
+ * without the NPU, TFLM has no kernel for it.
+ */
+static std::string wrapperIncompatibility(tflite::BuiltinOperator op) {
+	switch (op) {
+		case tflite::BuiltinOperator_VAR_HANDLE:
+		case tflite::BuiltinOperator_READ_VARIABLE:
+		case tflite::BuiltinOperator_ASSIGN_VARIABLE:
+			return std::string(tflite::EnumNameBuiltinOperator(op)) +
+				" needs resource variables, which the TFLM wrapper does not create";
+		default:
+			return "";
+	}
+}
+
+static std::string wrapperIncompatibility(const std::string &customCode) {
+	if (customCode == "ethos-u")
+		return "custom ethos-u runs only on an Arm Ethos-U NPU";
+	return "";
 }
 
 static std::string wrapperFunctionFor(tflite::BuiltinOperator op) {
@@ -428,16 +454,18 @@ bool TfliteModel::load(const std::string &path, TfliteModel &model, std::string 
 				k.op = oc->custom_code()->str();
 				k.custom = true;
 				k.wrapperFunction = wrapperFunctionFor(k.op);
-				std::string why = shapeIncompatibility(sg, op, k.op);
-				if (!why.empty())
-					incompatibilities.insert(why);
+				for (const std::string &why : {shapeIncompatibility(sg, op, k.op),
+						wrapperIncompatibility(k.op)})
+					if (!why.empty())
+						incompatibilities.insert(why);
 			} else {
 				const char *name = tflite::EnumNameBuiltinOperator(code);
 				k.op = (name && *name) ? name : "BUILTIN_" + std::to_string((int)code);
 				k.wrapperFunction = wrapperFunctionFor(code);
-				std::string why = typeIncompatibility(sg, op, code);
-				if (!why.empty())
-					incompatibilities.insert(why);
+				for (const std::string &why : {typeIncompatibility(sg, op, code),
+						wrapperIncompatibility(code)})
+					if (!why.empty())
+						incompatibilities.insert(why);
 			}
 			kernels.emplace(k.op, k);
 		}

@@ -112,7 +112,7 @@ test/tflm/
 ├── rob/nativo_*.rob          # camada 3: os mesmos e mais, na sintaxe nativa
 ├── check_abi.py              # assinaturas RL x C em x86_64 e Cortex-M
 ├── check_tflite.py           # análise do .tflite (com tflite_info.cpp)
-├── check_ai_model.py         # erros e programas aceitos da sintaxe nativa (101 casos)
+├── check_ai_model.py         # erros e programas aceitos da sintaxe nativa (111 casos)
 ├── rob_embed.py              # embute arquivos binários em .rob
 └── demo/                     # demonstração para orientação (reuniao.html, make ...)
 test/achados/                 # reproduções dos achados do RESULTADOS.md

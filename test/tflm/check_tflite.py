@@ -148,6 +148,7 @@ def checa_externos(info):
         "efficientdet_lite0_int8.tflite": [],
         "mobilebert_classifier.tflite": ["FULLY_CONNECTED with float32 input and int8 weights"],
         "ssd_mobilenet_v1_quant.tflite": ["CONV_2D with uint8 input and uint8 weights",
+                                          "DEPTHWISE_CONV_2D with uint8 input and uint8 weights",
                                           "outputs 0, 1, 2, 3 of TFLite_Detection_PostProcess"],
         "yamnet.tflite": [],  # recusado pelos kernels, não pelos tipos
     }

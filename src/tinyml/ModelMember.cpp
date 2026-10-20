@@ -6,6 +6,7 @@
 #include "Program.h"
 #include "semantic/PropagateTypes.h"
 
+#include <algorithm>
 #include <regex>
 
 const TfliteTensor& TensorRef::info() const {
@@ -133,12 +134,23 @@ ModelMember ModelMember::resolve(const string& name, Node *scope, PropagateTypes
 			"Tensors are numbered from 0.", stem.c_str(), (int)tensors.size(), role,
 			tensors.size() == 1 ? "" : "s", tensorList(tensors, role).c_str(), member.c_str()));
 
+	const TfliteTensor& t = mm.tensor.info();
 	if (rest.size() == 1) {
+		// The wrapper converts these to and from float; the others it would
+		// skip at run time, writes ignored and reads 0 (RESULTADOS.md, 5.2.26).
+		// Only the values: .size and the other properties stay.
+		static const TfliteType converted[] = {TfliteType::Float32, TfliteType::Int8,
+			TfliteType::UInt8, TfliteType::Int16, TfliteType::Int32, TfliteType::Int64};
+		if (find(begin(converted), end(converted), t.type) == end(converted)) {
+			string type = t.type == TfliteType::Other ? "of another type" : tfliteTypeName(t.type);
+			return fail(string_format("Tensor %s of model %s is %s, which the TFLM wrapper "
+				"does not convert: it reads and writes float32, int8, uint8, int16, int32 and "
+				"int64 tensors.", member.c_str(), stem.c_str(), type.c_str()));
+		}
 		mm.kind = Tensor;
 		return mm;
 	}
 
-	const TfliteTensor& t = mm.tensor.info();
 	const string& sub = rest[1];
 	if (rest.size() > 2)
 		return fail(string_format("%s.%s.%s has no member %s.", stem.c_str(), member.c_str(),
