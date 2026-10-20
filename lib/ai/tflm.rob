@@ -55,7 +55,9 @@ void tflm_free_model(uint64 handle);
 // Execução
 // ---------------------------------------------------------------------------
 
-// Executa a inferência. Devolve 0 em caso de sucesso, -1 em caso de falha.
+// Executa a inferência. Devolve 0 em caso de sucesso, -1 em caso de falha. Também
+// devolve -1, sem executar, se algum acesso a um tensor do modelo foi recusado
+// desde a chamada anterior: índice fora do tensor ou vetor de outro tamanho.
 int8 tflm_invoke(uint64 model_handle);
 
 

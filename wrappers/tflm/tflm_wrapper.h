@@ -50,7 +50,8 @@ uint64_t tflm_create_model(uint64_t resolver_handle,
 // Libera a instancia para reuso. Nao devolve memoria: nao ha heap.
 void tflm_free_model(uint64_t handle);
 
-// Executa a inferencia.
+// Executa a inferencia. Devolve -1, sem executar, se algum acesso a um tensor
+// do modelo foi recusado desde a chamada anterior (ver "Acesso aos tensores").
 int8_t tflm_invoke(uint64_t model_handle);
 
 /* ---------------------------------------------------------------------------
@@ -187,6 +188,11 @@ int8_t tflm_add_ethos_u(uint64_t resolver_handle);
 
 /* ---------------------------------------------------------------------------
  * Acesso aos tensores -- espelha a sintaxe nativa.
+ *
+ * Um acesso recusado (indice fora do tensor, vetor de outro tamanho, tipo
+ * errado na visao crua) nao copia nada e fica marcado no modelo: o proximo
+ * tflm_invoke devolve -1 sem executar, e limpa a marca. Com handle 0 nao ha
+ * modelo para marcar.
  * -------------------------------------------------------------------------*/
 
 // m.input0, m.output0, ... Devolvem 0 se o indice nao existir no modelo.

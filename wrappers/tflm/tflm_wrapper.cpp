@@ -53,6 +53,9 @@ struct TFLM_Instance {
     // Armazenamento do interpretador: construido com placement new, sem heap.
     alignas(tflite::MicroInterpreter) uint8_t interpreter_storage[sizeof(tflite::MicroInterpreter)];
     bool in_use;
+    // Algum acesso a um tensor do modelo foi recusado desde o ultimo invoke:
+    // o proximo devolve -1 sem rodar (native-syntax.rob, secao 1).
+    bool acesso_recusado;
 };
 
 static TFLM_Instance g_instances[TFLM_MAX_MODELS];
@@ -879,6 +882,7 @@ uint64_t tflm_create_resolver(void) {
         if (!g_instances[i].in_use) {
             TFLM_Instance *inst = &g_instances[i];
             inst->in_use = true;
+            inst->acesso_recusado = false;
             inst->allocator = nullptr;
             inst->interpreter = nullptr;
             new (&inst->resolver) MutableResolver();
@@ -1011,9 +1015,34 @@ uint64_t tflm_tensor_size(uint64_t tensor_handle) {
 }
 
 int8_t tflm_invoke(uint64_t model_handle) {
-    tflite::MicroInterpreter *it = interpretador(model_handle);
-    if (!it) return -1;
-    return it->Invoke() == kTfLiteOk ? 0 : -1;
+    TFLM_Instance *inst = model_handle ? instance_from_handle(model_handle) : nullptr;
+    if (!inst || !inst->interpreter) return -1;
+    // A entrada pode estar incompleta: a inferencia nao roda.
+    if (inst->acesso_recusado) {
+        inst->acesso_recusado = false;
+        return -1;
+    }
+    return inst->interpreter->Invoke() == kTfLiteOk ? 0 : -1;
+}
+
+/* Um acesso recusado -- indice fora do tensor, vetor de outro tamanho, tipo
+ * errado na visao crua -- nao copia nada. Sozinho, ele so devolveria -1 a
+ * quem olha o retorno, e a sintaxe nativa nao olha: a inferencia rodava sobre
+ * a entrada anterior sem nada avisar (RESULTADOS.md, 5.2.24). Por isso a recusa
+ * fica marcada no modelo dono do tensor, e o proximo tflm_invoke a informa.
+ *
+ * O handle do tensor nao leva ao modelo. A busca percorre os tensores de
+ * entrada e saida das instancias em uso, e so acontece quando um acesso falha. */
+static void recusa(const TfLiteTensor *t) {
+    if (!t) return;
+    for (TFLM_Instance &inst : g_instances) {
+        if (!inst.in_use || !inst.interpreter) continue;
+        tflite::MicroInterpreter *it = inst.interpreter;
+        for (size_t i = 0; i < it->inputs_size(); ++i)
+            if (it->input(i) == t) { inst.acesso_recusado = true; return; }
+        for (size_t i = 0; i < it->outputs_size(); ++i)
+            if (it->output(i) == t) { inst.acesso_recusado = true; return; }
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -1100,46 +1129,74 @@ static int8_t tensor_write(TfLiteTensor *t, uint64_t index, float value) {
     }
 }
 
-static float tensor_read(const TfLiteTensor *t, uint64_t index) {
-    if (!t || !t->data.data || index >= elementos(t)) return 0.0f;
+// Devolve false, e *v = 0, se o acesso for recusado.
+static bool tensor_read(const TfLiteTensor *t, uint64_t index, float *v) {
+    *v = 0.0f;
+    if (!t || !t->data.data || index >= elementos(t)) return false;
     switch (t->type) {
-        case kTfLiteFloat32: return t->data.f[index];
-        case kTfLiteInt8:    return from_storage(t, t->data.int8[index]);
-        case kTfLiteUInt8:   return from_storage(t, t->data.uint8[index]);
-        case kTfLiteInt16:   return from_storage(t, t->data.i16[index]);
-        case kTfLiteInt32:   return from_storage(t, t->data.i32[index]);
-        case kTfLiteInt64:   return from_storage(t, t->data.i64[index]);
+        case kTfLiteFloat32: *v = t->data.f[index]; return true;
+        case kTfLiteInt8:    *v = from_storage(t, t->data.int8[index]); return true;
+        case kTfLiteUInt8:   *v = from_storage(t, t->data.uint8[index]); return true;
+        case kTfLiteInt16:   *v = from_storage(t, t->data.i16[index]); return true;
+        case kTfLiteInt32:   *v = from_storage(t, t->data.i32[index]); return true;
+        case kTfLiteInt64:   *v = from_storage(t, t->data.i64[index]); return true;
         default:
             TFLM_LOG("ERRO: tipo de tensor nao suportado na leitura: %d", t->type);
-            return 0.0f;
+            return false;
     }
 }
 
 void tflm_set_value(uint64_t tensor_handle, uint64_t index, float value) {
-    if (tensor_handle) tensor_write(tensor_de(tensor_handle), index, value);
+    TfLiteTensor *t = tensor_handle ? tensor_de(tensor_handle) : nullptr;
+    if (t && tensor_write(t, index, value) != 0) recusa(t);
 }
 
 float tflm_get_value(uint64_t tensor_handle, uint64_t index) {
-    return tensor_handle ? tensor_read(tensor_de(tensor_handle), index) : 0.0f;
+    const TfLiteTensor *t = tensor_handle ? tensor_de(tensor_handle) : nullptr;
+    float v = 0.0f;
+    if (t && !tensor_read(t, index, &v)) recusa(t);
+    return v;
 }
 
 // O tamanho vem so do que a RL injeta (values_len), e precisa ser exatamente o
 // numero de elementos do tensor. Nao ha mais um `count` escrito pelo usuario
 // ao lado do tamanho injetado -- herança do TCC que permitia os dois
 // divergirem e a copia sair do vetor.
+// O tipo do tensor e conferido antes de copiar: um tipo sem conversao recusa o
+// vetor inteiro, sem copiar parte dele.
+static bool tem_conversao(const TfLiteTensor *t) {
+    switch (t->type) {
+        case kTfLiteFloat32: case kTfLiteInt8: case kTfLiteUInt8:
+        case kTfLiteInt16: case kTfLiteInt32: case kTfLiteInt64:
+            return true;
+        default:
+            return false;
+    }
+}
+
 int8_t tflm_set_values(uint64_t tensor_handle, const float *values, int32_t values_len) {
     TfLiteTensor *t = tensor_handle ? tensor_de(tensor_handle) : nullptr;
-    if (!t || !values || values_len < 0 || (uint64_t)values_len != elementos(t)) return -1;
+    if (!t) return -1;
+    if (!values || !t->data.data || !tem_conversao(t) || values_len < 0 ||
+        (uint64_t)values_len != elementos(t)) {
+        recusa(t);
+        return -1;
+    }
     for (int32_t i = 0; i < values_len; ++i)
-        if (tensor_write(t, (uint64_t)i, values[i]) != 0) return -1;
+        tensor_write(t, (uint64_t)i, values[i]);
     return 0;
 }
 
 int8_t tflm_get_values(uint64_t tensor_handle, float *values, int32_t values_len) {
     const TfLiteTensor *t = tensor_handle ? tensor_de(tensor_handle) : nullptr;
-    if (!t || !values || values_len < 0 || (uint64_t)values_len != elementos(t)) return -1;
+    if (!t) return -1;
+    if (!values || !t->data.data || !tem_conversao(t) || values_len < 0 ||
+        (uint64_t)values_len != elementos(t)) {
+        recusa(t);
+        return -1;
+    }
     for (int32_t i = 0; i < values_len; ++i)
-        values[i] = tensor_read(t, (uint64_t)i);
+        tensor_read(t, (uint64_t)i, &values[i]);
     return 0;
 }
 
@@ -1157,37 +1214,43 @@ int8_t tflm_get_values(uint64_t tensor_handle, float *values, int32_t values_len
  * ELEMENTOS, nao de bytes.
  * -------------------------------------------------------------------------*/
 
-static TfLiteTensor *tensor_cru(uint64_t handle, TfLiteType tipo, int32_t len) {
+// O tensor, ou nullptr se o acesso for recusado (e entao marcado).
+static TfLiteTensor *tensor_cru(uint64_t handle, TfLiteType tipo, const void *values,
+                                int32_t len) {
     TfLiteTensor *t = handle ? tensor_de(handle) : nullptr;
-    if (!t || !t->data.data || t->type != tipo) return nullptr;
-    if (len < 0 || (uint64_t)len != elementos(t)) return nullptr;
+    if (!t) return nullptr;
+    if (!values || !t->data.data || t->type != tipo || len < 0 ||
+        (uint64_t)len != elementos(t)) {
+        recusa(t);
+        return nullptr;
+    }
     return t;
 }
 
 int8_t tflm_set_raw_int8(uint64_t tensor_handle, const int8_t *values, int32_t values_len) {
-    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt8, values_len);
-    if (!t || !values) return -1;
+    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt8, values, values_len);
+    if (!t) return -1;
     memcpy(t->data.int8, values, (size_t)values_len * sizeof(int8_t));
     return 0;
 }
 
 int8_t tflm_get_raw_int8(uint64_t tensor_handle, int8_t *values, int32_t values_len) {
-    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt8, values_len);
-    if (!t || !values) return -1;
+    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt8, values, values_len);
+    if (!t) return -1;
     memcpy(values, t->data.int8, (size_t)values_len * sizeof(int8_t));
     return 0;
 }
 
 int8_t tflm_set_raw_int16(uint64_t tensor_handle, const int16_t *values, int32_t values_len) {
-    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt16, values_len);
-    if (!t || !values) return -1;
+    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt16, values, values_len);
+    if (!t) return -1;
     memcpy(t->data.i16, values, (size_t)values_len * sizeof(int16_t));
     return 0;
 }
 
 int8_t tflm_get_raw_int16(uint64_t tensor_handle, int16_t *values, int32_t values_len) {
-    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt16, values_len);
-    if (!t || !values) return -1;
+    TfLiteTensor *t = tensor_cru(tensor_handle, kTfLiteInt16, values, values_len);
+    if (!t) return -1;
     memcpy(values, t->data.i16, (size_t)values_len * sizeof(int16_t));
     return 0;
 }
@@ -1196,8 +1259,12 @@ int8_t tflm_get_raw_int16(uint64_t tensor_handle, int16_t *values, int32_t value
 // de sinal na chamada (ver o header).
 static TfLiteTensor *tensor_cru_elemento(uint64_t handle, uint64_t index) {
     TfLiteTensor *t = handle ? tensor_de(handle) : nullptr;
-    if (!t || !t->data.data || index >= elementos(t)) return nullptr;
-    if (t->type != kTfLiteInt8 && t->type != kTfLiteInt16) return nullptr;
+    if (!t) return nullptr;
+    if (!t->data.data || index >= elementos(t) ||
+        (t->type != kTfLiteInt8 && t->type != kTfLiteInt16)) {
+        recusa(t);
+        return nullptr;
+    }
     return t;
 }
 

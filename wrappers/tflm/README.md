@@ -45,6 +45,10 @@ linker descartar os kernels não usados (`-ffunction-sections` com
   `signext`, e uma função compilada pelo clang lê −1 como 255
   (`make -s -C test/tflm/demo sinal`). Use `int32_t`, como `tflm_set_raw_value`.
 - **Retorno `int8_t`:** 0 é sucesso, −1 é falha.
+- **Acesso recusado marca o modelo.** Índice fora do tensor, vetor de outro
+  tamanho ou tipo errado na visão crua não copiam nada, e o próximo
+  `tflm_invoke` devolve −1 sem executar. A sintaxe nativa não olha o retorno
+  dos acessos: é assim que a falha chega ao programa.
 - **Sem heap.** Os intérpretes vivem numa tabela estática e o TFLM aloca
   dentro da arena do modelo.
 

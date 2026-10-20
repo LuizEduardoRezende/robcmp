@@ -9,6 +9,11 @@
  * tensores grandes (RESULTADOS.md, 5.2.23). Um índice sem sinal continua
  * chegando inteiro: uint8 255 é o elemento 255.
  *
+ * O acesso recusado é informado pelo invoke() seguinte, que devolve -1 sem
+ * rodar (native-syntax.rob, seção 1). Antes nada avisava: um vetor de outro
+ * tamanho num parâmetro float[] deixava a entrada como estava, e a inferência
+ * rodava sobre ela (RESULTADOS.md, 5.2.24).
+ *
  * Devolve 0 se tudo passar, ou o código do teste que falhou.
  */
 
@@ -89,11 +94,63 @@ int8 test_sem_sinal() {
     return 0;
 }
 
+void escreve(float[] v) {
+    ms.input0 = v;
+}
+
+void le(float[] s) {
+    s = ms.output0;
+}
+
+int8 test_invoke_informa() {
+    // limpa o que os testes anteriores marcaram
+    ms.invoke();
+    if ms.invoke() != 0 {
+        return 1;
+    }
+
+    // escrita inteira de outro tamanho
+    curto = {0.0:10};
+    escreve(curto);
+    if ms.invoke() != -1 {
+        return 1;
+    }
+    if ms.invoke() != 0 {
+        return 1;
+    }
+
+    // leitura inteira de outro tamanho: o vetor fica como estava
+    saida = {7.0:3};
+    le(saida);
+    if saida[0] != 7.0 {
+        return 1;
+    }
+    if ms.invoke() != -1 {
+        return 1;
+    }
+
+    // o tamanho certo não marca
+    certo = {0.0:1960};
+    escreve(certo);
+    if ms.invoke() != 0 {
+        return 1;
+    }
+
+    // elemento de índice variável fora do tensor
+    i = int32(4);
+    x = ms.output0[i];
+    if ms.invoke() != -1 {
+        return 1;
+    }
+    return 0;
+}
+
 int8 main() {
     result = 0;
     if test_int8_negativo() != 0 { result = 1; }
     if test_int16_negativo() != 0 { result = 2; }
     if test_int32_negativo() != 0 { result = 3; }
     if test_sem_sinal() != 0 { result = 4; }
+    if test_invoke_informa() != 0 { result = 5; }
     return result;
 }

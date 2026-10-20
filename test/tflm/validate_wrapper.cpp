@@ -303,6 +303,85 @@ static void testa_saturacao() {
 }
 
 // ---------------------------------------------------------------------------
+// Acesso recusado: o invoke seguinte devolve -1 sem rodar, e limpa a marca
+// ---------------------------------------------------------------------------
+
+static void testa_acesso_recusado() {
+    printf("== acesso recusado\n");
+    std::vector<uint8_t> q = carregar("test/tflm/models/hello_world_int8.tflite");
+    std::vector<uint8_t> f = carregar("test/tflm/models/hello_world_float.tflite");
+    alignas(16) static uint8_t arena_b[3000];
+    uint64_t r = tflm_create_resolver();
+    tflm_add_fully_connected(r);
+    uint64_t m = tflm_create_model(r, q.data(), g_arena_wrapper, (int32_t)q.size(), 3000);
+    r = tflm_create_resolver();
+    tflm_add_fully_connected(r);
+    uint64_t outro = tflm_create_model(r, f.data(), arena_b, (int32_t)f.size(), 3000);
+    CHECK(m != 0 && outro != 0, "modelos nao criaram");
+    if (!m || !outro) return;
+    uint64_t in = tflm_input(m, 0), out = tflm_output(m, 0);   // int8[1], int8[1]
+    float f2[2] = {0.0f, 0.0f};
+    int8_t i2[2] = {0, 0};
+    int16_t s1[1] = {0};
+
+    CHECK(tflm_invoke(m) == 0, "invoke sem acesso recusado falhou");
+
+    // Cada acesso recusado, seguido do invoke que o informa e do que ja roda.
+    struct { const char *nome; void (*acesso)(uint64_t, uint64_t, float *, int8_t *, int16_t *); } casos[] = {
+        {"escrita de elemento fora do tensor",
+         [](uint64_t i, uint64_t, float *, int8_t *, int16_t *) { tflm_set_value(i, 1, 1.0f); }},
+        {"leitura de elemento fora do tensor",
+         [](uint64_t, uint64_t o, float *, int8_t *, int16_t *) { (void)tflm_get_value(o, 5); }},
+        {"escrita inteira de outro tamanho",
+         [](uint64_t i, uint64_t, float *v, int8_t *, int16_t *) { tflm_set_values(i, v, 2); }},
+        {"leitura inteira de outro tamanho",
+         [](uint64_t, uint64_t o, float *v, int8_t *, int16_t *) { tflm_get_values(o, v, 2); }},
+        {"escrita .raw de outro tamanho",
+         [](uint64_t i, uint64_t, float *, int8_t *c, int16_t *) { tflm_set_raw_int8(i, c, 2); }},
+        {"leitura .raw de outro tipo",
+         [](uint64_t, uint64_t o, float *, int8_t *, int16_t *c) { tflm_get_raw_int16(o, c, 1); }},
+        {"escrita .raw[k] fora do tensor",
+         [](uint64_t i, uint64_t, float *, int8_t *, int16_t *) { tflm_set_raw_value(i, 3, 1); }},
+        {"leitura .raw[k] fora do tensor",
+         [](uint64_t, uint64_t o, float *, int8_t *, int16_t *) { (void)tflm_get_raw_value(o, 3); }},
+    };
+    for (auto &c : casos) {
+        c.acesso(in, out, f2, i2, s1);
+        CHECK(tflm_invoke(outro) == 0, "%s marcou o outro modelo", c.nome);
+        CHECK(tflm_invoke(m) == -1, "%s: invoke seguinte nao devolveu -1", c.nome);
+        CHECK(tflm_invoke(m) == 0, "%s: a marca nao foi limpa", c.nome);
+    }
+
+    // Acesso valido nao marca; handle 0 nao tem modelo para marcar.
+    tflm_set_value(in, 0, 1.0f);
+    (void)tflm_get_value(out, 0);
+    tflm_set_value(0, 0, 1.0f);
+    CHECK(tflm_invoke(m) == 0, "acesso valido ou com handle 0 marcou o modelo");
+
+    // A inferencia nao roda quando ha marca: a saida fica como estava.
+    tflm_set_value(in, 0, 1.57f);
+    CHECK(tflm_invoke(m) == 0, "invoke falhou");
+    int8_t antes = tensor_de(out)->data.int8[0];
+    tensor_de(out)->data.int8[0] = 42;
+    tflm_set_value(in, 0, 0.0f);
+    tflm_set_value(in, 7, 0.0f);
+    CHECK(tflm_invoke(m) == -1, "invoke com marca nao devolveu -1");
+    CHECK(tensor_de(out)->data.int8[0] == 42, "a inferencia rodou com a marca");
+    tensor_de(out)->data.int8[0] = antes;
+
+    // Uma instancia reaproveitada comeca sem marca.
+    tflm_set_value(in, 9, 0.0f);
+    tflm_free_model(m);
+    r = tflm_create_resolver();
+    tflm_add_fully_connected(r);
+    m = tflm_create_model(r, q.data(), g_arena_wrapper, (int32_t)q.size(), 3000);
+    CHECK(tflm_invoke(m) == 0, "instancia reaproveitada herdou a marca");
+    tflm_free_model(m);
+    tflm_free_model(outro);
+    printf("  8 acessos recusados, isolamento entre modelos e reuso de instancia: ok\n");
+}
+
+// ---------------------------------------------------------------------------
 // 3. spam -- entrada int32, saída float32
 // ---------------------------------------------------------------------------
 
@@ -568,6 +647,7 @@ int main() {
     testa_senoide("test/tflm/models/hello_world_int8.tflite");
     testa_ciclo_de_vida();
     testa_saturacao();
+    testa_acesso_recusado();
     testa_spam();
     testa_person_detect();
     testa_micro_speech();

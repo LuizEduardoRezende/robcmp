@@ -871,6 +871,36 @@ leitura, nas duas visões. O compilador antigo falhava nos dois primeiros.
 upstream, e como exemplo de defeito da base que o TinyML contorna sem tocar no
 núcleo.
 
+### 5.2.24 Acesso recusado em tempo de execução não chegava ao programa
+
+Encontrado na revisão de 2026-10-19. Quando o tamanho do vetor só é conhecido
+na execução, como num parâmetro `float[]`, ou o índice de elemento é uma
+variável, quem confere é o wrapper. Ele recusava o acesso sem copiar nada e
+devolvia −1, mas o código gerado pela sintaxe nativa descartava esse retorno.
+Medido: `escreve(a)` com `a` de 2 elementos num tensor de 1 deixava a entrada
+como estava, a inferência rodava sobre a entrada anterior, e `le(s)` com o
+tamanho errado deixava `s` intacto, sem nenhum aviso.
+
+Decidido (2026-10-20), na seção 1 da especificação: o acesso recusado fica
+marcado no modelo, e o `invoke()` seguinte devolve −1 sem rodar a inferência e
+limpa a marca. É o único ponto em que a sintaxe nativa já devolve status, e
+rodar a inferência com a entrada incompleta só produziria saída sem sentido.
+Vale para escrita e leitura, do tensor inteiro ou de um elemento, nas duas
+visões. Nenhuma sintaxe nova.
+
+A mudança é toda no wrapper, e o modo biblioteca ganha o mesmo comportamento:
+os acessos inválidos dos testes do TCC usam o handle 0, que não tem modelo, e
+seguem iguais. O handle de um tensor não leva ao modelo dono; a busca percorre
+os tensores de entrada e saída das instâncias em uso e só acontece quando um
+acesso falha, então o caminho normal não paga nada. Testes: `testa_acesso_recusado`
+na camada 1 (8 tipos de acesso, isolamento entre dois modelos, inferência que
+não roda, instância reaproveitada) e `test_invoke_informa` em `nativo_limites`;
+os dois falham com o wrapper anterior.
+
+**Serve para:** a seção sobre o que o compilador confere e o que fica para a
+execução: o que não pode subir para a compilação agora ao menos chega ao
+programa.
+
 ---
 
 ## Seção 5.4 — Validação e métricas
@@ -1945,6 +1975,9 @@ corrigidos um por um, cada um com seu teste:
 - Saturação da conversão para código em ponto flutuante (5.1.10).
 - Índice negativo numa variável, recusado em vez de virar outro elemento
   (5.2.23); a ampliação de inteiros da base que causava isso, registrada.
+- Acesso a tensor recusado em tempo de execução, agora informado pelo
+  `invoke()` seguinte (5.2.24). Especificado antes, na seção 1 do
+  `native-syntax.rob`.
 
 ---
 
