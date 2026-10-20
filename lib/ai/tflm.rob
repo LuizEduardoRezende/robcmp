@@ -210,6 +210,7 @@ int8 tflm_add_ethos_u(uint64 resolver_handle);
 //   valores reais  tflm_set_value/values, tflm_get_value/values
 //                  conversão automática com o scale e o zero_point do modelo:
 //                  q = round(v/scale) + zero_point  e  v = scale * (q - zero_point)
+//                  o código satura na faixa do tipo; NaN vira o código do 0
 //
 //   códigos crus   tflm_set_raw_*, tflm_get_raw_*
 //                  sem conversão, para dados que já estão na representação do

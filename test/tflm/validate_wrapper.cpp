@@ -232,6 +232,77 @@ static void testa_ciclo_de_vida() {
 }
 
 // ---------------------------------------------------------------------------
+// Saturação da conversão float -> código, fora da faixa do tipo
+// ---------------------------------------------------------------------------
+
+// Escreve v no elemento 0 e devolve o código guardado no tensor.
+static int64_t codigo_escrito(uint64_t tensor, float v) {
+    tflm_set_value(tensor, 0, v);
+    const TfLiteTensor *t = tensor_de(tensor);
+    switch (t->type) {
+        case kTfLiteInt8:  return t->data.int8[0];
+        case kTfLiteInt32: return t->data.i32[0];
+        default:           return 0x7fff;
+    }
+}
+
+static void testa_saturacao() {
+    printf("== saturacao\n");
+    const float inf = INFINITY, nan = NAN, enorme = 1e25f;
+
+    // int8 com zero_point negativo (entrada, -128) e positivo (saida, 5). A
+    // saida nao e escrita pela sintaxe nativa, mas serve ao teste: o sinal do
+    // zero_point mudava o lado para onde o valor caia (RESULTADOS.md, 5.1.10).
+    std::vector<uint8_t> q = carregar("test/tflm/models/hello_world_int8.tflite");
+    uint64_t r = tflm_create_resolver();
+    tflm_add_fully_connected(r);
+    uint64_t m = tflm_create_model(r, q.data(), g_arena_wrapper, (int32_t)q.size(), 3000);
+    CHECK(m != 0, "hello_world_int8 nao criou");
+    if (!m) return;
+    struct { uint64_t tensor; const char *nome; int64_t zp; } int8s[] = {
+        {tflm_input(m, 0), "entrada (zero_point -128)", -128},
+        {tflm_output(m, 0), "saida (zero_point 5)", 5},
+    };
+    for (auto &c : int8s) {
+        struct { float v; int64_t esperado; const char *rotulo; } casos[] = {
+            {1000.0f, 127, "1000"}, {-1000.0f, -128, "-1000"},
+            {enorme, 127, "1e25"}, {-enorme, -128, "-1e25"},
+            {inf, 127, "+inf"}, {-inf, -128, "-inf"}, {nan, c.zp, "NaN"},
+        };
+        for (auto &k : casos) {
+            int64_t obtido = codigo_escrito(c.tensor, k.v);
+            CHECK(obtido == k.esperado, "%s: %s gravou o codigo %lld, esperado %lld", c.nome,
+                  k.rotulo, (long long)obtido, (long long)k.esperado);
+        }
+    }
+    tflm_free_model(m);
+
+    // int32 sem quantizacao: a entrada do spam.
+    std::vector<uint8_t> s = carregar("test/tflm/models/spam.tflite");
+    r = tflm_create_resolver();
+    tflm_add_fully_connected(r);
+    tflm_add_gather(r);
+    tflm_add_mean(r);
+    tflm_add_softmax(r);
+    m = tflm_create_model(r, s.data(), g_arena_wrapper, (int32_t)s.size(), 16 * 1024);
+    CHECK(m != 0, "spam nao criou");
+    if (!m) return;
+    uint64_t in = tflm_input(m, 0);
+    struct { float v; int64_t esperado; const char *rotulo; } casos[] = {
+        {3.6f, 4, "3.6"}, {-3.6f, -4, "-3.6"},
+        {enorme, INT32_MAX, "1e25"}, {-enorme, INT32_MIN, "-1e25"},
+        {inf, INT32_MAX, "+inf"}, {-inf, INT32_MIN, "-inf"}, {nan, 0, "NaN"},
+    };
+    for (auto &k : casos) {
+        int64_t obtido = codigo_escrito(in, k.v);
+        CHECK(obtido == k.esperado, "int32: %s gravou %lld, esperado %lld", k.rotulo,
+              (long long)obtido, (long long)k.esperado);
+    }
+    tflm_free_model(m);
+    printf("  int8 com zero_point dos dois sinais e int32, infinitos e NaN: ok\n");
+}
+
+// ---------------------------------------------------------------------------
 // 3. spam -- entrada int32, saída float32
 // ---------------------------------------------------------------------------
 
@@ -496,6 +567,7 @@ int main() {
     testa_senoide("test/tflm/models/hello_world_float.tflite");
     testa_senoide("test/tflm/models/hello_world_int8.tflite");
     testa_ciclo_de_vida();
+    testa_saturacao();
     testa_spam();
     testa_person_detect();
     testa_micro_speech();

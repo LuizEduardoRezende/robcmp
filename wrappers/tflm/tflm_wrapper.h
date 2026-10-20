@@ -201,6 +201,8 @@ uint64_t tflm_tensor_size(uint64_t tensor_handle);
 
 // Valores reais, com conversao automatica:
 //   q = round(v/scale) + zero_point      v = scale * (q - zero_point)
+// O codigo e saturado na faixa do tipo do tensor, infinitos inclusive; NaN
+// vira o codigo do real 0.
 // Um elemento. Indice fora do tensor: escrita ignorada, leitura devolve 0.
 void tflm_set_value(uint64_t tensor_handle, uint64_t index, float value);
 float tflm_get_value(uint64_t tensor_handle, uint64_t index);

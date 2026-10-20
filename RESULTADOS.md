@@ -232,6 +232,32 @@ A regra foi registrada no `CLAUDE.md`, seção 6.
 produziria resultados errados sem nenhuma pista da causa. E como argumento
 metodológico: o TCC foi validado só em x86_64, onde esse defeito é invisível.
 
+### 5.1.10 Saturação para o lado errado na conversão para código
+
+Encontrado na revisão de 2026-10-19. A conversão de valor real para código,
+`(int64_t)roundf(v/scale) + zero_point`, convertia para inteiro antes de
+saturar. Converter um `float` que não cabe no inteiro, um infinito ou um NaN é
+comportamento indefinido em C++. No x86 o resultado vira `INT64_MIN`, e a soma
+do `zero_point` decide para que lado ele cai depois do `clamp`:
+
+| Tensor | Valor | Código antes | Código certo |
+|---|---|---|---|
+| int8, `zero_point` −128 | −1e25, −inf | 127 | −128 |
+| int8, `zero_point` 5 | 1e25, +inf | −128 | 127 |
+| int32 sem quantização (entrada do spam) | 1e25, +inf | `INT32_MIN` | `INT32_MAX` |
+| qualquer um | NaN | um dos extremos | o código do real 0 |
+
+O infinito aparece de verdade numa divisão por zero no pré-processamento. A
+correção satura em ponto flutuante, antes de converter, e leva NaN ao código do
+real 0 (o `zero_point`). Nos valores dentro da faixa o resultado é o mesmo bit
+a bit, e os testes diferenciais da camada 1 continuam idênticos ao TFLM puro.
+Teste novo na camada 1 (`testa_saturacao`): 21 casos, dos quais o wrapper
+antigo errava 9.
+
+**Serve para:** a seção do wrapper, como exemplo de defeito que só um teste de
+borda pega, e da fronteira entre o que a RL garante e o que a conversão em C
+precisa garantir sozinha.
+
 ---
 
 ## Seção 5.2 — Frontend e análise estática
@@ -1877,6 +1903,13 @@ casos novos no `check_ai_model.py` (101 no total) e no `check_tflite.py`
 (veredito dos 4 externos), e `nativo_efficientdet` na camada 3 (5.4.26).
 
 Nenhuma mudança fora de `src/tinyml` e dos testes.
+
+### 2026-10-20 — Correções da revisão de código
+
+Revisão do compilador e do wrapper feita em 2026-10-19, com os achados
+corrigidos um por um, cada um com seu teste:
+
+- Saturação da conversão para código em ponto flutuante (5.1.10).
 
 ---
 

@@ -9,6 +9,7 @@
 #include "third-party/tflite-micro/tensorflow/lite/micro/micro_arena_constants.h"
 #include "tflm_wrapper.h"
 
+#include <cmath>
 #include <cstring>
 #include <cstdint>
 #include <new>
@@ -1041,12 +1042,27 @@ static int64_t clamp64(int64_t v, int64_t lo, int64_t hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-// float -> representacao do tensor. q = round(v/scale) + zero_point
-static int64_t to_storage(const TfLiteTensor *t, float v) {
+// float -> representacao do tensor, saturada em [lo, hi].
+// q = round(v/scale) + zero_point
+//
+// A saturacao acontece em ponto flutuante, antes da conversao para inteiro:
+// converter um float que nao cabe no inteiro, um infinito ou um NaN e
+// comportamento indefinido, e -1e25 chegava a virar o codigo maximo
+// (RESULTADOS.md, 5.1.10). NaN vira o codigo do real 0, o zero_point.
+static int64_t to_storage(const TfLiteTensor *t, float v, int64_t lo, int64_t hi) {
     float scale; int32_t zp;
+    float q = v;
     if (tensor_quant(t, &scale, &zp) && scale != 0.0f)
-        return (int64_t)roundf(v / scale) + zp;
-    return (int64_t)roundf(v);
+        q = v / scale;
+    else
+        zp = 0;
+    if (std::isnan(q))
+        q = 0.0f;
+    // double representa exatamente qualquer float arredondado mais um int32
+    double x = (double)roundf(q) + zp;
+    if (x <= (double)lo) return lo;
+    if (x >= (double)hi) return hi;
+    return (int64_t)x;
 }
 
 // representacao do tensor -> float. f = scale * (q - zero_point)
@@ -1064,19 +1080,19 @@ static int8_t tensor_write(TfLiteTensor *t, uint64_t index, float value) {
             t->data.f[index] = value;
             return 0;
         case kTfLiteInt8:
-            t->data.int8[index] = (int8_t)clamp64(to_storage(t, value), -128, 127);
+            t->data.int8[index] = (int8_t)to_storage(t, value, INT8_MIN, INT8_MAX);
             return 0;
         case kTfLiteUInt8:
-            t->data.uint8[index] = (uint8_t)clamp64(to_storage(t, value), 0, 255);
+            t->data.uint8[index] = (uint8_t)to_storage(t, value, 0, UINT8_MAX);
             return 0;
         case kTfLiteInt16:
-            t->data.i16[index] = (int16_t)clamp64(to_storage(t, value), -32768, 32767);
+            t->data.i16[index] = (int16_t)to_storage(t, value, INT16_MIN, INT16_MAX);
             return 0;
         case kTfLiteInt32:
-            t->data.i32[index] = (int32_t)clamp64(to_storage(t, value), INT32_MIN, INT32_MAX);
+            t->data.i32[index] = (int32_t)to_storage(t, value, INT32_MIN, INT32_MAX);
             return 0;
         case kTfLiteInt64:
-            t->data.i64[index] = to_storage(t, value);
+            t->data.i64[index] = to_storage(t, value, INT64_MIN, INT64_MAX);
             return 0;
         default:
             TFLM_LOG("ERRO: tipo de tensor nao suportado na escrita: %d", t->type);
