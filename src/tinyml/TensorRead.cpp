@@ -42,14 +42,17 @@ Value *TensorRead::generate(FunctionImpl *func, BasicBlock *block, BasicBlock *a
 		Builder->SetInsertPoint(block);
 		result = existing;
 	} else {
-		// A new buffer, reserved once in the function and refilled each time
-		// the read runs. A new variable refers to it, as to any vector.
+		// A new buffer for this read, refilled each time it runs. A new
+		// variable refers to it, as to any vector. It is a zeroed global, not
+		// stack: a whole tensor on the stack of a MCU overflowed it silently
+		// (36 KB for the image of person_detect), and a global is in the
+		// account of the linker (specification, section 4b; RESULTADOS.md,
+		// 5.2.25). One per read: two reads are two vectors.
 		uint64_t elements = tensor.info().elements;
 		Type *bufferTy = ArrayType::get(buildTypes->llvmType(tensor.elementType()), elements);
-		Builder->SetInsertPoint(allocblock);
-		buffer = Builder->CreateAlloca(bufferTy, dataAddrSpace, 0,
-			leftValue ? leftValue->getName() : tensor.name());
-		Builder->SetInsertPoint(block);
+		string name = func->getName() + "." + (leftValue ? leftValue->getName() : tensor.name());
+		buffer = new GlobalVariable(*mainmodule, bufferTy, false, GlobalValue::InternalLinkage,
+			ConstantAggregateZero::get(bufferTy), name);
 		size = ConstantInt::get(Type::getInt32Ty(global_context), elements);
 		if (leftValue)
 			leftValue->setPointerToPointer(true);

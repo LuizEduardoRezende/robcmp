@@ -316,6 +316,17 @@ int16 exemplo_elemento_e_vetor() {
  *     inferência, padrão em firmware. A variável precisa ter o tipo da visão
  *     e, quando o seu tamanho é conhecido, o número de elementos do tensor.
  *     Numa variável nova, o tamanho vem do tensor.
+ *   - DECISÃO (2026-10-20): o vetor de uma variável nova -- e o de uma
+ *     leitura sem variável, como um tensor passado de argumento -- é um
+ *     global zerado, um por ponto de leitura do programa, e não fica na pilha
+ *     da função. Na pilha, um tensor grande a estourava sem aviso num MCU: a
+ *     imagem do person_detect lida inteira são 36 KB por leitura, e o
+ *     STM32F407 tem 128 KB de SRAM (RESULTADOS.md, 5.2.25). Como global, ele
+ *     entra na conta do linker, que acusa se não couber. Duas leituras são
+ *     dois vetores, e uma leitura que roda de novo reaproveita o seu. O preço:
+ *     a RAM fica reservada o programa inteiro, e uma função recursiva
+ *     compartilha o vetor entre as suas chamadas. Para um tensor grande, ler
+ *     por elemento (m.input0[k]) não reserva vetor nenhum.
  *
  *         saida = {0.0:4};          // reservado uma vez
  *         while 1 {

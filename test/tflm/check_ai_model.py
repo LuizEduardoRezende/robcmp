@@ -486,6 +486,23 @@ def checa_tamanhos(robcmp, tmp):
                      'int16 main() {\n    v = {1.0};\n    return escreve(v);\n}\n')
     checa_ok("vetor de tamanho desconhecido (parâmetro)", robcmp, fonte, cwd=tmp)
 
+    # O tensor lido inteiro para uma variável nova, ou como argumento, vai para
+    # um global, um por leitura, e não para a pilha (seção 4b; RESULTADOS.md,
+    # 5.2.25).
+    fonte.write_text(programa_membros("x = pre.input0;", "y = pre.input0;", "z = sp.output0[1];",
+                                      "p = primeiro(pre.output0.raw);")
+                     .replace("int16 main()", "int8 primeiro(int8[] v) {\n    return v[0];\n}\nint16 main()"))
+    r = subprocess.run([robcmp, "-Od", str(fonte)], cwd=tmp, capture_output=True, text=True)
+    globais = re.findall(r"^@(main\.[\w.]+) = internal global \[(\d+) x (\w+)\] zeroinitializer", r.stdout, re.M)
+    pilha = re.findall(r"alloca \[(?:480|40) x", r.stdout)
+    if r.returncode != 0:
+        falha(f"leitura inteira fora da pilha: não compilou: {r.stderr.strip()!r}")
+    elif sorted(globais) != [("main.output0.raw", "40", "i8"), ("main.x", "480", "float"),
+                             ("main.y", "480", "float")] or pilha:
+        falha(f"leitura inteira fora da pilha: globais {globais!r}, na pilha {pilha!r}")
+    else:
+        print("  ok  leitura inteira fora da pilha, um global por leitura")
+
 
 WRAPPER = Path(__file__).resolve().parents[2] / "wrappers/tflm/tflm_wrapper.cpp"
 

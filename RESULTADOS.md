@@ -901,6 +901,40 @@ os dois falham com o wrapper anterior.
 execução: o que não pode subir para a compilação agora ao menos chega ao
 programa.
 
+### 5.2.25 Tensor lido inteiro ia para a pilha
+
+Encontrado na revisão de 2026-10-19. `x = m.input0`, numa variável nova,
+reservava o vetor com `alloca` na pilha da função, um por leitura. A visão
+padrão é `float`, então um tensor `int8` ocupa 4 vezes mais. Com o
+person_detect, duas leituras numa função somavam 72 KB de pilha:
+
+```
+%x = alloca [9216 x float], align 4
+%y = alloca [9216 x float], align 4
+```
+
+No x86 isso passa. No STM32F407, com 128 KB de SRAM e pilha de poucos KB, a
+pilha estouraria sem aviso sobre a arena ou os globais.
+
+Decidido (2026-10-20), na seção 4b da especificação: o vetor é um global
+zerado, um por ponto de leitura do programa. Compilado para Cortex-M, o mesmo
+programa passa a ter `.bss.conta.x` e `.bss.conta.y` de 36864 bytes cada,
+contados pelo linker, que acusa se não couber. Um vetor por tensor foi
+descartado: `x = m.output0; m.invoke(); y = m.output0` deixaria `x` e `y` no
+mesmo lugar. O preço: a RAM fica reservada o programa inteiro, e não só
+enquanto a função roda, e uma leitura numa função recursiva compartilha o
+vetor entre as chamadas. Para um tensor grande, ler por elemento não reserva
+vetor nenhum.
+
+Testes: caso novo no `check_ai_model.py` (os vetores de duas leituras e de um
+argumento são globais, e não há `alloca` do tamanho do tensor) e
+`test_duas_leituras` no `nativo_hello_world` (duas leituras do mesmo tensor
+continuam independentes).
+
+**Serve para:** a Etapa 4, e a medição de memória da 5.4: a RAM dos
+programas nativos passa a incluir esses vetores, onde antes eles ficavam
+invisíveis na pilha.
+
 ---
 
 ## Seção 5.4 — Validação e métricas
@@ -1978,6 +2012,8 @@ corrigidos um por um, cada um com seu teste:
 - Acesso a tensor recusado em tempo de execução, agora informado pelo
   `invoke()` seguinte (5.2.24). Especificado antes, na seção 1 do
   `native-syntax.rob`.
+- Tensor lido inteiro num vetor global por leitura, em vez da pilha
+  (5.2.25). Especificado antes, na seção 4b.
 
 ---
 

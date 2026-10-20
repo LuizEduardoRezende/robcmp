@@ -11,9 +11,9 @@
  *
  * Inputs can be read too.
  *
- * The whole tensor is copied into a buffer: a new one, reserved once in the
- * function, for a new variable or a temporary; the vector of the variable, when
- * it already exists (specification, section 4b).
+ * The whole tensor is copied into a buffer: a new one, a zeroed global for
+ * each read in the program, for a new variable or a temporary; the vector of
+ * the variable, when it already exists (specification, section 4b).
  */
 
 #include "Node.h"

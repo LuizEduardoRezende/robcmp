@@ -95,6 +95,24 @@ int8 test_buffer_existente() {
     return 0;
 }
 
+// Duas leituras do mesmo tensor são dois vetores: a segunda não muda a
+// primeira. Cada leitura tem o seu vetor global, fora da pilha (seção 4b).
+int8 test_duas_leituras() {
+    sine.input0 = {0.0};
+    sine.invoke();
+    a = sine.output0;
+    sine.input0 = {1.57};
+    sine.invoke();
+    b = sine.output0;
+    if a[0] > 0.5 {
+        return 2;
+    }
+    if b[0] < 0.5 {
+        return 2;
+    }
+    return 0;
+}
+
 int8 main() {
     result = 0;
     if test_init() != 0 { result = 1; }
@@ -102,5 +120,6 @@ int8 main() {
     if test_infer_pi_2() != 0 { result = 3; }
     if test_local() != 0 { result = 4; }
     if test_buffer_existente() != 0 { result = 5; }
+    if test_duas_leituras() != 0 { result = 6; }
     return result;
 }
