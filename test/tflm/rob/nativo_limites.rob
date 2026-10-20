@@ -1,0 +1,99 @@
+/*
+ * Acesso a tensores com índice ou tamanho que só se conhece na execução: o
+ * que o compilador não pode conferir e o wrapper confere (native-syntax.rob,
+ * seção 8).
+ *
+ * Índice negativo numa variável com sinal é recusado nos três tamanhos de
+ * inteiro: a escrita é ignorada e a leitura devolve 0. Antes, um int8 -1
+ * chegava ao wrapper como 255 e um int16 -1 como 65535, elementos válidos de
+ * tensores grandes (RESULTADOS.md, 5.2.23). Um índice sem sinal continua
+ * chegando inteiro: uint8 255 é o elemento 255.
+ *
+ * Devolve 0 se tudo passar, ou o código do teste que falhou.
+ */
+
+// entrada int8 de 1960 elementos
+ms = ai_model("../models/micro_speech_quantized.tflite", 12288);
+
+// entrada uint8 de 307200 elementos: o único tensor dos testes com mais de
+// 65535, o que um int16 -1 virava
+det = ai_model("../models/externos/efficientdet_lite0_int8.tflite", 10485760);
+
+void zera_ms() {
+    i = int32(0);
+    while i < ms.input0.size {
+        ms.input0.raw[i] = int8(0);
+        i = i + 1;
+    }
+}
+
+int8 test_int8_negativo() {
+    zera_ms();
+    k = int8(-1);
+    ms.input0.raw[k] = int8(100);
+    if ms.input0.raw[255] != 0 {
+        return 1;
+    }
+    ms.input0[k] = 5.0;
+    if ms.input0.raw[255] != 0 {
+        return 1;
+    }
+    ms.input0.raw[255] = int8(7);
+    if ms.input0.raw[k] != 0 {
+        return 1;
+    }
+    if ms.input0[k] != 0.0 {
+        return 1;
+    }
+    return 0;
+}
+
+int8 test_int16_negativo() {
+    j = int16(-1);
+    antes = det.input0[65535];
+    det.input0[j] = 1.0;
+    if det.input0[65535] != antes {
+        return 1;
+    }
+    det.input0[65535] = 0.5;
+    if det.input0[j] != 0.0 {
+        return 1;
+    }
+    return 0;
+}
+
+int8 test_int32_negativo() {
+    zera_ms();
+    k = int32(-1);
+    ms.input0.raw[k] = int8(100);
+    ms.input0.raw[1959] = int8(7);
+    if ms.input0.raw[k] != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+// O índice sem sinal não pode ganhar sinal: uint8 255 e uint16 1959.
+int8 test_sem_sinal() {
+    zera_ms();
+    u = uint8(255);
+    ms.input0.raw[u] = int8(9);
+    if ms.input0.raw[255] != 9 {
+        return 1;
+    }
+    w = uint16(1959);
+    ms.input0.raw[w] = int8(11);
+    if ms.input0.raw[1959] != 11 {
+        return 1;
+    }
+    return 0;
+}
+
+int8 main() {
+    result = 0;
+    if test_int8_negativo() != 0 { result = 1; }
+    if test_int16_negativo() != 0 { result = 2; }
+    if test_int32_negativo() != 0 { result = 3; }
+    if test_sem_sinal() != 0 { result = 4; }
+    return result;
+}

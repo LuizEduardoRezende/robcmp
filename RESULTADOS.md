@@ -838,6 +838,39 @@ pura, um arquivo só com `int8 f() { return 1; }` dá `signal 11`. Contornado na
 especificação com um `main` que só devolve 0; não corrigido (decisão de
 2026-10-19).
 
+### 5.2.23 Índice negativo numa variável virava outro elemento do tensor
+
+Encontrado na revisão de 2026-10-19. O compilador convertia o índice de
+`m.input0[k]` para `uint64`, o tipo do parâmetro do wrapper. Ao ampliar um
+inteiro, o robcmp escolhe entre completar com zeros e estender o sinal pelo
+tipo de **destino**, não pelo de origem (`PropagateTypes::coerceTo`, `destUnsigned`).
+Em RL pura:
+
+```
+a = int8(-1);   uint64(a) == 255      // em C, 2^64 - 1
+u = uint8(255); int64(u)  == -1       // em C, 255
+```
+
+No IR, `zext` no primeiro e `sext` no segundo. É um defeito da RL base, fora
+do escopo (decisão de 2026-10-19). Para o TinyML, o efeito era que
+`k = int8(-1); ms.input0.raw[k] = 100` gravava no elemento 255, um elemento
+válido da entrada do micro_speech, sem erro; com `int16`, o −1 virava 65535,
+válido na entrada do EfficientDet. Só o `int32` era recusado. O índice
+negativo constante já era erro de compilação.
+
+Contornado em `src/tinyml/WrapperCall.cpp`: o índice passa pelo inteiro de 64
+bits com o mesmo sinal que ele tem, `int64` ou `uint64`, e assim a extensão é
+a certa nos dois casos. O −1 chega ao wrapper como 2⁶⁴ − 1, que ele recusa, e
+`uint8` 255 continua sendo o elemento 255. A primeira tentativa, passar sempre
+por `int64`, quebrava o índice sem sinal pela segunda linha acima; o teste
+pegou. Teste novo na camada 3, `nativo_limites`: índices negativos `int8`,
+`int16` e `int32` e índices sem sinal `uint8` e `uint16`, na escrita e na
+leitura, nas duas visões. O compilador antigo falhava nos dois primeiros.
+
+**Serve para:** o registro dos defeitos da base, candidato a reportar ao
+upstream, e como exemplo de defeito da base que o TinyML contorna sem tocar no
+núcleo.
+
 ---
 
 ## Seção 5.4 — Validação e métricas
@@ -1910,6 +1943,8 @@ Revisão do compilador e do wrapper feita em 2026-10-19, com os achados
 corrigidos um por um, cada um com seu teste:
 
 - Saturação da conversão para código em ponto flutuante (5.1.10).
+- Índice negativo numa variável, recusado em vez de virar outro elemento
+  (5.2.23); a ampliação de inteiros da base que causava isso, registrada.
 
 ---
 
@@ -2175,7 +2210,9 @@ registrados e contornados, não corrigidos — a falta de `signext` (5.2.7), o
 extensão de TinyML não depende de nenhum deles: o wrapper não tem parâmetro
 `int8`/`int16` escalar, regra agora escrita no `CLAUDE.md`. Candidatos a
 reportar ao upstream. A única mudança feita no núcleo segue sendo a do
-`__globals_init` (5.2.21).
+`__globals_init` (5.2.21). Encontrado depois, na revisão de 2026-10-19: a
+ampliação de inteiros escolhe a extensão pelo sinal do destino (5.2.23),
+contornada no índice dos tensores.
 
 Decididas na 3.6 (2026-10-18): o modelo é criado uma vez, também quando
 declarado numa função que roda de novo; `.raw[k]` por função própria no

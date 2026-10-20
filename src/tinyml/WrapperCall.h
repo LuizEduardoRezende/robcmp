@@ -35,7 +35,8 @@ public:
 	static Value *vectorSize(Node *vector, FunctionImpl *func, BasicBlock *block,
 		BasicBlock *allocblock);
 
-	// An integer value as the uint64 of an index.
+	// An integer value as the uint64 of an index; a negative one becomes an
+	// index past any tensor.
 	static Value *index(Node *element, FunctionImpl *func, BasicBlock *block,
 		BasicBlock *allocblock);
 };

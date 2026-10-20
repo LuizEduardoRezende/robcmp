@@ -128,7 +128,7 @@ $(OUT)/tcc_micro_speech.rob: rob/tcc_micro_speech.rob models/micro_speech_quanti
 # Os modelos são citados por caminho relativo ao .rob gerado, em out/.
 NATIVE_TESTS = nativo_hello_world_float nativo_hello_world_int8 nativo_spam \
                nativo_person_detect nativo_micro_speech nativo_simple_add \
-               nativo_efficientdet nativo_especificacao
+               nativo_efficientdet nativo_limites nativo_especificacao
 
 $(OUT)/nativo_hello_world_float.rob: rob/nativo_hello_world.rob models/hello_world_float.tflite | $(OUT)
 	sed 's/@modelo@/hello_world_float/' $< > $@
@@ -145,6 +145,10 @@ $(OUT)/nativo_simple_add.rob: rob/nativo_simple_add.rob models/simple_add_model.
 # O maior modelo da camada: ~11 s de inferência no x86 com os kernels de
 # referência do TFLM.
 $(OUT)/nativo_efficientdet.rob: rob/nativo_efficientdet.rob models/externos/efficientdet_lite0_int8.tflite | $(OUT)
+	cp $< $@
+
+# Índices e tamanhos que só se conhecem na execução.
+$(OUT)/nativo_limites.rob: rob/nativo_limites.rob models/micro_speech_quantized.tflite models/externos/efficientdet_lite0_int8.tflite | $(OUT)
 	cp $< $@
 
 # Recalcula os valores que nativo_efficientdet confere, pelo TFLM direto.

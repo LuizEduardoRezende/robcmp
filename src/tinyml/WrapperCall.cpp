@@ -131,5 +131,11 @@ Value *WrapperCall::vectorSize(Node *vector, FunctionImpl *func, BasicBlock *blo
 
 Value *WrapperCall::index(Node *element, FunctionImpl *func, BasicBlock *block,
 	BasicBlock *allocblock) {
-	return PropagateTypes::coerceTo(element, tint64u)->generate(func, block, allocblock);
+	// To the 64-bit integer of the same signedness: the robcmp extends by the
+	// signedness of the destination, so an int8 -1 widened to uint64 is 255,
+	// a valid element, and an uint8 255 widened to int64 is -1 (RESULTADOS.md,
+	// 5.2.23). Widened with its own sign, -1 reaches the wrapper as 2^64-1,
+	// which it refuses.
+	DataType wide = buildTypes->isUnsignedDataType(element->getDataType()) ? tint64u : tint64;
+	return PropagateTypes::coerceTo(element, wide)->generate(func, block, allocblock);
 }
