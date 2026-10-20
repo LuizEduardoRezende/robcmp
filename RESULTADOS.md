@@ -826,8 +826,9 @@ chamada vai depois das `alloca` (`getFirstNonPHIOrDbgOrAlloca`) — o mesmo
 ponto de antes quando há locais, e o início do corpo quando não há. IR de
 `test/general` idêntico ao do commit anterior nos 65 programas.
 
-**Serve para:** a 5.2, como a única mudança no núcleo do compilador feita pela
-geração de código do TinyML, e por quê.
+**Serve para:** a 5.2, como a única correção de comportamento no núcleo do
+compilador feita pelo TinyML, e por quê. As outras mudanças fora de
+`src/tinyml` são ganchos, listados no estado do repositório.
 
 ### 5.2.22 Um programa sem `main` derruba o robcmp
 
@@ -2336,8 +2337,8 @@ registrados e contornados, não corrigidos — a falta de `signext` (5.2.7), o
 `or` entre comparações constantes (5.2.19) e o literal `-128` (5.2.20). A
 extensão de TinyML não depende de nenhum deles: o wrapper não tem parâmetro
 `int8`/`int16` escalar, regra agora escrita no `CLAUDE.md`. Candidatos a
-reportar ao upstream. A única mudança feita no núcleo segue sendo a do
-`__globals_init` (5.2.21). Encontrado depois, na revisão de 2026-10-19: a
+reportar ao upstream. A única correção de comportamento no núcleo segue sendo
+a do `__globals_init` (5.2.21). Encontrado depois, na revisão de 2026-10-19: a
 ampliação de inteiros escolhe a extensão pelo sinal do destino (5.2.23),
 contornada no índice dos tensores.
 
@@ -2371,21 +2372,39 @@ ao `.rob` e depois as pastas `-I`; arena manual na primeira versão.
 ## Estado do repositório
 
 Branch `mestrado/tflm-native`. Etapas 1, 2 e 3 commitadas; a 3 concluída em
-2026-10-19 (3.2 dispensada, 3.8 descartada por ser defeito da base). Próxima:
-Etapa 4, o STM32F407 — ver as notas para começar, no roteiro.
+2026-10-19 (3.2 dispensada, 3.8 descartada por ser defeito da base). Em
+2026-10-20, os achados da revisão de código foram corrigidos um por um (ver o
+registro de modificações). Próxima: Etapa 4, o STM32F407 — ver as notas para
+começar, no roteiro.
 
 A sintaxe nativa compila e roda os cinco modelos de validação, o de duas
 entradas (`simple_add_model`) e o EfficientDet-Lite0, com saídas idênticas às
 do modo biblioteca e do TFLM puro. O compilador recusa, na declaração, modelos
-com kernel sem suporte, com tipos que o TFLM não roda e com saídas de
-detecção sem forma, e confere o limite de modelos. `make -C test/tflm check`
+com kernel sem suporte, com tipos que o TFLM não roda, com saídas de detecção
+sem forma e com kernels que o wrapper nunca roda (variáveis de recurso,
+ethos-u), e confere o limite de modelos; um tensor de tipo sem conversão é
+erro no uso. O que só a execução confere chega ao programa pelo `invoke()`. `make -C test/tflm check`
 passa por inteiro: camadas 1 a 3, assinaturas, análise do `.tflite` e 111
 casos de compilação. `make -C test/achados` reproduz os achados 5.2.7, 5.2.8 e
 5.2.11; `make -C test/tflm/demo` é a demonstração da orientação.
 
-Toda a extensão está em `src/tinyml`; fora dela, a única mudança no núcleo é a
-linha do `__globals_init` (5.2.21). Os defeitos da base encontrados estão
-anotados e não serão corrigidos (decisão de 2026-10-19).
+Toda a extensão está em `src/tinyml`. Fora dela, a única correção de
+comportamento no núcleo é a linha do `__globals_init` (5.2.21), e o resto são
+ganchos para a extensão entrar, 85 linhas acrescentadas e 3 trocadas desde a
+`cola2025` (revisão de 2026-10-19):
+
+| Onde | O quê |
+|---|---|
+| `semantic/PropagateTypes.{h,cpp}` | 6 ganchos que trocam o nó do parser pelo do TinyML (`FunctionCall`, `Array`, `UpdateArray`, `Scalar`, `Load`, `LoadArray`) e o `visit(LoadArray)` que faltava |
+| `semantic/SymbolizeTree.h` | `ai_model` como nome reservado, nos símbolos e nos parâmetros |
+| `LoadArray.h` | o `accept`, sem o qual o visitante não chegava ao nó; o padrão encaminha para `visit(Node&)`, e nada muda para o resto do compilador |
+| `main.cpp`, `Scanner.{h,cpp}` | a lista das pastas `-I` na ordem dada, para a busca do `.tflite` |
+| `SourceLocation.h`, `StringConst.h` | `setFileOf` e `getString`, dois acessos |
+| `Program.cpp` | a correção do `__globals_init` |
+| `CMakeLists.txt` | os includes do schema do TFLM, só para `TfliteModel.cpp` |
+
+Os defeitos da base encontrados estão anotados e não serão corrigidos (decisão
+de 2026-10-19).
 
 Os dados de teste `test/tflm/data/*.bin` estão versionados desde 2026-10-18: o
 `.gitignore` mantém `*.bin` (firmware gerado em `hack/stm32` e pelo PlatformIO)
