@@ -94,7 +94,7 @@ p code, li code, td code { background: var(--sunken); padding: 1px 5px; border-r
 .eyebrow { font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 
 header.top { display: grid; gap: 14px; padding-bottom: 28px; border-bottom: 1px solid var(--rule); }
-header.top .lede { font-size: 1.12rem; color: var(--muted); max-width: 62ch; margin: 0; }
+header.top .lede { font-size: 1.12rem; color: var(--muted); max-width: 64ch; margin: 0; }
 .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
 .meta b { color: var(--ink); font-weight: 500; }
 
@@ -123,10 +123,10 @@ pre .h { color: var(--code-hl); }
 pre .del { color: #f2a59e; }
 pre .add { color: #9fdcb3; }
 
-ul.plain { margin: 0; padding-left: 20px; }
-ul.plain li { margin-bottom: 6px; max-width: 70ch; }
+ul.plain, ol.plain { margin: 0 0 12px; padding-left: 20px; }
+ul.plain li, ol.plain li { margin-bottom: 8px; max-width: 70ch; }
 
-.table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); margin: 6px 0 14px; }
 table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
 th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
 th { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--sunken); }
@@ -146,19 +146,33 @@ td.num { font-variant-numeric: tabular-nums; font-family: var(--mono); white-spa
 .status ul { margin: 8px 0 0; padding-left: 18px; }
 .status li { margin-bottom: 7px; font-size: 0.94rem; }
 
-.finding { border-top: 1px solid var(--rule); padding: 18px 0; display: grid; grid-template-columns: 7.5rem 1fr; gap: 6px 18px; }
+.finding { border-top: 1px solid var(--rule); padding: 16px 0; display: grid; grid-template-columns: 9rem 1fr; gap: 6px 18px; }
 .finding:first-of-type { border-top: 0; padding-top: 4px; }
-.finding .ref { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); padding-top: 3px; }
-.finding .ref .pill { margin-top: 6px; }
+.finding .ref { padding-top: 3px; }
+.finding p:last-child { margin-bottom: 0; }
 @media (max-width: 600px) { .finding { grid-template-columns: 1fr; } }
 
-.chart { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px 12px; margin: 10px 0 4px; }
-.chart svg { display: block; width: 100%; height: auto; }
-.chart .legend { font-size: 0.82rem; color: var(--muted); margin-top: 6px; }
+.diagram { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; margin: 10px 0 14px; overflow-x: auto; }
+.diagram svg { display: block; width: 100%; min-width: 700px; height: auto; }
+.diagram .box { fill: var(--sunken); stroke: var(--rule); }
+.diagram .box.hook { fill: var(--accent-soft); stroke: var(--accent); }
+.diagram .box.ext { fill: var(--ok-soft); stroke: var(--ok); }
+.diagram .t { fill: var(--ink); font-family: var(--body); font-size: 14px; font-weight: 600; }
+.diagram .s { fill: var(--muted); font-family: var(--body); font-size: 12.5px; }
+.diagram .a { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.diagram .ah { fill: var(--muted); }
+.diagram .tag-same { fill: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+.diagram .tag-hook { fill: var(--accent); font-family: var(--mono); font-size: 11.5px; font-weight: 500; }
+.diagram .tag-ext { fill: var(--ok); font-family: var(--mono); font-size: 11.5px; font-weight: 500; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.84rem; color: var(--muted); margin-top: 8px; }
+.legend span::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; border: 1px solid var(--rule); background: var(--sunken); }
+.legend .lh::before { background: var(--accent-soft); border-color: var(--accent); }
+.legend .le::before { background: var(--ok-soft); border-color: var(--ok); }
 
 .ask { background: var(--warn-soft); border-radius: 8px; padding: 16px 18px; }
 .ask ol { margin: 8px 0 0; padding-left: 20px; }
-.ask li { margin-bottom: 10px; max-width: 72ch; }
+.ask li { margin-bottom: 12px; max-width: 72ch; }
+.ask li:last-child { margin-bottom: 0; }
 
 .step { border: 1px solid var(--rule); background: var(--surface); border-radius: 8px; padding: 16px 18px; display: grid; gap: 10px; }
 .steps { display: grid; gap: 12px; }
@@ -173,59 +187,60 @@ td.num { font-variant-numeric: tabular-nums; font-family: var(--mono); white-spa
 details summary { cursor: pointer; font-size: 0.86rem; color: var(--accent); }
 details[open] summary { margin-bottom: 8px; }
 .note { font-size: 0.88rem; color: var(--muted); }
-.callout { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; }
+.callout { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; margin: 6px 0 14px; }
+.callout p:last-child { margin-bottom: 0; }
 footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 0.85rem; color: var(--muted); }
 @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 </style>
 
 <div class="wrap">
   <header class="top">
-    <span class="eyebrow">PPGCC-UFJ · reunião de orientação · 19/10/2026</span>
-    <h1>A sintaxe nativa de TinyML compila e roda</h1>
-    <p class="lede">A geração de código está pronta: o Robcmp agora gera o código de <code>ai_model(...)</code>. Os cinco modelos de validação rodam em sintaxe nativa, com saídas idênticas às do modo biblioteca <code>ai.tflm</code>.</p>
+    <span class="eyebrow">PPGCC-UFJ · reunião de orientação · 26/10/2026</span>
+    <h1>A modificação do compilador terminou</h1>
+    <p class="lede">A sintaxe nativa de TinyML está completa no Robcmp: o compilador lê o modelo <code>.tflite</code>, confere o programa contra ele e gera todo o código que, no modo biblioteca, o usuário escrevia à mão. Uma revisão de código fechou os casos de borda. O próximo passo é o STM32F407.</p>
     <div class="meta">
       <span>branch <b>mestrado/tflm-native</b></span>
       <span>executado em <b>x86_64</b> (notebook)</span>
       <span>ARM <b>só compilado</b>, ainda não executado</span>
     </div>
   </header>
-</div>
 
-<nav class="toc" aria-label="Seções">
-  <ul>
-    <li><a href="#antes-depois">Antes e depois</a></li>
-    <li><a href="#estado">O que roda</a></li>
-    <li><a href="#achados">Achados</a></li>
-    <li><a href="#nucleo">Núcleo do compilador</a></li>
-    <li><a href="#decisoes">Para decidir</a></li>
-    <li><a href="#demo">Demonstração</a></li>
-    <li><a href="#proximos">Próximos passos</a></li>
-  </ul>
-</nav>
+  <nav class="toc" aria-label="Seções">
+    <ul>
+      <li><a href="#resultado">Resultado</a></li>
+      <li><a href="#onde">Onde o compilador mudou</a></li>
+      <li><a href="#como">Como funciona</a></li>
+      <li><a href="#tamanho">Quanto código</a></li>
+      <li><a href="#revisao">Revisão de código</a></li>
+      <li><a href="#situacao">Situação</a></li>
+      <li><a href="#decidir">Para decidir</a></li>
+      <li><a href="#demo">Demonstração</a></li>
+      <li><a href="#proximos">Próximos passos</a></li>
+    </ul>
+  </nav>
 
-<div class="wrap" style="padding-top:0">
-
-  <div class="figures">
-    <div class="fig"><div class="n">5 / 5</div><div class="l">modelos do TCC passam na sintaxe nativa</div></div>
-    <div class="fig"><div class="n">24 / 24</div><div class="l">saídas idênticas às do modo biblioteca</div></div>
-    <div class="fig"><div class="n">94</div><div class="l">casos de compilação (erros e aceitos) no <code>check_ai_model.py</code></div></div>
-    <div class="fig"><div class="n">1 linha</div><div class="l">de código alterada no núcleo, fora de <code>src/tinyml</code></div></div>
+  <div class="figures" aria-label="Números principais">
+    <div class="fig"><div class="n">5 / 5</div><div class="l">modelos do TCC rodando nos dois modos, com saídas idênticas</div></div>
+    <div class="fig"><div class="n">+2</div><div class="l">modelos a mais na sintaxe nativa: um de duas entradas e o EfficientDet-Lite0, de 4,6 MB</div></div>
+    <div class="fig"><div class="n">111</div><div class="l">casos de compilação conferidos: erros que o compilador pega e programas que ele aceita</div></div>
+    <div class="fig"><div class="n">115 / 119</div><div class="l">kernels do TFLM que rodam pelo wrapper; os outros 4 viram erro de compilação</div></div>
+    <div class="fig"><div class="n">85</div><div class="l">linhas acrescentadas no núcleo do compilador; todo o resto ficou num módulo separado</div></div>
   </div>
 
-  <section id="antes-depois">
+  <!-- ===================================================== -->
+  <section id="resultado">
     <span class="eyebrow">O resultado</span>
     <h2>O mesmo programa, nos dois modos</h2>
-    <p>No modo biblioteca, o usuário embute os bytes do modelo, registra cada kernel e manipula handles. Na sintaxe nativa, o compilador lê o <code>.tflite</code> e faz tudo isso sozinho. Os dois programas abaixo estão em <code>test/tflm/demo/</code> e dão o mesmo resultado.</p>
+    <p>No <strong>modo biblioteca</strong> (<code>ai.tflm</code>, o caminho do TCC, que continua funcionando), o usuário embute os bytes do modelo, registra cada <em>kernel</em> (a rotina do TFLM que executa um tipo de operação da rede, como uma convolução) e manipula identificadores numéricos. Na <strong>sintaxe nativa</strong>, o compilador lê o <code>.tflite</code> e faz tudo isso sozinho. Os dois programas abaixo dão o mesmo resultado.</p>
     <div class="pair">
       <div class="pane">
-        <p class="cap"><b>Modo biblioteca</b> <span>lib_seno.rob</span></p>
-<pre><span class="h">use ai.tflm;</span>
-modelo = {0x1c, 0x00, ...};  <span class="c">// 3164 bytes, rob_embed.py</span>
+        <p class="cap"><b>Modo biblioteca</b><span>lib_seno.rob</span></p>
+<pre><span class="h">use</span> ai.tflm;
+modelo = {0x1c, 0x00, ...};  <span class="c">// 3164 bytes</span>
 arena = {0u:3000};
-
 int8 main() {
     r = tflm_create_resolver();
-    tflm_add_fully_connected(r);  <span class="c">// à mão</span>
+    tflm_add_fully_connected(r); <span class="c">// à mão</span>
     h = tflm_create_model(r, modelo, arena);
     entrada = {1.57};
     tflm_set_values(tflm_input(h, 0), entrada);
@@ -236,147 +251,218 @@ int8 main() {
 }</pre>
       </div>
       <div class="pane">
-        <p class="cap"><b>Sintaxe nativa</b> <span>nat_seno.rob</span></p>
+        <p class="cap"><b>Sintaxe nativa</b><span>nat_seno.rob</span></p>
 <pre>m = <span class="h">ai_model</span>("hello_world_float.tflite", 3000);
-
 int8 main() {
     m.input0 = {1.57};
     m.invoke();
-    saida = m.output0;   <span class="c">// float[1], tipo vindo do .tflite</span>
+    saida = m.output0;  <span class="c">// float[1], vindo do .tflite</span>
     ...
 }
 
-
-
-<span class="c">// O compilador emite: o modelo como constante,</span>
-<span class="c">// a arena alinhada a 16, tflm_add_* por kernel</span>
-<span class="c">// e as chamadas tflm_ (ver a demonstração).</span></pre>
+<span class="c">// O compilador gera: o modelo como constante,</span>
+<span class="c">// a área de trabalho do TFLM, o registro de</span>
+<span class="c">// cada kernel que o modelo usa e as chamadas</span>
+<span class="c">// à mesma API do modo biblioteca.</span></pre>
       </div>
     </div>
-
-    <h3 style="margin-top:26px">O que o compilador passou a gerar</h3>
-    <ul class="plain">
-      <li><strong>O modelo como constante</strong> (<code>@m.tflite</code>) e <strong>a arena zerada</strong> (<code>@m.arena</code>), os dois começando num endereço de memória múltiplo de 16. O TFLM pede isso: numa arena fora desse alinhamento, ele descarta os bytes iniciais e o modelo precisa de mais memória; e, no Cortex-M4, ler um <code>float</code> desalinhado do modelo trava o processador. No modo biblioteca o alinhamento saía certo por acaso, por decisão do backend do LLVM. Agora o compilador o garante.</li>
-      <li><strong>Uma função que cria o intérprete</strong> nas três fases do wrapper, com um <code>tflm_add_*</code> para cada kernel que o <code>.tflite</code> usa, e só esses.</li>
-      <li><strong>O modelo é criado uma vez.</strong> Declarado numa função chamada várias vezes, ele reaproveita o intérprete. Um modelo global é criado antes do <code>main</code>.</li>
-      <li><strong>Leitura, escrita e <code>invoke()</code></strong> viram chamadas à mesma API <code>tflm_</code> do modo biblioteca, com as mesmas assinaturas. Os dois modos convivem num mesmo programa.</li>
-      <li><strong>Kernel sem suporte é erro de compilação.</strong> Era a última das verificações de compilação previstas na especificação que faltava.</li>
-    </ul>
+    <p style="margin-top:14px">O ganho não é só de conveniência. Erros que no modo biblioteca só apareciam com o programa rodando, como um tensor que não existe, um vetor de tamanho errado ou um kernel que falta, agora são <strong>erros de compilação</strong>, com linha e coluna. E o modelo fica na memória certa: na sintaxe nativa ele vai para a flash, enquanto no modo biblioteca ia também para a RAM, onde o person_detect nem caberia no STM32F407.</p>
   </section>
 
-  <section id="estado">
+  <!-- ===================================================== -->
+  <section id="onde">
+    <span class="eyebrow">Arquitetura</span>
+    <h2>Onde o compilador mudou</h2>
+    <p>O Robcmp processa um programa em fases. A sintaxe nativa foi desenhada para que a gramática da RL já a aceitasse: <code>ai_model(...)</code> é lida como uma chamada de função, <code>m.input0</code> como um nome com ponto, e <code>m.invoke()</code> como uma chamada de método. Por isso o léxico e a gramática não mudaram. Todo o trabalho está na análise semântica e na geração de código.</p>
+
+    <div class="diagram" role="img" aria-label="Fases do compilador Robcmp, da fonte .rob ao objeto. Léxico, gramática e backend sem mudança; tabela de símbolos e análise de tipos com ganchos; os módulos TinyML leem o .tflite e geram o código.">
+      <svg viewBox="0 0 1000 470" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="seta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <rect class="box" x="20" y="10" width="300" height="46" rx="6"/>
+        <text class="t" x="36" y="38">Programa .rob</text>
+        <rect class="box" x="20" y="76" width="300" height="46" rx="6"/>
+        <text class="t" x="36" y="98">Análise léxica</text><text class="s" x="36" y="114">Flex: o texto vira palavras</text>
+        <rect class="box" x="20" y="142" width="300" height="46" rx="6"/>
+        <text class="t" x="36" y="164">Análise sintática</text><text class="s" x="36" y="180">Bison: as palavras viram a árvore do programa</text>
+        <rect class="box hook" x="20" y="208" width="300" height="46" rx="6"/>
+        <text class="t" x="36" y="230">Tabela de símbolos</text><text class="s" x="36" y="246">SymbolizeTree: cada nome com sua declaração</text>
+        <rect class="box hook" x="20" y="274" width="300" height="46" rx="6"/>
+        <text class="t" x="36" y="296">Análise de tipos</text><text class="s" x="36" y="312">PropagateTypes: tipo de cada expressão</text>
+        <rect class="box hook" x="20" y="340" width="300" height="46" rx="6"/>
+        <text class="t" x="36" y="362">Geração de código</text><text class="s" x="36" y="378">cada nó da árvore gera o seu LLVM IR</text>
+        <rect class="box" x="20" y="406" width="300" height="46" rx="6"/>
+        <text class="t" x="36" y="428">Backend LLVM</text><text class="s" x="36" y="444">o IR vira código de máquina: x86, ARM</text>
+        <line class="a" x1="170" y1="56" x2="170" y2="74" marker-end="url(#seta)"/>
+        <line class="a" x1="170" y1="122" x2="170" y2="140" marker-end="url(#seta)"/>
+        <line class="a" x1="170" y1="188" x2="170" y2="206" marker-end="url(#seta)"/>
+        <line class="a" x1="170" y1="254" x2="170" y2="272" marker-end="url(#seta)"/>
+        <line class="a" x1="170" y1="320" x2="170" y2="338" marker-end="url(#seta)"/>
+        <line class="a" x1="170" y1="386" x2="170" y2="404" marker-end="url(#seta)"/>
+        <text class="tag-same" x="336" y="103">sem mudança</text>
+        <text class="tag-same" x="336" y="169">sem mudança: a sintaxe nativa já é RL válida</text>
+        <text class="tag-hook" x="336" y="235">1 gancho: ai_model vira nome reservado</text>
+        <text class="tag-hook" x="336" y="292">6 ganchos: trocam nós da árvore por nós TinyML</text>
+        <text class="tag-hook" x="336" y="358">os nós TinyML geram o próprio código</text>
+        <text class="tag-same" x="336" y="433">sem mudança</text>
+        <rect class="box" x="690" y="190" width="290" height="46" rx="6"/>
+        <text class="t" x="706" y="212">modelo.tflite</text><text class="s" x="706" y="228">lido uma vez, antes de gerar código</text>
+        <rect class="box ext" x="690" y="258" width="290" height="140" rx="6"/>
+        <text class="t" x="706" y="282">Extensão TinyML (src/tinyml)</text>
+        <text class="s" x="706" y="304">lê o .tflite na compilação</text>
+        <text class="s" x="706" y="322">resolve m.input0, m.output0[k] ...</text>
+        <text class="s" x="706" y="340">confere tamanhos, tipos, kernels</text>
+        <text class="s" x="706" y="358">gera o modelo, a área de trabalho</text>
+        <text class="s" x="706" y="376">e as chamadas ao wrapper</text>
+        <line class="a" x1="835" y1="236" x2="835" y2="256" marker-end="url(#seta)"/>
+        <line class="a" x1="688" y1="308" x2="324" y2="308" marker-end="url(#seta)"/>
+        <line class="a" x1="688" y1="374" x2="324" y2="374" marker-end="url(#seta)"/>
+      </svg>
+      <div class="legend"><span>fase sem mudança</span><span class="lh">fase com ganchos</span><span class="le">código novo, separado</span></div>
+    </div>
+
+    <p>Um <strong>gancho</strong> é um desvio de poucas linhas no código existente: quando a análise encontra um nó que pertence a um modelo, entrega-o à extensão TinyML. Quando não pertence, o compilador segue exatamente como antes. A <strong>árvore do programa</strong> (AST) é a representação do código depois da análise sintática, e o <strong>LLVM IR</strong> é a linguagem intermediária que o backend do LLVM transforma em código de máquina para cada processador.</p>
+    <div class="callout">
+      <p>Fora da extensão, o núcleo do compilador ganhou 85 linhas em 11 arquivos, quase todas esses ganchos. Houve uma única correção de comportamento: a inicialização das variáveis globais rodava depois do início do <code>main</code>, defeito que existe também em RL pura e que o modelo global da sintaxe nativa expôs.</p>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="como">
+    <span class="eyebrow">Análise semântica e geração de código</span>
+    <h2>Como funciona</h2>
+    <p>O TCC tinha um único nó, o <code>ModelNode</code>, que tratava declaração, entrada, saída, invocação e destruição do modelo. O projeto previa decompô-lo em módulos com uma responsabilidade cada. Ficou assim:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Módulo</th><th>Responsabilidade</th><th>No programa</th></tr></thead>
+        <tbody>
+          <tr><td><code>TfliteModel</code></td><td>Lê o <code>.tflite</code> na compilação: tensores, tipos, quantização, kernels, e o que o TFLM não executa</td><td>—</td></tr>
+          <tr><td><code>AiModel</code></td><td>Declaração do modelo: confere os argumentos, gera o modelo e a área de trabalho, e a criação do interpretador</td><td><code>m = ai_model(...)</code></td></tr>
+          <tr><td><code>ModelMember</code></td><td>Diz o que cada nome pontilhado é, consultando o <code>.tflite</code>: tensor, propriedade ou método</td><td><code>m.input0</code>, <code>m.output1.raw</code></td></tr>
+          <tr><td><code>ModelUse</code></td><td>Os ganchos: troca o nó que o parser criou pelo nó TinyML certo, ou dá o erro</td><td>—</td></tr>
+          <tr><td><code>TensorWrite</code></td><td>Escrita na entrada, inteira ou por elemento</td><td><code>m.input0 = v</code></td></tr>
+          <tr><td><code>TensorRead</code></td><td>Leitura, inteira ou por elemento</td><td><code>x = m.output0[k]</code></td></tr>
+          <tr><td><code>ModelInvoke</code></td><td>A inferência; devolve 0 ou −1</td><td><code>m.invoke()</code></td></tr>
+          <tr><td><code>WrapperCall</code></td><td>Declara e chama as funções do wrapper, com as mesmas assinaturas do modo biblioteca</td><td>—</td></tr>
+          <tr><td><code>IntegerConstant</code></td><td>Valores conhecidos na compilação: tamanho da área de trabalho, índices, tamanhos de vetor</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">A destruição do modelo não virou módulo: por decisão da especificação, o modelo é criado uma vez e dura o programa inteiro, como é o comum em firmware.</p>
+
+    <h3 style="margin-top:22px">O caminho de um programa</h3>
+    <ol class="plain">
+      <li><strong>Declaração.</strong> Ao encontrar <code>m = ai_model("seno.tflite", 3000)</code>, a análise de tipos troca a chamada pelo nó <code>AiModel</code>, que lê o arquivo. A partir daí o compilador sabe quantos tensores o modelo tem, o tipo e o tamanho de cada um e os kernels de que ele precisa. Se o modelo usar algo que o TFLM não executa, o erro sai aqui.</li>
+      <li><strong>Uso.</strong> Cada nome que começa num modelo é conferido contra o arquivo, e não contra a tabela de símbolos. Por isso <code>m.input1</code> num modelo de uma entrada dá “o modelo tem 1 tensor de entrada (input0)”, e não “símbolo não encontrado”. Propriedades como <code>m.input0.size</code> viram constantes; leituras, escritas e <code>invoke()</code> viram os nós correspondentes.</li>
+      <li><strong>Verificação.</strong> Tamanho de vetor, índice constante, saída somente leitura, tipo da visão crua e limite de modelos são conferidos na compilação. O que só se sabe na execução, como o tamanho de um vetor recebido por parâmetro, o wrapper confere, e o <code>invoke()</code> seguinte devolve −1.</li>
+      <li><strong>Geração.</strong> O <code>AiModel</code> gera o modelo como constante, que no microcontrolador fica na flash, e a área de trabalho do TFLM (a <em>arena</em>) em RAM. Os dois começam em endereço múltiplo de 16, como o TFLM exige. Gera também uma função que cria o interpretador e registra só os kernels que o arquivo usa. As leituras, escritas e o <code>invoke()</code> viram chamadas à mesma API C do modo biblioteca.</li>
+    </ol>
+    <p>O registro de cada kernel numa função própria permite que o <em>linker</em> descarte os demais. O executável leva só o código das operações que o modelo usa, sem a configuração manual que o TCC exigia.</p>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="tamanho">
+    <span class="eyebrow">Escala</span>
+    <h2>Quanto código foi</h2>
+    <p>Nem pouco nem muito. O núcleo do compilador quase não mudou, a extensão tem tamanho médio, e a maior parte do volume são os testes. Linhas contadas sem as vazias e sem as só de comentário:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Parte</th><th>Linhas de código</th><th>Observação</th></tr></thead>
+        <tbody>
+          <tr><td>Extensão TinyML do compilador</td><td class="num">≈ 1 500</td><td>9 módulos. Comparando linhas não vazias, é pouco menos de um quarto do tamanho do compilador base (cerca de 8 000)</td></tr>
+          <tr><td>Núcleo do compilador</td><td class="num">85</td><td>ganchos em 11 arquivos, mais 3 linhas trocadas</td></tr>
+          <tr><td>Wrapper C/C++ do TFLM</td><td class="num">≈ 1 100</td><td>quase metade são 119 funções iguais, uma por kernel</td></tr>
+          <tr><td>Biblioteca <code>ai.tflm</code></td><td class="num">≈ 140</td><td>só declarações das funções do wrapper</td></tr>
+          <tr><td>Testes e verificadores</td><td class="num">≈ 2 400</td><td>três camadas de teste, mais os verificadores de assinatura, de análise do <code>.tflite</code> e de erros de compilação</td></tr>
+          <tr><td>Especificação da sintaxe</td><td class="num">921 linhas</td><td>quase todo texto: as regras e o porquê de cada decisão, num arquivo que também compila</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="revisao">
+    <span class="eyebrow">Esta semana</span>
+    <h2>Revisão de código: o que ela achou</h2>
+    <p>Com a sintaxe nativa completa, o compilador e o wrapper passaram por uma revisão para achar defeitos antes do hardware. Foram 5 defeitos, todos casos de borda que os testes não exercitavam; nenhum vinha da estrutura do código. Cada um foi corrigido com um teste novo que o cobre.</p>
+
+    <div class="finding">
+      <div class="ref"><span class="pill ok">corrigido</span></div>
+      <div><h3>Valor fora da faixa caía no extremo oposto</h3><p>Num modelo quantizado, o valor real é convertido para um inteiro de 8 bits. Um valor muito negativo, ou um infinito vindo de uma divisão por zero, virava o maior código possível em vez do menor. Agora a conversão satura do lado certo.</p></div>
+    </div>
+    <div class="finding">
+      <div class="ref"><span class="pill ok">corrigido</span><br><span class="pill warn" style="margin-top:6px">defeito da RL</span></div>
+      <div><h3>Índice negativo virava outro elemento</h3><p>Um índice −1 guardado numa variável de 8 bits chegava ao wrapper como 255, um elemento válido, e a escrita ia para o lugar errado. A causa está na RL base: ao ampliar um inteiro, o Robcmp escolhe entre estender o sinal ou completar com zeros pelo tipo de destino, e não pelo de origem. O defeito ficou registrado e foi contornado na extensão, sem mexer no núcleo.</p></div>
+    </div>
+    <div class="finding">
+      <div class="ref"><span class="pill ok">corrigido</span></div>
+      <div><h3>Erro na execução não chegava ao programa</h3><p>Quando o tamanho de um vetor só é conhecido na execução, o wrapper recusava a cópia, mas ninguém era avisado, e a inferência rodava sobre a entrada antiga. Agora a recusa fica marcada no modelo, e o <code>invoke()</code> seguinte devolve −1 sem rodar.</p></div>
+    </div>
+    <div class="finding">
+      <div class="ref"><span class="pill ok">corrigido</span></div>
+      <div><h3>Ler um tensor inteiro usava a pilha</h3><p>Duas leituras da imagem do person_detect somavam 72 KB na pilha, que no STM32F407 (128 KB de RAM) estouraria sem aviso. Agora cada leitura tem um vetor fixo na memória, que o linker contabiliza e acusa se não couber.</p></div>
+    </div>
+    <div class="finding">
+      <div class="ref"><span class="pill ok">corrigido</span></div>
+      <div><h3>Modelos que nunca rodariam passavam na compilação</h3><p>Para ter certeza, os 119 kernels do wrapper foram verificados um a um, com os testes do próprio TFLM (857 casos, nenhuma falha) e a leitura do código. 115 rodam. Os outros 4 dependem de algo que o wrapper não tem: três precisam de variáveis internas que a aplicação cria, e um é exclusivo de uma NPU da Arm, um acelerador que o STM32F407 não tem. Esses 4, e algumas combinações de tipos que o TFLM só recusa ao rodar, agora são erros de compilação.</p></div>
+    </div>
+    <p class="note">Antes da revisão, nesta mesma semana: a especificação da sintaxe passou a compilar inteira, e declarar mais modelos do que o wrapper comporta virou erro de compilação, em vez de falhar calado na execução. Quatro modelos públicos maiores foram testados; o EfficientDet-Lite0 roda, e os outros são recusados com o motivo.</p>
+  </section>
+
+  <!-- ===================================================== -->
+  <section id="situacao">
     <span class="eyebrow">Situação</span>
     <h2>O que roda e o que ainda não</h2>
     <div class="status">
       <div class="col">
         <h3><span class="pill ok">roda</span> verificado</h3>
         <ul>
-          <li>Os 5 modelos em sintaxe nativa: hello world float e int8, spam, person detect e micro speech.</li>
-          <li>As 24 saídas dos 11 casos de teste, idênticas às do modo biblioteca.</li>
-          <li>O modo biblioteca <code>ai.tflm</code>: os 5 testes continuam passando.</li>
-          <li><code>make -C test/tflm check</code> inteiro, com assinaturas RL × C conferidas em x86_64 e Cortex-M.</li>
-          <li>Os 65 programas de teste gerais da RL (<code>test/general</code>) geram exatamente o mesmo código de antes da mudança.</li>
-          <li>Compilação para ARM Cortex-M3, com a opção <code>-a stm32f1</code> do alvo que o Robcmp já suporta, e com informação de depuração (<code>-g</code>). Verificado só que compila e que o modelo vai para a área de dados somente leitura (<code>.rodata</code>), que no microcontrolador fica na flash. Não foi ligado nem executado.</li>
+          <li>Os 5 modelos do TCC na sintaxe nativa, com saídas idênticas às do modo biblioteca: hello world float e int8, spam, person detect e micro speech.</li>
+          <li>Um modelo de duas entradas e o EfficientDet-Lite0, de 4,6 MB, só na sintaxe nativa.</li>
+          <li>O modo biblioteca <code>ai.tflm</code>: os testes do TCC continuam passando.</li>
+          <li>A suíte de testes inteira, incluindo as assinaturas das funções conferidas para x86 e ARM.</li>
+          <li>Compilação para ARM Cortex-M3, o alvo ARM que o Robcmp já tem. Só compilado, não executado.</li>
         </ul>
       </div>
       <div class="col">
-        <h3><span class="pill bad">não roda</span> ou não feito</h3>
+        <h3><span class="pill bad">falta</span> não feito</h3>
         <ul>
-          <li><strong>Nada no hardware.</strong> O ARM foi só compilado. Falta o suporte ao STM32F407: linker script, descrição dos periféricos e o build do PlatformIO.</li>
-          <li><strong>Mais de 4 modelos</strong> num programa: do quinto em diante falham na execução, sem aviso (ver Achados).</li>
-          <li><strong>A especificação <code>native-syntax.rob</code> inteira</strong> ainda não compila, por causa de um exemplo com um modelo hipotético de várias entradas, que não existe em arquivo.</li>
-          <li><strong>Extensão de sinal (<code>signext</code>) de int8/int16</strong> nas chamadas da RL para funções C: o Robcmp não a faz (passo 6 da demonstração). O wrapper evita o problema; a correção no compilador falta. Também falta a medição de tempo de execução.</li>
+          <li>Nada rodou em hardware ainda.</li>
+          <li>O suporte ao STM32F407: mapa de memória, descrição dos periféricos, TFLM compilado para o Cortex-M4 e o build pelo PlatformIO.</li>
+          <li>As medições de tamanho e de tempo de execução.</li>
+          <li>Pontos menores da revisão, que não impedem nada: o mesmo modelo declarado duas vezes ocupa a flash duas vezes, por exemplo.</li>
+          <li>A conferência de tipos cobre 4 operações, as principais; não cobre todas.</li>
         </ul>
       </div>
     </div>
   </section>
 
-  <section id="achados">
-    <span class="eyebrow">Para a dissertação</span>
-    <h2>O que a implementação revelou</h2>
-    <p>Cada achado tem, no <code>RESULTADOS.md</code>, a evidência e o comando que o reproduz.</p>
-
-    <div class="finding">
-      <div class="ref"><span class="pill info">principal</span></div>
-      <div>
-        <h3>O modelo fica na flash na sintaxe nativa, e na RAM no modo biblioteca</h3>
-        <p>O binário é dividido em seções. <code>.data</code> guarda as variáveis globais que têm valor inicial: num microcontrolador elas ficam gravadas na flash e são copiadas para a RAM ao ligar, ocupando as duas memórias. <code>.rodata</code> guarda dados somente leitura, que ficam só na flash.</p>
-        <p>A RL põe todo vetor global em <code>.data</code>, mesmo declarado <code>const</code>. Por isso, no modo biblioteca o modelo vai para <code>.data</code>. Na sintaxe nativa o compilador o emite como constante, em <code>.rodata</code>. O tamanho total do programa quase não muda (+232 bytes); o que muda é em qual memória o modelo fica.</p>
-        <div class="chart" role="img" aria-label="Seção .data do person_detect: 322400 bytes no modo biblioteca contra 21824 na sintaxe nativa; a RAM do STM32F407 é de 196608 bytes.">
-          <svg viewBox="0 0 640 150" xmlns="http://www.w3.org/2000/svg">
-            <g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="12">
-              <text x="0" y="34" fill="var(--ink)">modo biblioteca</text>
-              <rect x="150" y="20" width="440" height="22" rx="3" fill="var(--bad)"></rect>
-              <text x="596" y="35" fill="var(--ink)">315 KB</text>
-              <text x="0" y="82" fill="var(--ink)">sintaxe nativa</text>
-              <rect x="150" y="68" width="29.8" height="22" rx="3" fill="var(--ok)"></rect>
-              <text x="186" y="83" fill="var(--ink)">21 KB</text>
-              <line x1="418.3" y1="10" x2="418.3" y2="104" stroke="var(--warn)" stroke-width="2" stroke-dasharray="5 4"></line>
-              <text x="418.3" y="122" fill="var(--warn)" text-anchor="middle">RAM do STM32F407: 192 KB</text>
-              <text x="150" y="142" fill="var(--muted)">0</text>
-            </g>
-          </svg>
-          <div class="legend">Seção <code>.data</code> do executável do person_detect (x86_64, <code>size</code>): 322400 bytes no modo biblioteca contra 21824 na sintaxe nativa. No modo nativo restam só as imagens de teste.</div>
-        </div>
-        <p class="callout">Consequência: <strong>pelo modo biblioteca, o person_detect não cabe na RAM do alvo; pela sintaxe nativa, cabe.</strong> É a primeira diferença medida entre os modos que vai além da conveniência. Falta medir no próprio STM32, com o linker script dele.</p>
-      </div>
-    </div>
-
-    <div class="finding">
-      <div class="ref"><span class="pill ok">verificado</span></div>
-      <div>
-        <h3>Sintaxe nativa e modo biblioteca dão saídas idênticas</h3>
-        <p>Foram 11 casos: hello world float e int8 com x = 0 e 1,57, as duas frases do spam, as duas imagens e os três áudios. As 24 saídas, impressas pelos dois modos, saíram idênticas. Passar contra limiar não provaria isso.</p>
-      </div>
-    </div>
-
-    <div class="finding">
-      <div class="ref"><span class="pill warn">em aberto</span></div>
-      <div>
-        <h3>No máximo 4 modelos, e o quinto falha calado</h3>
-        <p>Como firmware não usa heap, o wrapper reserva uma tabela fixa de instâncias de intérprete na memória estática: 4 por padrão (<code>TFLM_MAX_MODELS</code>). Cada instância custa cerca de 9 KB de RAM (medido no x86), mesmo sem uso, e é por isso que o número é pequeno.</p>
-        <p>No modo biblioteca, o usuário devolve a instância com <code>tflm_free_model</code>. Na sintaxe nativa não há destruição de modelo, por decisão da especificação, então cada <code>ai_model(...)</code> ocupa uma instância até o fim do programa. Um programa com 5 modelos compila, mas o quinto não consegue instância: <code>invoke()</code> devolve −1 e as leituras dão 0. O compilador conhece todas as declarações, então isso pode virar erro de compilação.</p>
-      </div>
-    </div>
-
-    <div class="finding">
-      <div class="ref"><span class="pill ok">corrigido</span></div>
-      <div>
-        <h3>Um defeito da RL, não do TinyML, corrigido</h3>
-        <p>A inicialização dos globais (<code>__globals_init</code>) rodava depois do código de um <code>main</code> sem variáveis locais, e o global era lido antes de inicializado. O defeito existe em RL pura; o modelo global da sintaxe nativa só o expôs. A correção é a única mudança no núcleo do compilador (ver a próxima seção).</p>
-      </div>
-    </div>
-  </section>
-
-  <section id="nucleo">
-    <span class="eyebrow">Intrusão</span>
-    <h2>O que mudou no núcleo do compilador</h2>
-    <p>Fora de <code>src/tinyml</code>, mudou <strong>uma linha de código</strong> (mais três de comentário), em <code>src/Program.cpp</code>. É a correção do defeito da inicialização dos globais (ver Achados), que existe também em RL pura. Léxico, gramática, <code>PropagateTypes</code>, <code>Scalar</code> e <code>FunctionCall</code> ficaram intocados. A geração de código do TinyML (422 linhas) ficou toda dentro de <code>src/tinyml</code>.</p>
-<pre><span class="c">// src/Program.cpp — onde entra a chamada a __globals_init no main</span>
-<span class="del">-  Builder->SetInsertPoint(entryBlock->end()->getPrevNode()); // before br</span>
-<span class="add">+  // after the allocas: before the br to the body or, when main has</span>
-<span class="add">+  // no local variable and the body is the entry, before its first</span>
-<span class="add">+  // statement</span>
-<span class="add">+  Builder->SetInsertPoint(entryBlock, entryBlock->getFirstNonPHIOrDbgOrAlloca());</span></pre>
-    <p class="note" style="margin-top:10px">Programas que já funcionavam não mudam: os 65 programas de teste gerais da RL geram exatamente o mesmo código de antes. O wrapper ganhou duas funções, <code>tflm_set_raw_value</code> e <code>tflm_get_raw_value</code>, para acessar um elemento da visão <code>.raw</code> (<code>m.input0.raw[k]</code>). O valor trafega como <code>int32</code>, porque um <code>int8</code> dependeria de extensão de sinal na chamada, que o Robcmp não marca.</p>
-  </section>
-
-  <section id="decisoes">
+  <!-- ===================================================== -->
+  <section id="decidir">
     <span class="eyebrow">Pauta</span>
     <h2>Para decidir com o orientador</h2>
     <div class="ask">
       <ol>
-        <li><strong>Limite de modelos.</strong> Erro de compilação acima de 4 declarações, com o número fixado no compilador igual ao do wrapper? Ou o compilador informar o número ao wrapper? Ou só documentar?</li>
-        <li><strong>Confirmar:</strong> um modelo declarado dentro de uma função é criado na primeira execução, e as chamadas seguintes reaproveitam o mesmo intérprete. A especificação já dizia que o modelo é “criado uma vez”; agora isso vale explicitamente também para o modelo local.</li>
+        <li><strong>Como o Robcmp vai gerar código para o STM32F407.</strong> O compilador não tem um alvo Cortex-M4. Há dois caminhos:
+          <ul class="plain" style="margin-top:6px">
+            <li>Usar o alvo Cortex-M3 que já existe. O código roda no M4 sem mudar o núcleo, mas as contas com <code>float</code> do programa saem em software, sem usar a FPU (a unidade de ponto flutuante do M4).</li>
+            <li>Acrescentar um alvo Cortex-M4. Usa a FPU, mas é uma mudança, pequena, no núcleo do compilador.</li>
+          </ul>
+          Sugestão: começar pelo Cortex-M3, medir, e decidir o M4 com os números na mão.</li>
+        <li><strong>Confirmar três decisões tomadas na revisão:</strong> o <code>invoke()</code> devolve −1 sem rodar quando um acesso anterior foi recusado; os vetores de leitura ficam fixos na memória, ocupando RAM o programa inteiro; os kernels que dependem de variáveis internas são recusados, em vez de suportados, porque nenhum modelo usado precisa deles.</li>
+        <li><strong>Defeitos da RL base.</strong> A pesquisa registra e contorna, sem corrigir, os defeitos do compilador que não são do TinyML. Já são vários, como a falta de extensão de sinal nas chamadas a funções C e a ampliação de inteiros achada nesta revisão, cada um registrado com a evidência. Reportá-los aos mantenedores do Robcmp?</li>
       </ol>
     </div>
   </section>
 
+  <!-- ===================================================== -->
   <section id="demo">
     <span class="eyebrow">Ao vivo</span>
     <h2>Roteiro de demonstração</h2>
-    <p>Comandos para rodar no terminal do VS Code, a partir da raiz do repositório. Esta página está no repositório em <code>test/tflm/demo/reuniao.html</code>. Cada passo é independente. Os botões copiam o comando.</p>
-    <p class="note"><strong>Antes da reunião:</strong> rode o passo de preparação uma vez. Ele compila o compilador, o wrapper e os testes, e evita esperas durante a apresentação. Os passos 1 a 6 levam segundos cada.</p>
+    <p>Comandos para rodar no terminal do VS Code, a partir da raiz do repositório. Esta página está em <code>test/tflm/demo/reuniao.html</code>. Cada passo é independente. Os botões copiam o comando.</p>
+    <p class="note"><strong>Antes da reunião:</strong> rode a preparação uma vez. Ela compila o compilador, o wrapper e os testes, e leva uns 4 minutos. Depois, os passos de 1 a 5 levam segundos cada.</p>
 
     <div class="steps">
       <div class="step">
@@ -384,31 +470,31 @@ int8 main() {
         <p>Entra no repositório, compila o robcmp e roda a suíte completa uma vez.</p>
         <div class="cmd"><code id="c0">cd ~/robsonMP/robcmp-mestrado &amp;&amp; make -C build -j$(nproc) &amp;&amp; make -C test/tflm check</code><button type="button" data-copy="c0">copiar</button></div>
         <details><summary>Saída esperada (final)</summary>
-<pre>== camada 3: os mesmos testes na sintaxe nativa
-  nativo_hello_world_float     OK
-  ...
-== tamanhos e índices (seções 4b e 8)
-  ok  vetor de tamanho desconhecido (parâmetro)</pre>
+<pre>== limite de modelos (seção 8)
+  ok  4 modelos, as instâncias do wrapper
+  ok  5 modelos globais: erro
+  ok  global além do limite declarado depois das funções
+  ok  modelo local além do limite: aviso</pre>
         </details>
       </div>
 
       <div class="step">
         <div class="head"><span class="k">passo 1</span><h3>O hello world nativo rodando</h3></div>
-        <p>Compila <code>demo/seno.rob</code>, liga com o wrapper e o TFLM e roda. Mostra a previsão de sen(x) pelo modelo float e pelo int8.</p>
+        <p>Compila <code>demo/seno.rob</code>, liga com o wrapper e o TFLM e roda. Mostra a previsão de sen(x) pelo modelo float e pelo quantizado em 8 bits.</p>
         <div class="cmd"><code id="c1">make -s -C test/tflm/demo exemplo</code><button type="button" data-copy="c1">copiar</button></div>
         <details><summary>Saída esperada</summary>
-<pre>  x = 0.000000 float: 0.026405  int8: -0.008291
-  x = 0.780000 float: 0.695403  int8: 0.696440
-  x = 1.570000 float: 0.995514  int8: 1.003206
-  x = 3.140000 float: -0.003493 int8: -0.008291
-  x = 4.710000 float: -1.005211 int8: -1.086115</pre>
+<pre>  x = 0.000000  float: 0.026405   int8: -0.008291
+  x = 0.780000  float: 0.695403   int8: 0.696440
+  x = 1.570000  float: 0.995514   int8: 1.003206
+  x = 3.140000  float: -0.003493  int8: -0.008291
+  x = 4.710000  float: -1.005211  int8: -1.086115</pre>
         </details>
         <p>Para mostrar o fonte: <code>cat test/tflm/demo/seno.rob</code></p>
       </div>
 
       <div class="step">
         <div class="head"><span class="k">passo 2</span><h3>O que o compilador gerou a partir do .tflite</h3></div>
-        <p>Trecho do LLVM IR: o modelo constante, a arena alinhada e a função que registra o kernel lido do arquivo.</p>
+        <p>Trecho do LLVM IR: o modelo como constante, a área de trabalho alinhada e a função que cria o interpretador e registra o kernel lido do arquivo.</p>
         <div class="cmd"><code id="c2">make -s -C test/tflm/demo ir</code><button type="button" data-copy="c2">copiar</button></div>
         <details><summary>Saída esperada (trecho)</summary>
 <pre>  @seno.tflite = internal constant [3164 x i8] c"...", align 16
@@ -431,7 +517,7 @@ int8 main() {
 3 índice fora          m.output0 has 1 element: index 5 is out of the tensor.
 4 saída                m.output0 is an output tensor: it is read-only.
 5 propriedade          q.input0.scale is read-only.
-6 tipo na .raw         The raw view d.input0.raw takes int8[], ... not uint8[].
+6 tipo na visão crua   The raw view d.input0.raw takes int8[], ... not uint8[].
 7 arena ausente        The arena size of ai_model is missing: ...
 8 kernel sem suporte   model 'lsh.tflite' uses a kernel the TFLM wrapper does not
                        support: builtin LSH_PROJECTION.</pre>
@@ -439,8 +525,8 @@ int8 main() {
       </div>
 
       <div class="step">
-        <div class="head"><span class="k">passo 4</span><h3>Os 5 testes do TCC, nos dois modos</h3></div>
-        <p>Mesmas entradas, limiares e códigos de retorno do TCC, primeiro pelo <code>ai.tflm</code> e depois pela sintaxe nativa.</p>
+        <div class="head"><span class="k">passo 4</span><h3>Os testes do TCC, nos dois modos</h3></div>
+        <p>Mesmas entradas, limiares e códigos de retorno do TCC, primeiro pelo <code>ai.tflm</code> e depois pela sintaxe nativa, que tem também os testes novos.</p>
         <div class="cmd"><code id="c4">make -s -C test/tflm/demo testes</code><button type="button" data-copy="c4">copiar</button></div>
         <details><summary>Saída esperada</summary>
 <pre>== camada 2: testes do TCC portados, em RL (ai.tflm)
@@ -454,13 +540,17 @@ int8 main() {
   nativo_hello_world_int8      OK
   nativo_spam                  OK
   nativo_person_detect         OK
-  nativo_micro_speech          OK</pre>
+  nativo_micro_speech          OK
+  nativo_simple_add            OK     <span class="c">← duas entradas</span>
+  nativo_efficientdet          OK     <span class="c">← 4,6 MB</span>
+  nativo_limites               OK     <span class="c">← correções da revisão</span>
+  nativo_especificacao         OK     <span class="c">← a especificação inteira</span></pre>
         </details>
       </div>
 
       <div class="step">
         <div class="head"><span class="k">passo 5</span><h3>Onde o modelo fica no binário</h3></div>
-        <p>O mesmo programa nos dois modos: seções do objeto, e o tamanho do executável do person_detect.</p>
+        <p>O executável é dividido em seções. <code>.data</code> guarda dados com valor inicial, que num microcontrolador ficam na flash <em>e</em> são copiados para a RAM ao ligar. <code>.rodata</code> guarda dados só de leitura, que ficam só na flash. O passo mostra as seções do mesmo programa nos dois modos e o tamanho do person_detect.</p>
         <div class="cmd"><code id="c5">make -s -C test/tflm/demo memoria</code><button type="button" data-copy="c5">copiar</button></div>
         <details><summary>Saída esperada</summary>
 <pre>  lib_seno.o
@@ -471,33 +561,17 @@ int8 main() {
     .bss.m.arena           3000 bytes
 
   text       data       bss        programa
-  83121      322400     126672     tcc_person_detect
-  384129     21824      126704     nativo_person_detect</pre>
+  83917      322400     126672     tcc_person_detect
+  384977     21824      126704     nativo_person_detect</pre>
         </details>
-      </div>
-
-      <div class="step">
-        <div class="head"><span class="k">passo 6</span><h3>Extensão de sinal: o defeito que ainda falta corrigir</h3></div>
-        <p>Um <code>int8</code> com valor −1 é o byte <code>0xFF</code>. Para passá-lo a uma função C, quem chama precisa estendê-lo até o registrador inteiro (<code>0xFFFFFFFF</code>) e marcar isso como <code>signext</code>. O Robcmp não faz nem marca isso. Uma função C compilada pelo clang confia que foi feito e lê 255; o gcc estende de novo por conta própria e esconde o erro. No ARM a convenção obriga quem chama a estender, então lá o erro é o esperado.</p>
-        <p>O programa RL (<code>demo/sinal/chama.rob</code>) passa −1 a duas funções C (<code>demo/sinal/recebe.c</code>): uma com parâmetro <code>int8</code>, como seria uma função ingênua do wrapper, e outra com <code>int32</code>, como o wrapper faz para não depender disso.</p>
-        <div class="cmd"><code id="c6">make -s -C test/tflm/demo sinal</code><button type="button" data-copy="c6">copiar</button></div>
-        <details><summary>Saída esperada</summary>
-<pre>  robcmp declara:  declare i32 @recebe_int8(i8)
-  clang declara:   define i32 @recebe_int8(i8 noundef signext %0)
-  funções C compiladas pelo clang:
-    recebe_int8(-1)    devolveu 255  <span class="del">ERRADO</span>
-    recebe_int32(-1)   devolveu -1   correto
-  funções C compiladas pelo gcc:
-    recebe_int8(-1)    devolveu -1   correto
-    recebe_int32(-1)   devolveu -1   correto</pre>
-        </details>
-        <p>Por isso nenhuma função do wrapper recebe <code>int8</code> ou <code>int16</code> como valor solto: o TinyML não é afetado hoje. A correção no compilador é marcar <code>signext</code> nos inteiros com sinal; ela ainda não foi feita.</p>
+        <p>No modo biblioteca, os 315 KB do modelo do person_detect iriam para a RAM, e o STM32F407 tem 192 KB. Na sintaxe nativa, ficam na flash.</p>
       </div>
     </div>
 
-    <p class="note" style="margin-top:14px">Se aparecer <em>“No such file or directory … libtensorflow-microlite.a”</em>, o TFLM ainda não foi compilado nesta máquina: o passo de preparação resolve. Os testes completos também podem ser rodados diretamente com <code>make -C test/tflm check</code>.</p>
+    <p class="note" style="margin-top:14px">Se aparecer <em>“No such file or directory … libtensorflow-microlite.a”</em>, o TFLM ainda não foi compilado nesta máquina: a preparação resolve. Há também <code>make -s -C test/tflm/demo sinal</code>, que mostra um dos defeitos da RL base (a falta de extensão de sinal nas chamadas a funções C), se a discussão chegar lá.</p>
   </section>
 
+  <!-- ===================================================== -->
   <section id="proximos">
     <span class="eyebrow">Roteiro</span>
     <h2>Próximos passos</h2>
@@ -505,17 +579,17 @@ int8 main() {
       <table>
         <thead><tr><th>O que falta</th><th>Estado</th></tr></thead>
         <tbody>
-          <tr><td>Extensão de sinal de int8/int16 nas chamadas ao wrapper</td><td><span class="pill info">próximo</span></td></tr>
-          <tr><td>A especificação <code>native-syntax.rob</code> compilando e rodando inteira</td><td><span class="pill info">próximo</span></td></tr>
-          <tr><td>STM32F407: linker script, descrição dos periféricos com o contador de ciclos (DWT), build pelo PlatformIO e bibliotecas pré-compiladas</td><td><span class="pill bad">não iniciado</span></td></tr>
-          <tr><td>Medir tamanho e tempo nos dois modos e nas duas plataformas, contra C++ puro</td><td><span class="pill bad">não iniciado</span></td></tr>
+          <tr><td><strong>Suporte ao STM32F407.</strong> O mapa de memória (quanto há de flash e de RAM, e onde), a descrição dos periféricos para a RL, o TFLM e o wrapper compilados para Cortex-M4, e o build pelo PlatformIO, que passa a incluir as bibliotecas do TinyML sozinho.</td><td><span class="pill info">próximo</span></td></tr>
+          <tr><td><strong>Contador de ciclos.</strong> Expor à RL o DWT, um contador que o próprio processador ARM tem e que avança a cada ciclo de clock. Lido antes e depois do <code>invoke()</code>, dá o tempo da inferência na placa.</td><td><span class="pill info">próximo</span></td></tr>
+          <tr><td><strong>Rodar na placa.</strong> Os mesmos testes nos dois modos, no STM32F407. Um modelo conta como validado quando passa no PC e na placa.</td><td><span class="pill bad">depois</span></td></tr>
+          <tr><td><strong>Medir.</strong> Tamanho do binário e tempo de execução, nos dois modos e nas duas plataformas, contra o mesmo programa em C++ puro com o TFLM.</td><td><span class="pill bad">depois</span></td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
   <footer>
-    Gerado a partir do estado do repositório em 18/10/2026. Evidência completa, comandos de reprodução e o registro de modificações estão em <code>RESULTADOS.md</code>; a especificação da sintaxe, em <code>test/tflm/native-syntax.rob</code>.
+    Gerado a partir do estado do repositório em 25/10/2026. A evidência de cada resultado, os comandos para reproduzi-los e o registro de modificações estão em <code>RESULTADOS.md</code>; a especificação da sintaxe, em <code>test/tflm/native-syntax.rob</code>.
   </footer>
 </div>
 
