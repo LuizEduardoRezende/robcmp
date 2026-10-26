@@ -210,8 +210,6 @@ footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--rule);
       <li><a href="#resultado">Resultado</a></li>
       <li><a href="#onde">Onde o compilador mudou</a></li>
       <li><a href="#como">Como funciona</a></li>
-      <li><a href="#tamanho">Quanto código</a></li>
-      <li><a href="#revisao">Revisão de código</a></li>
       <li><a href="#situacao">Situação</a></li>
       <li><a href="#decidir">Para decidir</a></li>
       <li><a href="#demo">Demonstração</a></li>
@@ -221,8 +219,8 @@ footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--rule);
 
   <div class="figures" aria-label="Números principais">
     <div class="fig"><div class="n">5 / 5</div><div class="l">modelos do TCC rodando nos dois modos, com saídas idênticas</div></div>
-    <div class="fig"><div class="n">+2</div><div class="l">modelos a mais na sintaxe nativa: um de duas entradas e o EfficientDet-Lite0, de 4,6 MB</div></div>
-    <div class="fig"><div class="n">111</div><div class="l">casos de compilação conferidos: erros que o compilador pega e programas que ele aceita</div></div>
+    <div class="fig"><div class="n">+2</div><div class="l">modelos além dos do TCC: um de duas entradas e um detector de objetos real, de 4,6 MB</div></div>
+    <div class="fig"><div class="n">111</div><div class="l">pequenos programas na sintaxe nativa: cada um confere um erro de compilação, ou que um programa válido compila</div></div>
     <div class="fig"><div class="n">115 / 119</div><div class="l">kernels do TFLM que rodam pelo wrapper; os outros 4 viram erro de compilação</div></div>
     <div class="fig"><div class="n">85</div><div class="l">linhas acrescentadas no núcleo do compilador; todo o resto ficou num módulo separado</div></div>
   </div>
@@ -322,7 +320,7 @@ int8 main() {
       <div class="legend"><span>fase sem mudança</span><span class="lh">fase com ganchos</span><span class="le">código novo, separado</span></div>
     </div>
 
-    <p>Um <strong>gancho</strong> é um desvio de poucas linhas no código existente: quando a análise encontra um nó que pertence a um modelo, entrega-o à extensão TinyML. Quando não pertence, o compilador segue exatamente como antes. A <strong>árvore do programa</strong> (AST) é a representação do código depois da análise sintática, e o <strong>LLVM IR</strong> é a linguagem intermediária que o backend do LLVM transforma em código de máquina para cada processador.</p>
+    <p>Um <strong>gancho</strong> é um desvio de poucas linhas no código existente: quando a análise encontra um nó que pertence a um modelo, entrega-o à extensão TinyML. Quando não pertence, o compilador segue exatamente como antes.</p>
     <div class="callout">
       <p>Fora da extensão, o núcleo do compilador ganhou 85 linhas em 11 arquivos, quase todas esses ganchos. Houve uma única correção de comportamento: a inicialização das variáveis globais rodava depois do início do <code>main</code>, defeito que existe também em RL pura e que o modelo global da sintaxe nativa expôs.</p>
     </div>
@@ -363,55 +361,6 @@ int8 main() {
   </section>
 
   <!-- ===================================================== -->
-  <section id="tamanho">
-    <span class="eyebrow">Escala</span>
-    <h2>Quanto código foi</h2>
-    <p>Nem pouco nem muito. O núcleo do compilador quase não mudou, a extensão tem tamanho médio, e a maior parte do volume são os testes. Linhas contadas sem as vazias e sem as só de comentário:</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Parte</th><th>Linhas de código</th><th>Observação</th></tr></thead>
-        <tbody>
-          <tr><td>Extensão TinyML do compilador</td><td class="num">≈ 1 500</td><td>9 módulos. Comparando linhas não vazias, é pouco menos de um quarto do tamanho do compilador base (cerca de 8 000)</td></tr>
-          <tr><td>Núcleo do compilador</td><td class="num">85</td><td>ganchos em 11 arquivos, mais 3 linhas trocadas</td></tr>
-          <tr><td>Wrapper C/C++ do TFLM</td><td class="num">≈ 1 100</td><td>quase metade são 119 funções iguais, uma por kernel</td></tr>
-          <tr><td>Biblioteca <code>ai.tflm</code></td><td class="num">≈ 140</td><td>só declarações das funções do wrapper</td></tr>
-          <tr><td>Testes e verificadores</td><td class="num">≈ 2 400</td><td>três camadas de teste, mais os verificadores de assinatura, de análise do <code>.tflite</code> e de erros de compilação</td></tr>
-          <tr><td>Especificação da sintaxe</td><td class="num">921 linhas</td><td>quase todo texto: as regras e o porquê de cada decisão, num arquivo que também compila</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- ===================================================== -->
-  <section id="revisao">
-    <span class="eyebrow">Esta semana</span>
-    <h2>Revisão de código: o que ela achou</h2>
-    <p>Com a sintaxe nativa completa, o compilador e o wrapper passaram por uma revisão para achar defeitos antes do hardware. Foram 5 defeitos, todos casos de borda que os testes não exercitavam; nenhum vinha da estrutura do código. Cada um foi corrigido com um teste novo que o cobre.</p>
-
-    <div class="finding">
-      <div class="ref"><span class="pill ok">corrigido</span></div>
-      <div><h3>Valor fora da faixa caía no extremo oposto</h3><p>Num modelo quantizado, o valor real é convertido para um inteiro de 8 bits. Um valor muito negativo, ou um infinito vindo de uma divisão por zero, virava o maior código possível em vez do menor. Agora a conversão satura do lado certo.</p></div>
-    </div>
-    <div class="finding">
-      <div class="ref"><span class="pill ok">corrigido</span><br><span class="pill warn" style="margin-top:6px">defeito da RL</span></div>
-      <div><h3>Índice negativo virava outro elemento</h3><p>Um índice −1 guardado numa variável de 8 bits chegava ao wrapper como 255, um elemento válido, e a escrita ia para o lugar errado. A causa está na RL base: ao ampliar um inteiro, o Robcmp escolhe entre estender o sinal ou completar com zeros pelo tipo de destino, e não pelo de origem. O defeito ficou registrado e foi contornado na extensão, sem mexer no núcleo.</p></div>
-    </div>
-    <div class="finding">
-      <div class="ref"><span class="pill ok">corrigido</span></div>
-      <div><h3>Erro na execução não chegava ao programa</h3><p>Quando o tamanho de um vetor só é conhecido na execução, o wrapper recusava a cópia, mas ninguém era avisado, e a inferência rodava sobre a entrada antiga. Agora a recusa fica marcada no modelo, e o <code>invoke()</code> seguinte devolve −1 sem rodar.</p></div>
-    </div>
-    <div class="finding">
-      <div class="ref"><span class="pill ok">corrigido</span></div>
-      <div><h3>Ler um tensor inteiro usava a pilha</h3><p>Duas leituras da imagem do person_detect somavam 72 KB na pilha, que no STM32F407 (128 KB de RAM) estouraria sem aviso. Agora cada leitura tem um vetor fixo na memória, que o linker contabiliza e acusa se não couber.</p></div>
-    </div>
-    <div class="finding">
-      <div class="ref"><span class="pill ok">corrigido</span></div>
-      <div><h3>Modelos que nunca rodariam passavam na compilação</h3><p>Para ter certeza, os 119 kernels do wrapper foram verificados um a um, com os testes do próprio TFLM (857 casos, nenhuma falha) e a leitura do código. 115 rodam. Os outros 4 dependem de algo que o wrapper não tem: três precisam de variáveis internas que a aplicação cria, e um é exclusivo de uma NPU da Arm, um acelerador que o STM32F407 não tem. Esses 4, e algumas combinações de tipos que o TFLM só recusa ao rodar, agora são erros de compilação.</p></div>
-    </div>
-    <p class="note">Antes da revisão, nesta mesma semana: a especificação da sintaxe passou a compilar inteira, e declarar mais modelos do que o wrapper comporta virou erro de compilação, em vez de falhar calado na execução. Quatro modelos públicos maiores foram testados; o EfficientDet-Lite0 roda, e os outros são recusados com o motivo.</p>
-  </section>
-
-  <!-- ===================================================== -->
   <section id="situacao">
     <span class="eyebrow">Situação</span>
     <h2>O que roda e o que ainda não</h2>
@@ -420,7 +369,7 @@ int8 main() {
         <h3><span class="pill ok">roda</span> verificado</h3>
         <ul>
           <li>Os 5 modelos do TCC na sintaxe nativa, com saídas idênticas às do modo biblioteca: hello world float e int8, spam, person detect e micro speech.</li>
-          <li>Um modelo de duas entradas e o EfficientDet-Lite0, de 4,6 MB, só na sintaxe nativa.</li>
+          <li>Dois modelos além dos do TCC, só na sintaxe nativa. Um modelo de teste do próprio TFLM que soma duas imagens, para exercitar modelos com mais de uma entrada, que nenhum modelo do TCC tem. E o EfficientDet-Lite0, um detector de objetos real de 4,6 MB, o maior modelo testado e o primeiro com duas saídas; ele roda só no PC, porque não cabe nos 512 KB de flash do STM32F407.</li>
           <li>O modo biblioteca <code>ai.tflm</code>: os testes do TCC continuam passando.</li>
           <li>A suíte de testes inteira, incluindo as assinaturas das funções conferidas para x86 e ARM.</li>
           <li>Compilação para ARM Cortex-M3, o alvo ARM que o Robcmp já tem. Só compilado, não executado.</li>
@@ -432,8 +381,7 @@ int8 main() {
           <li>Nada rodou em hardware ainda.</li>
           <li>O suporte ao STM32F407: mapa de memória, descrição dos periféricos, TFLM compilado para o Cortex-M4 e o build pelo PlatformIO.</li>
           <li>As medições de tamanho e de tempo de execução.</li>
-          <li>Pontos menores da revisão, que não impedem nada: o mesmo modelo declarado duas vezes ocupa a flash duas vezes, por exemplo.</li>
-          <li>A conferência de tipos cobre 4 operações, as principais; não cobre todas.</li>
+          <li>Cada operação do TFLM só aceita certos tipos de dados: uma convolução com entrada <code>float</code> e pesos inteiros, por exemplo, não roda. O compilador já confere isso nas convoluções e na camada totalmente conectada, as operações mais comuns. Nas demais, um tipo que o TFLM não aceita só aparece quando o programa roda.</li>
         </ul>
       </div>
     </div>
@@ -451,8 +399,8 @@ int8 main() {
             <li>Acrescentar um alvo Cortex-M4. Usa a FPU, mas é uma mudança, pequena, no núcleo do compilador.</li>
           </ul>
           Sugestão: começar pelo Cortex-M3, medir, e decidir o M4 com os números na mão.</li>
-        <li><strong>Confirmar três decisões tomadas na revisão:</strong> o <code>invoke()</code> devolve −1 sem rodar quando um acesso anterior foi recusado; os vetores de leitura ficam fixos na memória, ocupando RAM o programa inteiro; os kernels que dependem de variáveis internas são recusados, em vez de suportados, porque nenhum modelo usado precisa deles.</li>
-        <li><strong>Defeitos da RL base.</strong> A pesquisa registra e contorna, sem corrigir, os defeitos do compilador que não são do TinyML. Já são vários, como a falta de extensão de sinal nas chamadas a funções C e a ampliação de inteiros achada nesta revisão, cada um registrado com a evidência. Reportá-los aos mantenedores do Robcmp?</li>
+        <li><strong>Confirmar três decisões tomadas nesta semana:</strong> o <code>invoke()</code> devolve −1 sem rodar quando um acesso anterior foi recusado; os vetores de leitura ficam fixos na memória, ocupando RAM o programa inteiro; os kernels que dependem de variáveis internas são recusados, em vez de suportados, porque nenhum modelo usado precisa deles.</li>
+        <li><strong>Defeitos da RL base.</strong> A pesquisa registra e contorna, sem corrigir, os defeitos do compilador que não são do TinyML. Já são vários, como a falta de extensão de sinal nas chamadas a funções C e a ampliação de inteiros achada nesta semana, cada um registrado com a evidência. Reportá-los aos mantenedores do Robcmp?</li>
       </ol>
     </div>
   </section>
@@ -543,7 +491,7 @@ int8 main() {
   nativo_micro_speech          OK
   nativo_simple_add            OK     <span class="c">← duas entradas</span>
   nativo_efficientdet          OK     <span class="c">← 4,6 MB</span>
-  nativo_limites               OK     <span class="c">← correções da revisão</span>
+  nativo_limites               OK     <span class="c">← índices e tamanhos vistos só na execução</span>
   nativo_especificacao         OK     <span class="c">← a especificação inteira</span></pre>
         </details>
       </div>
