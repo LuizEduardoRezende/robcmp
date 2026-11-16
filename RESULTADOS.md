@@ -2252,6 +2252,40 @@ A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
 | 4.3 | Estender `platformio/platform/builder/main.py` |
 | 4.4 | Distribuir `.a` pré-compiladas: x86_64 e ARM Cortex-M4 |
 
+**Andamento** (2026-11-08 a 2026-11-16):
+
+- **Placa ligada (2026-11-08).** ST-Link V2 genérico, 4 fios no conector JTAG
+  de 20 pinos (ST-Link 2/3/6/7 → placa 7/4/9/1: SWDIO, GND, SWCLK, 3,3 V); a
+  placa é alimentada só pelo ST-Link. Chip confirmado (id 0x413, 512 KB de
+  flash, 192 KB de RAM). O firmware de fábrica — um teste de LEDs para outra
+  placa, que desligava PA13/PA14 — foi copiado para
+  `~/robsonMP/placa-f407-backup/flash-original.bin` e apagado; o chip foi
+  recuperado parando o núcleo na saída do reset (DEMCR.VC_CORERESET, com o
+  botão RST). Os LEDs desta placa são PA6 e PA7, ativos em nível baixo. Para
+  gravar e ler, usar o OpenOCD: o `st-flash` 1.8.0 leu o tamanho da flash
+  errado duas vezes.
+- **PlatformIO reapontado (2026-11-09).** Os links de `~/.platformio`
+  (plataforma, `bin/robcmp` e `stdlib`) apontavam para o checkout antigo
+  `~/robsonMP/robcmp` (branch `llvm18`); agora apontam para este.
+- **Decidido pelo autor (2026-11-09): alvo próprio `stm32f407`** na tabela de
+  alvos, em vez do caminho (a) abaixo. Recomendado `thumbv7em-none-eabi` com
+  `cortex-m4`: usa a FPU sem mudar a convenção de chamada (sem `hf`), e segue
+  compatível com a `libgcc` e os objetos do Cortex-M3. O upstream fez o mesmo
+  para o RP2040.
+- **Gerador de registradores trazido do upstream (2026-11-16).** A branch
+  `svds_and_rp2040` do thborges tem `lib/arch/svd2rob.py` (SVD → `.rob`) e um
+  port completo do RP2040 em `lib/arch/rp/rp2040/` (`regs.rob` gerado,
+  `init.rob`, `mcu.rob`, `rp2040.ld`), o modelo de organização a seguir:
+  `lib/arch/stm32/stm32f407/`. Trazidos de lá só `lib/arch/{svd2rob.py,
+  Makefile,README}` e as larguras `uint10`–`uint31` de `BuildTypes`, que o
+  arquivo gerado exige (o resto da branch muda para LLVM 21 e altera a
+  gramática). Correção nossa no script: endereço base escrito `0X...` no SVD
+  sai em minúsculas (o léxico da RL recusa `0X`) — candidata a reportar. Com o
+  SVD do F407 (`STM32F40x.svd`, do PlatformIO), o script gera 15.911 linhas
+  com os 73 periféricos, e um programa que liga o relógio do GPIOA e escreve
+  em PA6 compila para os endereços e bits certos. `test/general` mantém o
+  placar (63 passam, as 2 falhas de antes) e `make -C test/tflm check` passa.
+
 **Notas para começar** (levantadas em 2026-10-19):
 
 - **A placa ainda não está disponível:** o autor a pega com o orientador na
@@ -2398,6 +2432,7 @@ ganchos para a extensão entrar, 85 linhas acrescentadas e 3 trocadas desde a
 | `semantic/PropagateTypes.{h,cpp}` | 6 ganchos que trocam o nó do parser pelo do TinyML (`FunctionCall`, `Array`, `UpdateArray`, `Scalar`, `Load`, `LoadArray`) e o `visit(LoadArray)` que faltava |
 | `semantic/SymbolizeTree.h` | `ai_model` como nome reservado, nos símbolos e nos parâmetros |
 | `LoadArray.h` | o `accept`, sem o qual o visitante não chegava ao nó; o padrão encaminha para `visit(Node&)`, e nada muda para o resto do compilador |
+| `BuildTypes.{h,cpp}` | as larguras `uint10`–`uint31`, copiadas do upstream (`svds_and_rp2040`), exigidas pelos registradores gerados do SVD (2026-11-16) |
 | `main.cpp`, `Scanner.{h,cpp}` | a lista das pastas `-I` na ordem dada, para a busca do `.tflite` |
 | `SourceLocation.h`, `StringConst.h` | `setFileOf` e `getString`, dois acessos |
 | `Program.cpp` | a correção do `__globals_init` |
