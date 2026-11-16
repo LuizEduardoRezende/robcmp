@@ -1,0 +1,63 @@
+/*
+ * Part of the Robotics Language Standard Library, under the
+ * Apache License v2.0.
+ */
+
+/*
+ * Cortex-M4 core registers that the vendor SVD (regs.rob) leaves out.
+ * Names and addresses from the ARMv7-M Architecture Reference Manual.
+ */
+
+/* SysTick timer */
+
+type SYST_CSR_t {
+	ENABLE    = false;              // Counter enable
+	TICKINT   = false;              // Exception on count to 0
+	CLKSOURCE = false;              // 1: processor clock, 0: external (HCLK/8)
+	_res1     = uint13(0);          // Reserved, 13 bits
+	COUNTFLAG = false;              // Counted to 0 since the last read
+	_res2     = uint15(0);          // Reserved, 15 bits
+}
+
+ // SysTick control and status register
+ register SYST_CSR_t SYST_CSR at 0xe000e010;
+ // SysTick reload value register (24 bits)
+ register uint32 SYST_RVR at 0xe000e014;
+ // SysTick current value register
+ register uint32 SYST_CVR at 0xe000e018;
+ // SysTick calibration value register
+ register uint32 SYST_CALIB at 0xe000e01c;
+
+/* System control block */
+
+type CPACR_t {
+	_res1 = uint20(0);              // Reserved, 20 bits
+	CP10  = uint2(0);               // FPU access: 3 = full access
+	CP11  = uint2(0);               // FPU access: 3 = full access
+	_res2 = uint8(0);               // Reserved, 8 bits
+}
+
+ // Vector table offset register
+ register uint32 SCB_VTOR at 0xe000ed08;
+ // Coprocessor access control register: enables the FPU
+ register CPACR_t CPACR at 0xe000ed88;
+
+/* Debug and cycle counter */
+
+type DEMCR_t {
+	_res1  = uint24(0);             // Vector catch and monitor bits, unused here
+	TRCENA = false;                 // Enables the DWT and ITM units
+	_res2  = uint7(0);              // Reserved, 7 bits
+}
+
+type DWT_CTRL_t {
+	CYCCNTENA = false;              // Cycle counter enable
+	_res1     = uint31(0);          // Other DWT controls, unused here
+}
+
+ // Debug exception and monitor control register
+ register DEMCR_t DEMCR at 0xe000edfc;
+ // DWT control register
+ register DWT_CTRL_t DWT_CTRL at 0xe0001000;
+ // DWT cycle count register: one count per processor clock cycle
+ register uint32 DWT_CYCCNT at 0xe0001004;

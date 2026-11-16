@@ -4,3 +4,7 @@ AFDT files for AVRs
 
 SVDs files for STM32 can be downloaded at:
 - https://www.st.com/en/microcontrollers-microprocessors/stm32-32-bit-arm-cortex-mcus.html#cad-resources under System View Description
+
+stm32/stm32f407/stm32f407.svd is STM32F40x.svd v1.5 (ST, modified by Keil in
+2017), as shipped by the PlatformIO ststm32 platform (misc/svd). The Cortex-M4
+core registers it lacks (SysTick, CPACR, DWT) are in stm32f407/coreregs.rob.

@@ -2277,6 +2277,15 @@ A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
   A partida precisa ligar a FPU (CP10/CP11 no `SCB_CPACR`) antes da primeira
   instrução de ponto flutuante. Placar de `test/general` e `make -C test/tflm
   check` inalterados.
+- **Registradores do F407 (2026-11-16).** `lib/arch/stm32/stm32f407/` segue o
+  modelo do RP2040: `stm32f407.svd` (o `STM32F40x.svd` v1.5 do PlatformIO) e
+  `regs.rob` gerado pelo `make -C lib/arch` (15.911 linhas). O SVD não traz os
+  registradores do núcleo: `coreregs.rob`, à mão a partir do manual ARMv7-M,
+  tem SysTick, `SCB_VTOR`, `CPACR` (liga a FPU), `DEMCR` e o contador de ciclos
+  (`DWT_CTRL`, `DWT_CYCCNT`). Conferido no código gerado: `CPACR` em
+  `0xe000ed88` bits 20–23, `DEMCR.TRCENA` bit 24 de `0xe000edfc`,
+  `DWT_CYCCNT` em `0xe0001004`, `AHB1ENR` em `0x40023830`, `GPIOA_ODR` em
+  `0x40020014`.
 - **Gerador de registradores trazido do upstream (2026-11-16).** A branch
   `svds_and_rp2040` do thborges tem `lib/arch/svd2rob.py` (SVD → `.rob`) e um
   port completo do RP2040 em `lib/arch/rp/rp2040/` (`regs.rob` gerado,
