@@ -114,7 +114,7 @@ test/tflm/
 ├── check_tflite.py           # análise do .tflite (com tflite_info.cpp)
 ├── check_ai_model.py         # erros e programas aceitos da sintaxe nativa (111 casos)
 ├── rob_embed.py              # embute arquivos binários em .rob
-└── demo/                     # demonstração para orientação (reuniao.html, make ...)
+└── demo/                     # demonstração para orientação (make exemplo, ir, erros ...)
 test/achados/                 # reproduções dos achados do RESULTADOS.md
 ```
 
@@ -245,7 +245,7 @@ g++ programa.o test/tflm/out/libtflm_wrapper.a \
     third-party/tflite-micro/gen/linux_x86_64_default_gcc/lib/libtensorflow-microlite.a \
     -Wl,--gc-sections -o programa
 
-# Demonstração (ver test/tflm/demo/reuniao.html)
+# Demonstração (comandos no cabeçalho de test/tflm/demo/Makefile)
 make -s -C test/tflm/demo exemplo   # também: ir, erros, testes, memoria, sinal
 
 # Compilador ARM instalado pelo PlatformIO (para o Cortex-M4)
