@@ -2271,7 +2271,12 @@ A especificação executável da sintaxe está em `test/tflm/native-syntax.rob`.
   alvos, em vez do caminho (a) abaixo. Recomendado `thumbv7em-none-eabi` com
   `cortex-m4`: usa a FPU sem mudar a convenção de chamada (sem `hf`), e segue
   compatível com a `libgcc` e os objetos do Cortex-M3. O upstream fez o mesmo
-  para o RP2040.
+  para o RP2040. Feito em 2026-11-16: `-a stm32f407` gera `vmul.f32`/`vadd.f32`
+  onde `-a stm32f1` chama `__mulsf3`/`__addsf3`, com os `float` entrando em
+  `r0`/`r1` e saindo em `r0` nos dois (o objeto não marca `Tag_ABI_VFP_args`).
+  A partida precisa ligar a FPU (CP10/CP11 no `SCB_CPACR`) antes da primeira
+  instrução de ponto flutuante. Placar de `test/general` e `make -C test/tflm
+  check` inalterados.
 - **Gerador de registradores trazido do upstream (2026-11-16).** A branch
   `svds_and_rp2040` do thborges tem `lib/arch/svd2rob.py` (SVD → `.rob`) e um
   port completo do RP2040 em `lib/arch/rp/rp2040/` (`regs.rob` gerado,
@@ -2433,6 +2438,7 @@ ganchos para a extensão entrar, 85 linhas acrescentadas e 3 trocadas desde a
 | `semantic/SymbolizeTree.h` | `ai_model` como nome reservado, nos símbolos e nos parâmetros |
 | `LoadArray.h` | o `accept`, sem o qual o visitante não chegava ao nó; o padrão encaminha para `visit(Node&)`, e nada muda para o resto do compilador |
 | `BuildTypes.{h,cpp}` | as larguras `uint10`–`uint31`, copiadas do upstream (`svds_and_rp2040`), exigidas pelos registradores gerados do SVD (2026-11-16) |
+| `BackLLVM.{h,cpp}` | o alvo `stm32f407` (`thumbv7em-none-eabi`, `cortex-m4`), decisão do autor (2026-11-16) |
 | `main.cpp`, `Scanner.{h,cpp}` | a lista das pastas `-I` na ordem dada, para a busca do `.tflite` |
 | `SourceLocation.h`, `StringConst.h` | `setFileOf` e `getString`, dois acessos |
 | `Program.cpp` | a correção do `__globals_init` |

@@ -32,6 +32,7 @@ enum SupportedTargets {
 	
 	// stm32
 	st_stm32f1, 
+	st_stm32f407,
 	
 	// awaiting backend goes mainstream
 	st_esp32, 
